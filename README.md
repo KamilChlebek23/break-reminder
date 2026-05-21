@@ -6,6 +6,59 @@ A Windows-11 break reminder for phone-free, deep-focus workspaces.
 > Doubles as a custom-reminder tool so it doesn't compete with a second app
 > for the same desktop real estate.
 
+## What BreakReminder is
+
+A Windows 11 system-tray utility built to sit between you and the keyboard
+during long stretches of focused work. The icon lives in the tray, the app
+runs at &lt; 1% CPU and &lt; 100 MB RAM at idle, and it surfaces in two ways:
+
+- **The break reminder.** After a configurable interval of *active*
+  keyboard and mouse time (default 60 minutes), BreakReminder shows a
+  centered, non-dismissable dialog (FR-008, FR-009). `Esc`, `Alt`+`F4`,
+  click-outside, and focus-loss are all swallowed; you commit to "I'll
+  take a break" or "Snooze". The dialog deliberately does **not** steal
+  the keystroke you're in the middle of typing — the in-flight character
+  lands where you intended it (US-02).
+- **Custom reminders** *(coming in v0.2.x — not part of v0.1.x).*
+  User-defined recurring nudges — *"stand up at 11:00"*, *"drink water
+  every hour during work days"* — that will fire as light, **dismissable**
+  popups (FR-013, FR-014). Same widget, different severity, so the
+  adjacent-job reminder rides on the break-reminder app rather than a
+  second utility. See [Custom reminders (v0.2.x scope)](#custom-reminders-v02x-scope)
+  below for what currently exists on disk.
+
+Both surfaces are local-only. No account, no cloud, no telemetry, no
+outbound HTTP calls during normal operation. Settings, custom reminders,
+and the break event log all live under `%APPDATA%\BreakReminder\` and are
+**preserved across uninstalls** by design (FR-002).
+
+## Why it exists
+
+The product targets one specific failure mode: a focus-minded solo
+developer who loses sense of time during long coding sessions and ends up
+sitting in one position for hours. The cost is back and joint pain that
+disappears when regular short breaks (light exercise, a walk) are taken.
+The gap isn't the break itself — it's the nudge to take one.
+
+Existing reminder tools fail some developers in two distinct ways:
+
+- **Phone-based tools** (Pomodoro apps, smartwatches) assume the phone is
+  at hand. Some developers deliberately distances their phone from the
+  workspace to protect attention; a reminder that requires the phone
+  defeats the setup that made deep focus possible in the first place.
+- **PC-based visual popups** (Windows toasts, IDE plugins) get reflexively
+  dismissed during deep focus without registering. The notification fires,
+  the developer swipes it away on autopilot, nothing changes — the same
+  rabbit-hole continues for another hour.
+
+BreakReminder's wedge is the combination: PC-native so the phone stays
+where you put it, non-dismissable so reflex-dismissal doesn't apply, and
+dual-purpose so custom reminders ride on the same widget instead of
+pulling you back into a second tool. The "non-dismissable" property is
+the **design heart** of the product — without it, BreakReminder is just
+another popup; with it, the popup is the one thing that survives deep
+focus on autopilot.
+
 End users: read [Install](#install) and [Using BreakReminder](#using-breakreminder).
 Contributors and packagers: skip to [For developers](#for-developers).
 The product spec lives at [`context/foundation/prd.md`](context/foundation/prd.md);

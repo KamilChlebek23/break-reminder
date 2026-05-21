@@ -1,0 +1,75 @@
+# EditorConfig — https://editorconfig.org
+#
+# Keeps indentation, line endings, and whitespace consistent across IDEs
+# regardless of per-user editor settings. Aligns with the rules already
+# enforced by `ruff format` for Python; covers the non-Python file types
+# (TOML, YAML, NSIS, Markdown) that ruff doesn't touch.
+
+root = true
+
+# ---------------------------------------------------------------------------
+# Defaults — apply to every file unless a more specific section overrides.
+# LF line endings work fine on Windows because Git handles checkout
+# conversion via core.autocrlf; keeping the repo LF avoids spurious diffs
+# when the same file is touched from WSL or CI.
+# ---------------------------------------------------------------------------
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# ---------------------------------------------------------------------------
+# Python — 4 spaces, matches ruff's default and PEP 8.
+# ---------------------------------------------------------------------------
+[*.py]
+indent_size = 4
+
+# ---------------------------------------------------------------------------
+# TOML — pyproject.toml is already 4-space; keep it that way for consistency
+# with the Python source it sits next to.
+# ---------------------------------------------------------------------------
+[*.toml]
+indent_size = 4
+
+# ---------------------------------------------------------------------------
+# YAML / JSON — community standard is 2 spaces. GitHub Actions parses both
+# fine at any width but every example in the docs is 2.
+# ---------------------------------------------------------------------------
+[*.{yml,yaml,json}]
+indent_size = 2
+
+# ---------------------------------------------------------------------------
+# NSIS installer scripts — 2 spaces matches the conventions in
+# installer/break-reminder.nsi and the upstream NSIS examples.
+# ---------------------------------------------------------------------------
+[*.nsi]
+indent_size = 2
+
+# ---------------------------------------------------------------------------
+# INI files — settings.ini lives in %APPDATA% at runtime, but if any sample
+# config lands in the repo (e.g. in tests/), keep it tidy.
+# ---------------------------------------------------------------------------
+[*.ini]
+indent_size = 2
+
+# ---------------------------------------------------------------------------
+# Markdown — DON'T trim trailing whitespace. Two trailing spaces are the
+# Markdown line-break syntax; trimming them silently breaks rendering.
+# ---------------------------------------------------------------------------
+[*.md]
+indent_size = 2
+trim_trailing_whitespace = false
+
+# ---------------------------------------------------------------------------
+# Makefiles / batch scripts — tabs are required by Make and idiomatic for
+# Windows .bat. We don't have either today, but this keeps future additions
+# from getting silently mangled.
+# ---------------------------------------------------------------------------
+[Makefile]
+indent_style = tab
+
+[*.bat]
+end_of_line = crlf

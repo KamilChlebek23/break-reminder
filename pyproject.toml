@@ -1,0 +1,82 @@
+[project]
+name = "break-reminder"
+version = "0.1.0"
+description = "A Windows-11 break reminder for phone-free deep-focus workspaces."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Kamil Chlebek" }]
+dependencies = [
+    "pynput>=1.8.2",
+    "pyside6>=6.11.1",
+    "python-dateutil>=2.9.0",
+    "pyttsx3>=2.99",
+    "pywin32>=311; sys_platform == 'win32'",
+]
+
+[dependency-groups]
+dev = [
+    "pip-audit>=2.7",
+    "pip-licenses>=5.0",
+    "pyinstaller>=6.10",
+    "pyright>=1.1.380",
+    "pytest>=8.3",
+    "pytest-qt>=4.4",
+    "ruff>=0.6",
+    "types-python-dateutil>=2.9.0",
+]
+
+# ---------------------------------------------------------------------------
+# Tooling
+# ---------------------------------------------------------------------------
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E", "F", "W", # pycodestyle / pyflakes
+    "I",           # isort
+    "B",           # bugbear
+    "UP",          # pyupgrade
+    "SIM",         # simplify
+    "D",           # pydocstyle (google convention; see [tool.ruff.lint.pydocstyle])
+]
+ignore = [
+    "E501", # line length is enforced by formatter, not linter
+]
+
+[tool.ruff.lint.pydocstyle]
+# Enforces the Google-style docstring rule from context/foundation/lessons.md.
+# pydocstyle's D-rules already skip leading-underscore symbols, so the lesson's
+# "private helpers (leading _) are exempt" carve-out applies automatically.
+convention = "google"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.pyright]
+# `standard` mode catches the high-value bugs (None-deref, missing
+# imports, attribute typos, unused awaits) without forcing every
+# function signature to be fully annotated. Bump to "strict" once the
+# codebase is fully typed and the third-party stub gaps below are gone.
+typeCheckingMode = "standard"
+pythonVersion = "3.12"
+pythonPlatform = "Windows"
+include = ["break_reminder", "tests", "main.py"]
+exclude = ["**/__pycache__", "build", "dist", ".venv"]
+# Don't fail just because pynput / pyttsx3 / pywin32 ship without
+# bundled stubs — they're isolated behind small, typed wrappers in our
+# code, and reportMissingTypeStubs would force us to either vendor stubs
+# or add `# type: ignore` to every import.
+reportMissingTypeStubs = "none"
+
+# ---------------------------------------------------------------------------
+# PyInstaller produces dist/BreakReminder/ — see installer/break-reminder.nsi.
+# Build it with:
+#   uv run pyinstaller --noconfirm --windowed --name BreakReminder \
+#                      --collect-submodules pynput main.py
+# ---------------------------------------------------------------------------

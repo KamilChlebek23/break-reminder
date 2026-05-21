@@ -1,0 +1,83 @@
+# Git line-ending and binary-file policy.
+#
+# Mirrors the rules in `.editorconfig`. The two files solve different
+# problems and you need both:
+#   * `.editorconfig` controls how editors WRITE files in the working
+#     tree (per-user editor behavior).
+#   * `.gitattributes` controls how Git STORES files in the index and
+#     CHECKS THEM OUT across machines (per-repo git behavior).
+#
+# Without `.gitattributes`, contributors on different machines may
+# commit different line endings depending on each machine's
+# `core.autocrlf` setting — producing noisy diffs and, occasionally,
+# breaking Windows-only formats (NSIS, batch) or shell scripts.
+#
+# After editing this file, run once:
+#   git add --renormalize .
+# to re-checkout existing files under the new policy.
+
+# ---------------------------------------------------------------------------
+# Default — let Git auto-detect text vs binary, normalize text on commit.
+# ---------------------------------------------------------------------------
+* text=auto
+
+# ---------------------------------------------------------------------------
+# Source — force LF. Matches `.editorconfig` and the project's `end_of_line`
+# setting. LF works fine on Windows because Git's checkout filter handles
+# any per-user `core.autocrlf` translation.
+# ---------------------------------------------------------------------------
+*.py         text eol=lf
+*.toml       text eol=lf
+*.yml        text eol=lf
+*.yaml       text eol=lf
+*.json       text eol=lf
+*.md         text eol=lf
+*.nsi        text eol=lf
+*.ini        text eol=lf
+*.cfg        text eol=lf
+*.txt        text eol=lf
+
+# Dotfiles that lack an extension — pin them explicitly.
+.editorconfig    text eol=lf
+.gitignore       text eol=lf
+.gitattributes   text eol=lf
+.python-version  text eol=lf
+LICENSE          text eol=lf
+
+# ---------------------------------------------------------------------------
+# Windows-only formats — force CRLF. cmd.exe and PowerShell are forgiving
+# about LF in scripts most of the time, but a few interpreter / loader
+# paths (older `cmd.exe`, some signed-script verifiers) still require
+# CRLF. Locking these here avoids a class of "works on my box" bugs.
+# ---------------------------------------------------------------------------
+*.bat        text eol=crlf
+*.cmd        text eol=crlf
+*.ps1        text eol=crlf
+
+# ---------------------------------------------------------------------------
+# Binary assets — never normalize. Without `binary`, Git would attempt
+# line-ending translation on these and corrupt them silently.
+# ---------------------------------------------------------------------------
+*.png        binary
+*.jpg        binary
+*.jpeg       binary
+*.gif        binary
+*.ico        binary
+*.icns       binary
+*.pdf        binary
+*.zip        binary
+*.gz         binary
+*.7z         binary
+*.exe        binary
+*.dll        binary
+*.so         binary
+*.dylib      binary
+
+# ---------------------------------------------------------------------------
+# Lock files — text but never hand-edited; collapse diffs in PR view.
+# `linguist-generated` tells GitHub to treat them as machine-generated
+# (hidden by default in PR diffs and language-stat calculations).
+# ---------------------------------------------------------------------------
+uv.lock              text eol=lf linguist-generated=true
+poetry.lock          text eol=lf linguist-generated=true
+package-lock.json    text eol=lf linguist-generated=true

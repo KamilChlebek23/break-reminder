@@ -1,0 +1,28 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.agents/skills/10x-cli-guide/
+.agents/skills/10x-cli-setup/
+.cursor/rules/10x-course.mdc
+.cursor/skills/10x-*/
+.cursor/.10x-cli-manifest.json/
+
+# Virtual environments
+.venv
+
+# PyInstaller / installer build output
+*.spec
+installer/BreakReminder-Setup-*.exe
+
+# IDE / editor noise
+.vscode/
+.idea/
+*.swp
+
+# OS
+Thumbs.db
+.DS_Store

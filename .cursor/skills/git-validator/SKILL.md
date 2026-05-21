@@ -1,17 +1,19 @@
 ---
 name: git-validator
 description: >-
-  Audit a repository for git hygiene before commit or push. Three read-only
-  gates: (1) confirm every path whose name starts with the '10x-' prefix is
-  covered by .gitignore, (2) validate the LICENSE file exists, matches the
-  pyproject.toml license field, and the copyright year covers the current
-  year, (3) scan working-tree files for accidentally committed secrets
-  (AWS / GitHub / Slack / Stripe / OpenAI / Google API keys, JWTs,
-  private-key blocks, high-entropy assignments to password / secret / token /
-  api_key). Surfaces findings and proposes fixes; never auto-edits any file.
-  Use when the user says "validate git", "git hygiene", "run git-validator",
-  "audit before commit", "pre-push check", or asks for a sanity check before
-  pushing.
+  Audit a repository for git hygiene before commit or push. Three gates:
+  (1) confirm every path whose name SEGMENT contains '10x' anywhere is
+  covered by .gitignore — interactively asks the user which findings to
+  add and appends the selected entries to .gitignore on confirmation,
+  (2) validate the LICENSE file exists, matches the pyproject.toml license
+  field, and the copyright year covers the current year, (3) scan
+  working-tree files for accidentally committed secrets (AWS / GitHub /
+  Slack / Stripe / OpenAI / Google API keys, JWTs, private-key blocks,
+  high-entropy assignments to password / secret / token / api_key). Gates
+  2 and 3 are strictly read-only; only Gate 1 may modify .gitignore, and
+  only after explicit user confirmation. Use when the user says "validate
+  git", "git hygiene", "run git-validator", "audit before commit",
+  "pre-push check", or asks for a sanity check before pushing.
 disable-model-invocation: true
 ---
 
@@ -19,9 +21,11 @@ disable-model-invocation: true
 
 ## Purpose
 
-Three-gate inspection of the working tree, run on demand. Read-only. The
-skill produces a findings report and proposes fixes. It must not modify any
-file in the repository.
+Three-gate inspection of the working tree, run on demand. Gates 2 (LICENSE)
+and 3 (sensitive data) are strictly read-only. Gate 1 (10x substring path
+coverage) may APPEND to `.gitignore` and only `.gitignore`, only after the
+user explicitly selects which findings to ignore via the AskQuestion form.
+No other file in the repository is ever modified by this skill.
 
 ## Workflow
 
@@ -30,7 +34,7 @@ short-circuit on the first failure — the user wants the full picture in one
 pass.
 
 ```
-[ ] Gate 1 — 10x- prefix coverage in .gitignore
+[ ] Gate 1 — 10x substring coverage in .gitignore (interactive)
 [ ] Gate 2 — LICENSE compliance
 [ ] Gate 3 — Sensitive data scan
 [ ] Aggregate findings into the Report template at the end of this file
@@ -39,84 +43,156 @@ pass.
 Each gate concludes with one of three statuses:
 
 - **PASS** — no findings.
-- **WARN** — findings exist but do not block a push (year drift, likely test
+- **WARN** — findings exist but do not block a push (untracked 10x-named
+  paths the user reviewed and declined to ignore, year drift, likely test
   fixture, etc.).
-- **FAIL** — findings exist that should block a push (uncovered 10x- path,
-  license mismatch, real secret).
+- **FAIL** — findings exist that should block a push (tracked 10x-named
+  path, license mismatch, real secret).
 
 ---
 
-## Gate 1 — 10x- prefix coverage in .gitignore
+## Gate 1 — 10x substring coverage in .gitignore
 
 ### Goal
 
-Every file or directory whose **name segment** starts with `10x-` must be
-covered by `.gitignore`. Anything tracked is a high-severity finding;
-anything untracked but unignored is a medium-severity finding.
+Every file or directory whose **name segment** contains the substring `10x`
+anywhere (prefix, infix, or suffix — any position) should be either covered
+by `.gitignore` or explicitly acknowledged by the user. Tracked paths are a
+high-severity finding (FAIL); untracked-but-unignored paths are surfaced
+through an interactive AskQuestion form so the user can decide per-path
+whether to add them to `.gitignore`.
 
 ### Steps
 
-1. Enumerate **tracked** 10x- paths:
+1. Enumerate **tracked** paths whose any segment contains `10x`:
 
    ```bash
-   git ls-files | rg "(^|/)10x-"
+   git ls-files | rg "10x"
    ```
 
-2. Enumerate **untracked but unignored** 10x- paths (these are precisely the
-   ones `.gitignore` is missing):
+2. Enumerate **untracked but unignored** paths whose any segment contains
+   `10x` (these are the candidates for the AskQuestion prompt):
 
    ```bash
-   git ls-files --others --exclude-standard | rg "(^|/)10x-"
+   git ls-files --others --exclude-standard | rg "10x"
    ```
 
-3. Collapse each match up to the **top-level `10x-*` segment**. Example:
-   `.cursor/skills/10x-foo/SKILL.md` collapses to `.cursor/skills/10x-foo/`.
-   Deduplicate.
+   Match is case-sensitive lowercase. The 10xDevs ecosystem is uniformly
+   lowercase; if a future need arises for `10X` matching, change the regex
+   to `10[xX]` in both commands above.
 
-4. Read `.gitignore` (if present) for context — used only to render the
-   "proposed additions" block in the canonical style of the existing file
-   (trailing slash on directories, no leading slash unless the file already
-   uses one).
+3. **Collapse rule.** For each match, walk the path from the root and stop
+   at the first segment that contains `10x`. Truncate at the end of that
+   segment, with a trailing `/` if it's a directory; otherwise use the file
+   path itself. Deduplicate.
+
+   Worked examples:
+
+   - `.cursor/skills/10x-foo/SKILL.md` → `.cursor/skills/10x-foo/`
+   - `tests/test_10x_things.py` → `tests/test_10x_things.py`
+     (no enclosing 10x-named directory; the file itself carries the match)
+   - `parent/no10xbar/file.py` → `parent/no10xbar/`
+     (yes — `no10xbar` contains `10x`, substring match, not prefix)
+   - `.cursor/.10x-cli-manifest.json/` → `.cursor/.10x-cli-manifest.json/`
+
+4. Read `.gitignore` (if present) for two reasons:
+
+   - Detect the existing leading-slash convention so any new entries match.
+   - Idempotency check — if a candidate is already a literal line in
+     `.gitignore`, mark it `[already covered]` and skip it from the prompt.
 
 ### Coverage rule
 
-A 10x- path is considered **covered** iff it does not appear in either of
-the two `git ls-files` outputs above. Reasoning: `git ls-files` and
-`--exclude-standard` already evaluate `.gitignore` patterns, including
-wildcards and anchors — so anything still listed is, by definition, not
+A 10x-substring path is considered **covered** iff it does not appear in
+either of the two `git ls-files` outputs above. Reasoning: `git ls-files`
+and `--exclude-standard` already evaluate `.gitignore` patterns, including
+wildcards and anchors — anything still listed is, by definition, not
 covered.
 
-### Proposed-fix collapse rule
+### Interactive flow
 
-- **1 or 2 uncovered paths** → propose individual path-anchored entries
-  matching the existing `.gitignore` style (trailing `/` for directories).
-- **3 or more uncovered paths** → propose individual entries **and** offer a
-  single canonical wildcard alternative (`**/10x-*` for repo-wide, or a
-  scoped variant like `.cursor/skills/10x-*/` when all hits cluster under one
-  parent).
+Branch on finding count after collapse + dedupe:
+
+- **0 findings** → render Gate 1 PASS, no prompt, move on.
+- **1 or 2 findings** → emit a single `AskQuestion` with
+  `allow_multiple: true`, one option per discovered path. The user checks
+  the paths they want appended to `.gitignore`.
+- **3 or more findings** → same multi-select, PLUS a wildcard alternative
+  option when findings cluster under a common ancestor (e.g.
+  `.cursor/skills/*10x*/`). If the user selects both the wildcard and one
+  or more individual paths, the skill writes both and notes the redundancy
+  in the report.
+
+The AskQuestion options must include the literal path that would be
+written to `.gitignore` so the user can audit the proposed entry exactly.
+A "Skip all" outcome is implicit — the user simply leaves every checkbox
+unchecked.
+
+### `.gitignore` write rules
+
+After the user answers, append the selected entries to `.gitignore`:
+
+- **Append-only.** Never rewrite or reorder existing lines.
+- **Style mirroring.** Match the existing `.gitignore` convention for
+  leading slashes (most repos omit them; respect whatever the file uses).
+  Append a trailing `/` for directory entries.
+- **Idempotency.** If a selected entry is already a literal line in
+  `.gitignore`, skip it (do not double-add) and report it as
+  `[already covered]`.
+- **Atomicity.** Write all selected entries in a single `StrReplace`
+  call (append-after-last-line). Do not chain multiple StrReplace calls
+  on `.gitignore` — partial failure must not leave the file half-updated.
+
+### Tracked-file handling
+
+If a discovered path is **tracked** (appears in `git ls-files`),
+`.gitignore` alone will NOT untrack it — git already has a tracked record.
+The skill renders such findings in a separate report sub-section and
+prints the manual remediation command:
+
+```
+git rm --cached <path>
+```
+
+The skill **never** invokes `git rm`, `git add`, `git commit`,
+`git checkout`, or any other index-mutating command. This is enforced by
+the Operating Rules below.
+
+Status implication: any tracked finding bumps Gate 1 to **FAIL**
+regardless of how many untracked findings the user added or declined.
 
 ### Output format
 
 ```
-Gate 1: 10x- prefix coverage — FAIL (3 uncovered, 0 tracked)
+Gate 1: 10x substring coverage — WARN (3 findings: 2 added, 1 declined, 0 tracked)
 
-Uncovered paths:
-  - .cursor/skills/10x-stack-assess/        [untracked]
-  - .cursor/skills/10x-tech-stack-selector/ [untracked]
-  - .cursor/skills/10x-health-check/        [untracked]
+Discovered:
+  - .cursor/skills/something-10x/         [untracked]
+  - tests/test_10x_things.py              [untracked]
+  - .cursor/.10x-cli-manifest.json/       [untracked]
 
-Proposed .gitignore additions:
-  .cursor/skills/10x-stack-assess/
-  .cursor/skills/10x-tech-stack-selector/
-  .cursor/skills/10x-health-check/
+Added to .gitignore by this run:
+  + .cursor/skills/something-10x/
+  + .cursor/.10x-cli-manifest.json/
 
-Alternative (covers all current and future 10x- artifacts under
-.cursor/skills/):
-  .cursor/skills/10x-*/
+Declined by user:
+  - tests/test_10x_things.py
+
+Tracked — requires manual `git rm --cached <path>`:
+  (none)
 ```
 
-If any path is **tracked**, render it with `[tracked — also needs git rm
---cached <path>]` and bump the gate status to FAIL regardless of count.
+If a tracked finding exists, render it under the last sub-section with
+the exact remediation command:
+
+```
+Tracked — requires manual `git rm --cached <path>`:
+  - some/tracked/path-with-10x/file.py
+
+  $ git rm --cached "some/tracked/path-with-10x/file.py"
+
+(Skill never invokes git rm. Apply manually, then commit.)
+```
 
 ---
 
@@ -282,9 +358,9 @@ After running all three gates, emit exactly this structure:
 
 ## Summary
 
-  Gate 1 — 10x- prefix coverage : <STATUS> (<n> findings)
-  Gate 2 — LICENSE compliance   : <STATUS> (<n> findings)
-  Gate 3 — Sensitive data scan  : <STATUS> (<n> findings)
+  Gate 1 — 10x substring coverage : <STATUS> (<n> findings)
+  Gate 2 — LICENSE compliance     : <STATUS> (<n> findings)
+  Gate 3 — Sensitive data scan    : <STATUS> (<n> findings)
 
   Overall: <PASS | WARN | FAIL>
   (Overall = the worst status across the three gates;
@@ -293,7 +369,8 @@ After running all three gates, emit exactly this structure:
 ## Findings
 
 ### Gate 1
-<gate 1 output block, or "No findings.">
+<gate 1 output block — Discovered / Added / Declined / Tracked sub-sections,
+or "No findings.">
 
 ### Gate 2
 <gate 2 output block>
@@ -303,12 +380,13 @@ After running all three gates, emit exactly this structure:
 
 ## Proposed actions
 
-1. <concrete next step, e.g. "Add three lines to .gitignore">
+1. <concrete next step, e.g. "Apply `git rm --cached path/with/10x/file.py`">
 2. <concrete next step, e.g. "Update LICENSE copyright header">
 3. <concrete next step, e.g. "Remove or rotate the leaked GitHub PAT in foo.py:42">
 
-(No files have been modified by this skill. Apply the proposed changes
-manually if you agree.)
+(Gate 1 may have appended entries to `.gitignore` based on your
+multi-select answer; that change is already on disk. No other file is
+ever modified by this skill — apply Gate 2 / Gate 3 fixes manually.)
 ```
 
 ---
@@ -317,17 +395,24 @@ manually if you agree.)
 
 These are hard rules. Do not relax them per run.
 
-- **Read-only.** Never call any tool that writes, creates, deletes, or
-  renames files. Never run `git add`, `git commit`, `git rm`, `git
-  checkout`, or any command that mutates the index or working tree.
+- **Read-only by default; one carve-out for Gate 1.** The skill MAY append
+  entries to `.gitignore` and ONLY `.gitignore`, and ONLY when the user has
+  explicitly selected them through the AskQuestion form in Gate 1. No other
+  file may be created, modified, deleted, or renamed by this skill —
+  including `.gitignore` itself outside the Gate 1 user-confirmed flow. The
+  skill NEVER invokes `git add`, `git commit`, `git rm`, `git checkout`, or
+  any other command that mutates the git index, HEAD, or working tree.
 - **Always redact.** No full secret value ever appears in the report — even
   if the user asks for it. Refer to redaction format above.
 - **Cite paths.** Use backticks and `file:line` form for every finding.
   Forward slashes only.
 - **Run all three gates.** Never short-circuit. Aggregate results before
   reporting.
-- **Fallback when `.gitignore` is absent.** Gate 1 reports FAIL with a
-  proposed minimal `.gitignore` body covering all discovered 10x- paths.
+- **Fallback when `.gitignore` is absent.** Gate 1 will CREATE `.gitignore`
+  with the user-selected entries (still gated on the AskQuestion form — if
+  the user declines all candidates, no file is created). Creating
+  `.gitignore` for the first time is treated as the "append" carve-out
+  applied to a zero-length file.
 - **Fallback when `pyproject.toml` is absent.** Gate 2 runs sub-checks 1
   (existence) and 4 (year currency) only; sub-checks 2, 3, and 5 are
   skipped and reported as "skipped — no pyproject.toml".

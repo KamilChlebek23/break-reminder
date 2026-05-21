@@ -26,3 +26,7 @@ installer/BreakReminder-Setup-*.exe
 # OS
 Thumbs.db
 .DS_Store
+
+# Added by /git-validator on 2026-05-21 (Gate 1, 10x substring coverage)
+.cursor/.10x-cli-manifest.json
+10x-1234

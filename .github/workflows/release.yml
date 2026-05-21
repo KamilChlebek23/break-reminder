@@ -100,8 +100,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Install NSIS
-        # NSIS is preinstalled on windows-latest as `makensis` on PATH.
-        # If GitHub ever drops it, swap in: choco install nsis -y
+        # NSIS is no longer shipped on the windows-latest image (it was
+        # removed during the 2024-2025 image-size cleanup). Chocolatey IS
+        # preinstalled, so we use it. The GITHUB_PATH append is required
+        # because choco's own PATH update doesn't propagate to the
+        # already-running job — subsequent steps would still see the old
+        # PATH and `makensis` would still not resolve.
+        run: |
+          choco install nsis -y --no-progress
+          Add-Content $env:GITHUB_PATH "C:\Program Files (x86)\NSIS"
+
+      - name: Verify NSIS install
         run: makensis /VERSION
 
       - name: Build installer

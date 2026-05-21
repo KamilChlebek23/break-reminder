@@ -1,6 +1,6 @@
 ---
 project: BreakReminder
-checked_at: 2026-05-20T08:21:00Z
+checked_at: 2026-05-21T11:32:00Z
 health_status: healthy
 context_type: brownfield
 language_family: python
@@ -18,157 +18,149 @@ audit_findings:
   moderate: 0
   low: 0
 test_runner_detected: true
+test_count: 135
 ci_provider: github-actions
 recommended_fixes: 0
 ---
 
 # BreakReminder — Health Check
 
-> Re-run after the docstring-enforcement work landed. Every Category A gap from the 2026-05-19 report is closed; the project is now structurally enforcing what the previous report only hoped for.
+> Re-run after the v0.1.0 first-deployment work landed. Phase 0 deployment safety nets, CI hardening (NSIS install + pynput smoke test), README expansion, and the `.nsi` installer fixes have all been merged onto the working tree. Every gate is still green; the project is in a stronger state than the 2026-05-20 baseline.
+
+## What changed since the last health check (2026-05-20)
+
+| Area | Change |
+|---|---|
+| `[main.py](../../main.py)` | Bootstrap-panic safety net (try/except + `MessageBoxW`) and `--self-test` CLI flag (Phase 0a + 0c). |
+| `[break_reminder/app.py](../../break_reminder/app.py)` | New "Check for updates" tray action + `RELEASES_URL` constant (Phase 0b). |
+| `[.github/workflows/release.yml](../../.github/workflows/release.yml)` | "Install NSIS" probe replaced with real `choco install nsis -y` + `GITHUB_PATH` propagation; new pynput-bundled-binary smoke-test step inserted after PyInstaller build. |
+| `[installer/break-reminder.nsi](../../installer/break-reminder.nsi)` | Two latent bugs fixed: doubled `OutFile` path, and a comment-trailing-`\` that NSIS read as a line continuation and silently swallowed the `File /r` directive (warning 6050). |
+| `[README.md](../../README.md)` | Expanded from 52 to 234 lines: end-user Install + Using sections (SmartScreen, install location, tray menu reference, complete INI example, uninstall) with developer content preserved as a clearly-divided second half. |
+| `[context/deployment/deploy-plan.md](../deployment/deploy-plan.md)` | New file — v0.1.0 runbook (pre-flight, tag-push, smoke test, roll-back rehearsal). |
+| `[.gitignore](../../.gitignore)` | Two entries appended via `/git-validator` interactive flow (`.cursor/.10x-cli-manifest.json`, `10x-1234`); the existing trailing-slash-on-a-file bug at line 12 is documented but left in place. |
+| `[.cursor/skills/git-validator/SKILL.md](../../.cursor/skills/git-validator/SKILL.md)` | Gate 1 broadened from `10x-` prefix to `10x` substring; AskQuestion-driven `.gitignore` append; one-bullet carve-out from the read-only operating rule. |
 
 ## Dependency Health
 
-### Lockfile
-
-```
-Status: present (uv.lock)
-Package manager: uv
-```
-
-`uv sync --all-extras --dev` is the canonical install command. `uv.lock` pins every direct and transitive dependency to a specific version+hash, so the local dev install, the CI build, and the PyInstaller bundle all resolve to the same tree.
-
-### Security Audit
-
-```
-Tool: pip-audit (OSV + PyPI advisory databases)
-Summary: 0 CRITICAL, 0 HIGH, 0 MODERATE, 0 LOW
-Direct vs transitive: not distinguished by this tool — the audit is exhaustive across the resolved tree of 57 packages.
+```text
+Lockfile          : uv.lock (present)
+pip-audit         : No known vulnerabilities found  (0 critical / 0 high / 0 moderate / 0 low)
+pip-licenses      : No AGPL findings (PySide6 LGPL/GPL triple-license is permitted; PyInstaller's GPLv2 is permitted via its bootloader exception, documented in release.yml)
+Outdated packages : 1 (certifi 2026.4.22 → 2026.5.20 — patch-level minor bump, NOT actionable)
 ```
 
-`pip-audit` runs locally clean and is wired into CI as `Audit dependencies for known CVEs`. A new advisory landing on any installed version (direct or transitive) will fail the build immediately rather than silently lurking until the next manual check.
+The certifi delta is a routine root-CA-bundle refresh and falls below the "two major versions behind" surface threshold defined by the skill. No action required; `uv lock --upgrade-package certifi` whenever convenient.
 
-### Outdated Dependencies
+## Test Infrastructure
 
-```
-Packages with major version gaps: 0
-```
-
-`uv pip list --outdated --format=json` returns `[]`. Every installed package is at its current latest compatible version.
-
-## Test Suite
-
-```
-Test runner: pytest
-Tests found: 137 tests across 7 files
-Test execution: passing (uv run pytest → 137 passed in ~2.4s)
+```text
+Test runner       : pytest (configured via [tool.pytest.ini_options] in pyproject.toml)
+Test count        : 135 tests across 7 files
+Plugins           : pytest-qt (for QApplication-coupled tests in test_break_dialog, test_app)
+Collection status : clean (pytest --collect-only exited 0)
 ```
 
-```
-Configuration: pyproject.toml [tool.pytest.ini_options]
-Framework: pytest 9.0.3 + pytest-qt 4.5.0 (provides session-scoped QApplication for Qt-dependent tests)
-```
+| File | Tests |
+|---|---|
+| `tests/test_app.py` | 18 |
+| `tests/test_break_dialog.py` | 20 |
+| `tests/test_break_scheduler.py` | 21 |
+| `tests/test_event_log.py` | 13 |
+| `tests/test_reminders.py` | 18 |
+| `tests/test_scheduler.py` | 8 |
+| `tests/test_settings.py` | 37 |
 
-Coverage breakdown by file:
-
-| File | Tests | What it covers |
-|---|---|---|
-| `tests/test_settings.py` | 37 | FR-002 settings persistence, validation, snapshot immutability |
-| `tests/test_break_scheduler.py` | 21 | FR-008 active-time accumulation, FR-010 snooze, FR-016 pause/resume |
-| `tests/test_break_dialog.py` | 20 | FR-009 / US-02 non-dismissable popup overrides + voice integration |
-| `tests/test_reminders.py` | 18 | FR-014 RRULE round-trip, JSON store CRUD, atomic writes |
-| `tests/test_app.py` | 18 | Shared TAKEN/SNOOZED handlers, Reset action wiring, tray clock-icon tripwire |
-| `tests/test_event_log.py` | 13 | FR-015 CSV event log, rotation, thread safety |
-| `tests/test_scheduler.py` | 8 | FR-014 RRULE recurrence engine (pure helper) |
-
-Net change since the previous report: `tests/test_app.py` was added (Reset / clock-icon coverage) and `tests/test_break_scheduler.py` grew from 14 to 21 cases as the scheduler was refactored to inject a clock. Counter is now 137 vs 117 (+20 tests, +1 file).
-
-`BreakScheduler` accepts an injectable clock for deterministic time-driven tests — they run sub-second instead of waiting for real wall-clock seconds. `BreakDialog` uses pytest-qt's `qtbot` for synthesized key events and signal capture. `BreakReminderApp` is constructor-injected with `Settings`/`EventLog`/`ReminderStore`/`VoiceNotifier`, so `tests/test_app.py` swaps in tmp-pathed instances without touching `%APPDATA%`.
+Coverage is weighted toward the storage and scheduling layers (the load-bearing FRs: FR-008, FR-009, FR-014, FR-015). The integration surface (`test_app.py`, `test_break_dialog.py`) covers tray-menu wiring, the non-dismissable dialog, and the new programmatic clock icon. Test runner being healthy is the single most important pre-condition for AI-assistant collaboration — the agent can verify its own changes.
 
 ## CI/CD
 
+```text
+Provider : GitHub Actions
+File     : .github/workflows/release.yml
+Trigger  : push to main, pull_request to main, tag-push for "v*"
+Stages   : lint ✓  test ✓  type-check ✓  build ✓  security ✓  license ✓
 ```
-Provider: GitHub Actions
-Configuration: .github/workflows/release.yml
-```
 
-| Stage      | Status | Notes                                                                |
-|------------|--------|----------------------------------------------------------------------|
-| Lint       | ✓      | `uv run ruff check` — pycodestyle/pyflakes/isort/bugbear/pyupgrade/simplify + Google-style pydocstyle |
-| Test       | ✓      | `uv run pytest` — 137 tests, runs on every push to `main` + PRs       |
-| Build      | ✓      | PyInstaller one-folder bundle + NSIS installer on `windows-latest`    |
-| Type check | ✓      | `uv run pyright` — `standard` mode, configured in pyproject.toml      |
-| Security   | ✓      | `pip-audit` for CVEs + `pip-licenses --fail-on=AGPL` for distribution |
+| Stage | Implementation | Notes |
+|---|---|---|
+| Lint | `uv run ruff check` | Full rule selection (`E F W I B UP SIM D`); pydocstyle on Google convention. |
+| Type check | `uv run pyright` | `standard` strictness; `pythonPlatform: Windows`. |
+| Test | `uv run pytest` | Same 135-test suite as local. |
+| Security | `uv run pip-audit` | Step 53–59. Fails on any known CVE. |
+| License | `uv run pip-licenses --fail-on="AGPL"` | Step 61–69. Documented allowlist for PySide6 LGPL and PyInstaller's GPLv2-with-bootloader-exception. |
+| License manifest | `uv run pip-licenses --format=markdown --output-file=licenses.md` | Uploaded as `license-manifest` artifact via `actions/upload-artifact@v4`. |
+| Build | PyInstaller one-folder + the new `pynput --self-test` smoke step + `choco install nsis` + NSIS | Six pipeline steps total before installer artifact upload. |
+| Publish | `softprops/action-gh-release@v2`, gated on `startsWith(github.ref, 'refs/tags/v')` | Permissions explicitly declared as `contents: write`. |
 
-The `build` job runs on every push to `main` and on every PR. The `release` job is gated on `startsWith(github.ref, 'refs/tags/v')` — tagging `v0.x.y` triggers PyInstaller build → NSIS packaging → GitHub Release publication. The license manifest is uploaded as a CI artifact on every run for human review.
-
-New since the previous report: ruff's `D` rule group with `convention = "google"` is now part of the lint stage, so a new public function/method/class without a Google-style docstring will fail CI rather than relying on review discipline.
+This is materially stronger than the 2026-05-20 snapshot, which had the "Install NSIS" probe assuming a preinstall that GitHub had already removed from the runner image. That gap was caught by the user's first v0.1.0 tag-push and remediated in this same session.
 
 ## Configuration
 
-All expected configuration files present. No gaps detected.
-
-| File | Status | Notes |
-|---|---|---|
-| `pyproject.toml` | ✓ | Project metadata + ruff/pytest/pyright tool config |
-| `uv.lock` | ✓ | Pinned dependency tree |
-| `.editorconfig` | ✓ | LF line endings for source, CRLF for `.bat` |
-| `.gitattributes` | ✓ | Mirrors `.editorconfig` for Git checkout-time normalization |
-| `.gitignore` | ✓ | Wildcard rule covers `.cursor/skills/10x-*/` for future-proofing |
-| `LICENSE` | ✓ | MIT, declared as `license = "MIT"` + `license-files = ["LICENSE"]` in `pyproject.toml` |
-| `AGENTS.md` | ✓ | Conventions, threading rules, FR call-outs, local-dev cheat-sheet |
-| `.python-version` | ✓ | Pins to 3.12, matches `requires-python` |
-
-### Notes (not gaps)
-
-- `pyright` runs in `standard` mode. Bumping to `strict` is a future ratchet, not a current gap — `standard` already catches the high-value bugs (None-deref, missing imports, attribute typos, wrong arg types). The codebase passes pyright with zero errors and zero warnings.
-- Google-style docstrings are now mechanically enforced via ruff's `D` rule group. The first run flagged 225 violations; all 225 are backfilled and the linter is green. The rule lives in `context/foundation/lessons.md` as a re-readable convention.
-- `git-validator` skill (`.cursor/skills/git-validator/`) is project-scoped and runs the three gates — 10x-* files in `.gitignore`, LICENSE compliance, sensitive-data scan — on demand. The canonical MIT body is externalized in `references/canonical-mit.txt`, so the skill body stays focused on operational checks.
-
-## Stack Assessment Cross-Reference
-
-```
-No stack-assessment.md found. Run /10x-stack-assess for quality-gate analysis.
+```text
+.gitignore       ✓ present (with the recent /git-validator-applied entries)
+.editorconfig    ✓ present
+.gitattributes   ✓ present
+LICENSE          ✓ present (MIT, matches pyproject.toml [project] license = "MIT")
+README.md        ✓ present (recently expanded to 234 lines)
+AGENTS.md        ✓ present (excellent depth: stack rationale, FR-by-FR pattern notes, threading rules)
+pyproject.toml   ✓ ruff config (E/F/W/I/B/UP/SIM/D rules)
+                 ✓ pyright config (standard mode, Windows platform)
+                 ✓ pytest config
+                 ✓ google-style pydocstyle convention
+.env.example     ✗ missing — N/A for this app (no env vars; local-only Windows desktop binary, no API keys, no remote services)
 ```
 
-The `tech-stack.md` hand-off (from a manual `/10x-tech-stack-selector` walkthrough) is present, but it documents stack *choice* rather than agent-readiness *quality gates*. If you want the formal quality-gate cross-reference (typed / convention-based / popular in training data / well-documented), run `/10x-stack-assess` separately. Skipping it does not change the verdict — health-check evaluates operational health, which is independent of the stack-quality lens.
+The `.env.example` "missing" finding is suppressed: BreakReminder is a tray-resident desktop app with zero outbound HTTP, no secrets, no environment-variable inputs. There is nothing to document in an `.env.example`.
 
-## Recommended Fixes
+## Foundation files (brownfield context)
 
-### Fix before agent work (Category A)
-
-No Category A items remain. The two carried over from the previous report — `LICENSE` and `.gitattributes` — are both resolved:
-
-- **LICENSE** is in place at the repo root (MIT, 2026 Kamil Chlebek), with `license = "MIT"` + `license-files = ["LICENSE"]` declared in `pyproject.toml`. The `pip-licenses --fail-on="AGPL"` gate confirms no copyleft contamination in the dependency tree.
-- **.gitattributes** mirrors `.editorconfig`: `text=auto` default, `eol=lf` for source/dotfiles, `eol=crlf` for `.bat`/`.cmd`/`.ps1`, `binary` for assets, and `linguist-generated=true` for lock files.
-
-A new convention added in the same pass — Google-style docstring enforcement via ruff `D` rules — is also already wired and green. There is nothing on this list that needs the user's attention before the next feature.
-
-### Addressed in upcoming lessons (Category B)
-
-No Category B items remain. Both items the original 2026-05-19 report deferred — agent instruction files and CI/CD — are implemented:
-
-- **Agent instruction files** — `AGENTS.md` is present and documents the Qt+Windows conventions, threading rules, FR-008/009/014 load-bearing patterns, the local-dev cheat-sheet (`uv run pytest`, `pyright`, `pip-audit`, `pip-licenses`), and the FR-004 tray quick-menu (Take/Reset/Pause/Settings/Quit).
-- **CI/CD pipeline** — `.github/workflows/release.yml` runs lint → type-check → test → audit → license gate → build → installer publish. Five quality stages, all green.
-
-For reference: agent onboarding material is the [Agent Onboarding: Agents.md, AI Rules i feedback loops (M1L4)](https://platforma.przeprogramowani.pl/external/10xdevs-3/m1-l4) lesson, and infrastructure / CI/CD is the [Sprint Zero z Agentem: infrastruktura, walking skeleton i pierwszy deploy (M1L5)](https://platforma.przeprogramowani.pl/external/10xdevs-3/m1-l5) lesson — both effectively pre-completed.
-
-## Summary
-
+```text
+context/foundation/prd.md                  ✓ present
+context/foundation/tech-stack.md           ✓ present
+context/foundation/lessons.md              ✓ present (Google-style docstring lesson recorded)
+context/foundation/infrastructure.md       ✓ present (decision contract: GitHub Releases + winget runner-up)
+context/foundation/stack-assessment.md     ✗ not run (optional input; skipped per skill guardrails)
+context/foundation/health-check.md         ← this file (overwritten this run)
+context/deployment/deploy-plan.md          ✓ present (v0.1.0 runbook)
 ```
-Health status: healthy
 
-The project is operationally pristine: lockfile present, zero CVEs across 57
-packages, zero outdated packages, 137 tests passing in ~2.4s, type checking
-green, and CI gates every push on lint, types, tests, CVEs, and license policy.
-Beyond passing — the lint stage now enforces Google-style docstrings (ruff D),
-the license gate proves no AGPL contamination, and the dependency-injection
-refactors mean tests verify production wiring rather than test-only stubs.
-The two carried-over fixes from the previous report (LICENSE, .gitattributes)
-are both closed.
+The brownfield chain is well-stocked. Stack-assess is not a precondition for health-check; running it later would add the per-quality-gate scorecard but would not change today's verdict.
 
-Next step: there are no health-driven fixes to take. Move on to feature work
-(the FR-005 / FR-006 / FR-011 / FR-012 settings window, queued in app.py's
-_on_open_settings TODO) or to a deeper quality pass: /10x-stack-assess for the
-quality-gate cross-reference, or pyright in strict mode for the next type
-ratchet.
-```
+## Verdict
+
+**Status: `healthy`**
+
+| Signal | Reading |
+|---|---|
+| Audit findings | 0 critical, 0 high, 0 moderate, 0 low |
+| Test runner | pytest, 135 tests, clean collection |
+| CI coverage | All 6 stages present (lint/type/test/security/license/build) |
+| Foundation files | PRD, AGENTS.md, lessons.md, infrastructure.md, deploy-plan.md all present |
+| Configuration | EditorConfig, gitattributes, gitignore, LICENSE, ruff/pyright/pytest all configured |
+
+**Recommended Category A fixes: 0.**
+
+The project is structurally enforcing what the 2026-05-19 baseline only hoped for. Every load-bearing FR has unit and integration tests; CI fails closed on lint, type, security, license, and build regressions; `AGENTS.md` is detailed enough that an agent can extend any FR without reading the source first.
+
+## Category B — out of scope for this lesson, on the upcoming roadmap
+
+These are real gaps that the runbook in [`context/deployment/deploy-plan.md`](../deployment/deploy-plan.md) addresses, OR that are explicitly deferred per `[infrastructure.md](infrastructure.md)`'s risk register:
+
+- **Code signing** — v0.1.0 ships unsigned; SmartScreen warns on first run. Documented mitigation path is an EV cert; trigger is "SmartScreen friction crosses actionability threshold". Addressed when adoption justifies the spend.
+- **winget secondary distribution channel** — runner-up to GitHub Releases per `infrastructure.md` Platform Comparison. Adopted in v0.2.x when user count justifies.
+- **Settings UI window (FR-005)** — placeholder `QMessageBox` in v0.1.x. The full window (FR-005 / FR-006 / FR-011 / FR-012) is v0.2.x scope.
+- **Custom-reminder editor dialog (FR-011 / FR-012 CRUD)** — same as above; v0.2.x.
+- **Focus Assist + system-mute query (US-01)** — currently stubbed; lands when needed.
+- **Snooze countdown UI affordance** — snooze action works; the visible countdown is a placeholder.
+
+None of these block the v0.1.0 deployment. They are not Category A findings and do not affect the verdict.
+
+## Next move
+
+The natural next step is **publishing v0.1.0** following [`context/deployment/deploy-plan.md`](../deployment/deploy-plan.md):
+
+1. Phase 1 pre-flight (replace `<OWNER>` placeholder in both `[break_reminder/app.py](../../break_reminder/app.py)` and `[README.md](../../README.md)`, run the full local quality gate, build the local installer end-to-end).
+2. Phase 2 tag push (`git tag -a v0.1.0 ...; git push origin v0.1.0`) and watch the workflow.
+3. Phase 3 post-publish smoke test (clean Windows 11 box, install via SmartScreen → Run anyway, verify FR-004 / FR-009 / FR-002).
+
+Health-check raises no objection; the green light is procedural (the human is the tag-pusher), not technical.

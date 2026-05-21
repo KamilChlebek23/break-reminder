@@ -1,0 +1,4 @@
+# Placeholder so the resources/ folder stays in version control.
+# Drop a .ico for the tray icon and an .ico/.png for the window icon here,
+# then update break_reminder/app.py and installer/break-reminder.nsi to
+# reference them.

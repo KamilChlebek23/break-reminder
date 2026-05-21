@@ -1,0 +1,139 @@
+name: Release
+
+# Tag-driven release pipeline.
+# Push a tag like `v0.1.0` and this workflow will:
+#   1. Build the PyInstaller one-folder bundle on a Windows runner.
+#   2. Wrap it with NSIS into a Windows installer.
+#   3. Publish the installer to a GitHub Release tied to the tag.
+#
+# The "build" job also runs on every push/PR to main as a CI gate (without
+# the publishing step). That's why the publishing step is gated on
+# `startsWith(github.ref, 'refs/tags/v')`.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write # needed for `gh release create` / `softprops/action-gh-release`
+
+jobs:
+  build:
+    name: Build & test (windows-latest)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Lint
+        run: uv run ruff check
+
+      - name: Type check
+        # pyright is configured in pyproject.toml ([tool.pyright]).
+        # `--warnings` would also fail on warnings; we keep it strict on
+        # errors only for now and bump if warnings start creeping in.
+        run: uv run pyright
+
+      - name: Test
+        run: uv run pytest
+
+      - name: Audit dependencies for known CVEs
+        # pip-audit cross-references installed packages against the OSV /
+        # PyPI advisory databases. A new advisory in any transitive dep
+        # will fail this step; investigate by re-running locally with
+        # `uv run pip-audit` and either upgrading or adding a tactical
+        # `--ignore-vuln <id>` with a comment explaining why.
+        run: uv run pip-audit
+
+      - name: License check (deny AGPL)
+        # AGPL is the only license that would force open-sourcing the
+        # whole shipped installer. Everything else in the tree is either
+        # permissive (MIT/BSD/Apache/PSF) or scoped to a build tool with
+        # a runtime exception (PyInstaller is GPLv2 but its bootloader
+        # exception lets it produce non-GPL binaries — the installer is
+        # safe). LGPL deps (PySide6, pynput) are fine because Python's
+        # import system is dynamic linking by definition.
+        run: uv run pip-licenses --fail-on="AGPL"
+
+      - name: Generate license manifest
+        if: always() # produce the manifest even if the gate above flagged something
+        run: uv run pip-licenses --format=markdown --output-file=licenses.md
+
+      - name: Upload license manifest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: license-manifest
+          path: licenses.md
+          if-no-files-found: warn
+
+      - name: Build PyInstaller bundle
+        run: |
+          uv run pyinstaller `
+            --noconfirm `
+            --windowed `
+            --name BreakReminder `
+            --collect-submodules pynput `
+            main.py
+
+      - name: pynput submodule smoke test (bundled binary)
+        # Catches the silent-failure mode where --collect-submodules pynput
+        # missed a platform-specific submodule. The bundled binary is
+        # invoked with --self-test, which forces pynput's keyboard / mouse
+        # Listener classes to dispatch to their _win32 backends — exactly
+        # what PyInstaller has to bundle. Exit code propagates to CI.
+        run: |
+          .\dist\BreakReminder\BreakReminder.exe --self-test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Install NSIS
+        # NSIS is preinstalled on windows-latest as `makensis` on PATH.
+        # If GitHub ever drops it, swap in: choco install nsis -y
+        run: makensis /VERSION
+
+      - name: Build installer
+        run: makensis installer\break-reminder.nsi
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BreakReminder-installer
+          path: installer/BreakReminder-Setup-*.exe
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download installer artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: BreakReminder-installer
+          path: installer-out
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: installer-out/BreakReminder-Setup-*.exe
+          generate_release_notes: true
+          draft: false
+          prerelease: false

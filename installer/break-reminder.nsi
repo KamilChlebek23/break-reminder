@@ -14,7 +14,7 @@
 ;           (no Run-key registration here on purpose)
 
 !define APP_NAME      "BreakReminder"
-!define APP_VERSION   "0.2.0"
+!define APP_VERSION   "0.3.0"
 !define APP_PUBLISHER "BreakReminder"
 !define APP_EXE       "BreakReminder.exe"
 !define APP_REGKEY    "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}"

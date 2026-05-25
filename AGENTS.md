@@ -29,6 +29,8 @@ break_reminder/         # importable package, snake_case
     break_dialog.py     # non-dismissable break popup (FR-009)
     reminder_dialog.py  # dismissable custom-reminder popup (FR-013)
     voice.py            # pyttsx3 + Focus Assist gate (FR-007)
+  ui/
+    settings_dialog.py  # FR-005/006 settings window
   storage/
     paths.py            # %APPDATA%\BreakReminder resolver
     settings.py         # QSettings (INI) wrapper (FR-002/003/006)
@@ -44,6 +46,10 @@ main.py                 # thin entry; delegates to break_reminder.app.main
 ## Load-bearing patterns
 
 These patterns are non-trivial and must be preserved across edits. If you change any of them, update this file.
+
+### Where dialogs live — `notifications/` vs `ui/`
+
+`notifications/` holds popups that fire on events — the break dialog (`break_dialog.py`) and the custom-reminder popup (`reminder_dialog.py`). `ui/` holds user-initiated configuration surfaces — settings (`settings_dialog.py`) and future custom-reminder editors (S-05..S-08 in `context/foundation/roadmap.md`). Keep the split crisp: an event-driven popup belongs in `notifications/`; anything the user opens deliberately belongs in `ui/`.
 
 ### FR-008 — active-time accounting (`activity.py` + `scheduler.py`)
 

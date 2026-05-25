@@ -451,6 +451,7 @@ class TestCheckForUpdatesAction:
 
             Icon = RealQMessageBox.Icon
             ButtonRole = RealQMessageBox.ButtonRole
+            StandardButton = RealQMessageBox.StandardButton
 
             def __init__(self) -> None:
                 self.window_title: str = ""

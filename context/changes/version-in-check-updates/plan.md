@@ -188,21 +188,21 @@ None. Pure UX add to an existing slot; no persisted state, no schema, no install
 
 #### Automated
 
-- [x] 1.1 Unit tests pass: `uv run pytest tests/test_app.py::TestCheckForUpdatesAction`
-- [x] 1.2 Full suite still passes: `uv run pytest`
-- [x] 1.3 Type check passes: `uv run pyright break_reminder/app.py tests/test_app.py`
-- [x] 1.4 Lint passes (incl. `D` rule group): `uv run ruff check break_reminder/app.py tests/test_app.py`
-- [x] 1.5 Format check passes: `uv run ruff format --check break_reminder/app.py tests/test_app.py`
+- [x] 1.1 Unit tests pass: `uv run pytest tests/test_app.py::TestCheckForUpdatesAction` — eda6d89
+- [x] 1.2 Full suite still passes: `uv run pytest` — eda6d89
+- [x] 1.3 Type check passes: `uv run pyright break_reminder/app.py tests/test_app.py` — eda6d89
+- [x] 1.4 Lint passes (incl. `D` rule group): `uv run ruff check break_reminder/app.py tests/test_app.py` — eda6d89
+- [x] 1.5 Format check passes: `uv run ruff format --check break_reminder/app.py tests/test_app.py` — eda6d89
 
 ### Phase 2: Manual smoke + bookkeeping
 
 #### Manual
 
-- [ ] 2.1 Dialog title is "About BreakReminder"
-- [ ] 2.2 Dialog body shows the bold "BreakReminder v0.2.0" line
-- [ ] 2.3 Dialog body shows the pyproject description
-- [ ] 2.4 Two buttons exist with labels "Open Releases" and "Close"
-- [ ] 2.5 "Open Releases" is the default (Enter triggers it)
-- [ ] 2.6 "Close" dismisses the dialog without opening a browser
-- [ ] 2.7 "Open Releases" opens the GitHub Releases URL in the default browser
+- [x] 2.1 Dialog title is "About BreakReminder"
+- [x] 2.2 Dialog body shows the bold "BreakReminder v0.2.0" line
+- [x] 2.3 Dialog body shows the pyproject description
+- [x] 2.4 Two buttons exist with labels "Open Releases" and "Close"
+- [x] 2.5 "Open Releases" is the default (Enter triggers it)
+- [x] 2.6 "Close" dismisses the dialog without opening a browser
+- [x] 2.7 "Open Releases" opens the GitHub Releases URL in the default browser
 - [ ] 2.8 change.md flipped from `implementing` to `implemented`

@@ -18,6 +18,16 @@ from PySide6.QtCore import QSettings
 
 from break_reminder.storage.paths import settings_ini_path
 
+# --- Bounds (FR-006) ------------------------------------------------------
+
+# Inclusive range for the break interval in minutes. Single source of truth
+# for the persistence layer's clamp/validation (see ``break_interval_min``
+# below) and the UI layer's spinbox bounds (see
+# ``break_reminder/ui/settings_dialog.py``). Loosening the range requires
+# changing only this pair plus the matching FR-006 wording in the PRD.
+BREAK_INTERVAL_MIN_MINUTES = 1
+BREAK_INTERVAL_MAX_MINUTES = 240
+
 # --- Defaults -------------------------------------------------------------
 
 DEFAULT_BREAK_INTERVAL_MIN = 60  # FR-006 default; user-configurable 1–240
@@ -107,13 +117,17 @@ class Settings:
 
     @property
     def break_interval_min(self) -> int:
-        """Configured break-interval in minutes, clamped to FR-006's [1, 240]."""
-        return max(1, min(240, self._get_int(_Keys.BREAK_INTERVAL_MIN, DEFAULT_BREAK_INTERVAL_MIN)))
+        """Configured break-interval in minutes, clamped to FR-006's range."""
+        raw = self._get_int(_Keys.BREAK_INTERVAL_MIN, DEFAULT_BREAK_INTERVAL_MIN)
+        return max(BREAK_INTERVAL_MIN_MINUTES, min(BREAK_INTERVAL_MAX_MINUTES, raw))
 
     @break_interval_min.setter
     def break_interval_min(self, minutes: int) -> None:
-        if not 1 <= minutes <= 240:
-            raise ValueError("break_interval_min must be in [1, 240] (FR-006)")
+        if not BREAK_INTERVAL_MIN_MINUTES <= minutes <= BREAK_INTERVAL_MAX_MINUTES:
+            raise ValueError(
+                f"break_interval_min must be in "
+                f"[{BREAK_INTERVAL_MIN_MINUTES}, {BREAK_INTERVAL_MAX_MINUTES}] (FR-006)"
+            )
         self._qs.setValue(_Keys.BREAK_INTERVAL_MIN, minutes)
 
     @property

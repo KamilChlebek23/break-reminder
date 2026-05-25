@@ -139,7 +139,7 @@ class TestSave:
         assert second_settings.break_interval_min == 90
 
     def test_reject_does_not_persist(
-        self, dialog: SettingsDialog, settings: Settings, ini_path: Path
+        self, qtbot, dialog: SettingsDialog, settings: Settings, ini_path: Path
     ) -> None:
         """``reject()`` after editing leaves ``Settings.break_interval_min`` unchanged."""
         # Pre-set to a known value so we can observe the absence of writes.
@@ -147,6 +147,7 @@ class TestSave:
         # Construct a fresh dialog so the spinbox loads the new value.
         # (The fixture-built dialog was constructed before this test set 75.)
         d = SettingsDialog(settings=settings)
+        qtbot.addWidget(d)
         d._break_interval_spinbox.setValue(15)
 
         d.reject()
@@ -203,3 +204,141 @@ class TestLayout:
         # Loose check: any QSpinBox child suffices. The TestLoad cases
         # cover the bounds and value semantics explicitly.
         assert dialog.findChild(QSpinBox) is not None
+
+
+# ---------------------------------------------------------------------------
+# Validation feedback — tooltip fires only on user-typed out-of-range entry
+# ---------------------------------------------------------------------------
+
+
+class TestValidationFeedback:
+    """The transient tooltip fires only when the user typed an out-of-range value.
+
+    Empirical Qt behavior verified during /10x-impl-review on 2026-05-25:
+    ``QSpinBox`` does not "clamp" out-of-range typing — it reverts (below
+    minimum) or truncates to a valid prefix (above maximum). By the time
+    ``editingFinished`` fires the user's typed intent is gone from
+    ``lineEdit.text()``. ``SettingsDialog`` therefore captures raw typed
+    text via ``lineEdit.textEdited`` BEFORE Qt's fixup runs and parses it
+    in the ``editingFinished`` slot.
+
+    These tests pin that contract in place: the textEdited capture must
+    populate ``_user_typed_text``, the editingFinished slot must consult
+    it (not the post-fixup display), and ``QToolTip.showText`` must fire
+    only when the captured value falls outside [1, 240]. The tests
+    monkeypatch ``QToolTip.showText`` to a recording stub so the suite
+    never depends on a real Qt cursor / screen geometry.
+    """
+
+    @staticmethod
+    def _patch_show_text(monkeypatch: pytest.MonkeyPatch) -> list[tuple]:
+        """Replace ``QToolTip.showText`` with a call-recording stub.
+
+        Returns:
+            The list that the stub appends ``(args, kwargs)`` tuples to.
+            Tests assert against ``len(...)`` and the recorded payload.
+        """
+        calls: list[tuple] = []
+
+        def _stub(*args: object, **kwargs: object) -> None:
+            calls.append((args, kwargs))
+
+        # Patch the symbol the dialog imports — settings_dialog imports
+        # QToolTip from PySide6.QtWidgets, so patching at the source
+        # covers the call site.
+        monkeypatch.setattr(
+            "break_reminder.ui.settings_dialog.QToolTip.showText",
+            _stub,
+        )
+        return calls
+
+    def test_text_edited_captures_typed_text(self, dialog: SettingsDialog) -> None:
+        """``_on_break_interval_text_edited`` snapshots the raw typed text."""
+        dialog._on_break_interval_text_edited("0 min")
+
+        assert dialog._user_typed_text == "0 min"
+
+    def test_in_range_typed_value_does_not_show_tooltip(
+        self,
+        dialog: SettingsDialog,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A valid in-range typed value commits cleanly — no tooltip."""
+        calls = self._patch_show_text(monkeypatch)
+
+        dialog._on_break_interval_text_edited("30 min")
+        dialog._on_break_interval_edited()
+
+        assert calls == []
+
+    def test_below_min_typed_value_shows_tooltip(
+        self,
+        dialog: SettingsDialog,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Typed value below the FR-006 minimum surfaces the range tooltip."""
+        calls = self._patch_show_text(monkeypatch)
+
+        dialog._on_break_interval_text_edited("0 min")
+        dialog._on_break_interval_edited()
+
+        assert len(calls) == 1
+        # Second positional arg is the tooltip text — assert it carries
+        # the [1, 240] range message so the user sees the actual bounds.
+        args, _kwargs = calls[0]
+        assert "1" in args[1]
+        assert "240" in args[1]
+
+    def test_above_max_typed_value_shows_tooltip(
+        self,
+        dialog: SettingsDialog,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Typed value above the FR-006 maximum surfaces the range tooltip."""
+        calls = self._patch_show_text(monkeypatch)
+
+        dialog._on_break_interval_text_edited("500 min")
+        dialog._on_break_interval_edited()
+
+        assert len(calls) == 1
+
+    def test_editing_finished_without_text_edited_no_ops(
+        self,
+        dialog: SettingsDialog,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """No ``textEdited`` capture (e.g., spinbox arrow click) — no tooltip."""
+        calls = self._patch_show_text(monkeypatch)
+        # Sanity: the constructor leaves the capture slot empty.
+        assert dialog._user_typed_text is None
+
+        dialog._on_break_interval_edited()
+
+        assert calls == []
+
+    def test_user_typed_text_resets_after_editing_finished(
+        self, dialog: SettingsDialog, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The capture slot resets after each commit so stale text doesn't leak."""
+        self._patch_show_text(monkeypatch)
+        dialog._on_break_interval_text_edited("30 min")
+        dialog._on_break_interval_edited()
+
+        assert dialog._user_typed_text is None
+
+    def test_unparseable_typed_text_does_not_crash(
+        self,
+        dialog: SettingsDialog,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Garbage input (e.g., empty, non-numeric) returns cleanly without raising."""
+        calls = self._patch_show_text(monkeypatch)
+
+        dialog._on_break_interval_text_edited("")
+        dialog._on_break_interval_edited()
+        dialog._on_break_interval_text_edited("abc min")
+        dialog._on_break_interval_edited()
+
+        # Garbage neither crashes nor surfaces the tooltip — the int()
+        # parse fails and the slot returns early.
+        assert calls == []

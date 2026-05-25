@@ -267,6 +267,22 @@ None — no data migration. Existing `BreakReminder.ini` files from v0.1.0 are r
 - Slot to replace: `break_reminder/app.py:278-288`
 - Test conventions: `tests/test_settings.py` (round-trip patterns), `tests/test_app.py:208-215` (`_find_action` helper, `qapp` fixture usage)
 
+## Addenda
+
+### 2026-05-25 — Validation feedback added during Phase 2 manual smoke
+
+The original plan dissolved the validation question at the widget level (`QSpinBox(1, 240)`) and stated "no try/except needed in the save path" — both still true at the persistence layer. During Phase 2 manual smoke, however, the user reported that typing `0` into the spinbox silently bumped to `1` with **no visible feedback**, and asked for an optional popup explaining the [1, 240] range when out-of-range entry is attempted.
+
+**What was added (commit e3c16d2, then corrected during /10x-impl-review on the same date):**
+
+- Module-level constants `_BREAK_INTERVAL_MIN_MINUTES`, `_BREAK_INTERVAL_MAX_MINUTES`, `_BREAK_INTERVAL_RANGE_MESSAGE` in `break_reminder/ui/settings_dialog.py` (single source of truth for the dialog-level range message; the persistence-layer enforcement in `storage/settings.py` remains the actual contract).
+- Permanent `setToolTip(_BREAK_INTERVAL_RANGE_MESSAGE)` on the spinbox — visible on hover, no signal wiring.
+- Transient `QToolTip.showText` popup on out-of-range typed entry. Driven by a paired `lineEdit.textEdited` capture (raw keystrokes, pre-fixup) and an `editingFinished` slot that parses the captured text and shows the popup if it falls outside [1, 240].
+
+**Why the textEdited capture is necessary:** Empirical testing during review showed that Qt's `QSpinBox` does not "clamp" out-of-range typing the way the FR-006 setter does — it **reverts** below-min input to the previous value and **truncates** above-max input to the longest valid prefix. By the time `editingFinished` fires, the user's typed intent is already gone from `lineEdit.text()`. Capturing on `textEdited` (which fires before fixup) is the only reliable way to know what they actually typed.
+
+**Plan vs. reality on the validation strategy:** The widget-level bounds are still load-bearing for the save path (the setter's `ValueError` branch remains unreachable from this dialog). The addendum is purely additive UX feedback — it does not change persistence semantics or success criteria. F1/F2/F4 in `reviews/impl-review.md` document the journey from the original commit to the corrected shape.
+
 ## Progress
 
 > Convention: `- [ ]` pending, `- [x]` done. Append ` — <commit sha>` when a step lands. Do not rename step titles. See the skill's `references/progress-format.md`.

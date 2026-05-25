@@ -297,25 +297,25 @@ None. Existing `BreakReminder.ini` files from v0.1.0 / v0.2.x already have or wi
 
 #### Automated
 
-- [x] 1.1 Unit tests pass: `uv run pytest tests/test_settings.py tests/test_settings_dialog.py tests/test_app.py`
-- [x] 1.2 Full suite still passes: `uv run pytest`
-- [x] 1.3 Type check passes: `uv run pyright break_reminder/storage/settings.py break_reminder/ui/settings_dialog.py break_reminder/app.py tests/test_settings.py tests/test_settings_dialog.py tests/test_app.py`
-- [x] 1.4 Lint passes (incl. `D` rule group): `uv run ruff check break_reminder/storage/settings.py break_reminder/ui/settings_dialog.py break_reminder/app.py tests/test_settings.py tests/test_settings_dialog.py tests/test_app.py`
-- [x] 1.5 Format check passes: `uv run ruff format --check break_reminder/storage/settings.py break_reminder/ui/settings_dialog.py break_reminder/app.py tests/test_settings.py tests/test_settings_dialog.py tests/test_app.py`
-- [x] 1.6 `python -c "from break_reminder.ui.settings_dialog import SettingsDialog"` does not raise.
+- [x] 1.1 Unit tests pass: `uv run pytest tests/test_settings.py tests/test_settings_dialog.py tests/test_app.py` — 7b3a8f8
+- [x] 1.2 Full suite still passes: `uv run pytest` — 7b3a8f8
+- [x] 1.3 Type check passes: `uv run pyright break_reminder/storage/settings.py break_reminder/ui/settings_dialog.py break_reminder/app.py tests/test_settings.py tests/test_settings_dialog.py tests/test_app.py` — 7b3a8f8
+- [x] 1.4 Lint passes (incl. `D` rule group): `uv run ruff check break_reminder/storage/settings.py break_reminder/ui/settings_dialog.py break_reminder/app.py tests/test_settings.py tests/test_settings_dialog.py tests/test_app.py` — 7b3a8f8
+- [x] 1.5 Format check passes: `uv run ruff format --check break_reminder/storage/settings.py break_reminder/ui/settings_dialog.py break_reminder/app.py tests/test_settings.py tests/test_settings_dialog.py tests/test_app.py` — 7b3a8f8
+- [x] 1.6 `python -c "from break_reminder.ui.settings_dialog import SettingsDialog"` does not raise. — 7b3a8f8
 
 ### Phase 2: Manual smoke + roadmap bookkeeping
 
 #### Manual
 
-- [ ] 2.1 Settings dialog opens with two tabs (Scheduling + Notifications).
-- [ ] 2.2 Voice checkbox default unchecked; phrase shows "Time to take a break"; tooltip explains alongside-not-instead.
-- [ ] 2.3 Test voice button speaks the typed (unsaved) phrase through system audio.
-- [ ] 2.4 OK persists both keys to BreakReminder.ini under `[notifications]`.
-- [ ] 2.5 On next break event, popup AND voice fire (popup mandatory, voice opt-in additional).
-- [ ] 2.6 Reopening settings shows persisted values; Cancel discards changes.
-- [ ] 2.7 Voice on + blank phrase + OK → tooltip appears; dialog stays open.
-- [ ] 2.8 Voice off + blank phrase + OK → save proceeds; next break = popup only.
-- [ ] 2.9 Quit + restart preserves last-saved values.
-- [ ] 2.10 Roadmap S-04 status flipped `proposed` → `done`; Open Question #3 annotated as dissolved.
-- [ ] 2.11 change.md status flipped through `implementing` → `implemented`.
+- [x] 2.1 Settings dialog opens with two tabs (Scheduling + Notifications).
+- [x] 2.2 Voice checkbox default unchecked; phrase shows "Time to take a break"; tooltip explains alongside-not-instead.
+- [x] 2.3 Test voice button speaks the typed (unsaved) phrase through system audio.
+- [x] 2.4 OK persists both keys to BreakReminder.ini under `[notifications]`.
+- [x] 2.5 On next break event, popup AND voice fire (popup mandatory, voice opt-in additional).
+- [x] 2.6 Reopening settings shows persisted values; Cancel discards changes.
+- [x] 2.7 Voice on + blank phrase + OK → tooltip appears; dialog stays open.
+- [x] 2.8 Voice off + blank phrase + OK → save proceeds; next break = popup only.
+- [x] 2.9 Quit + restart preserves last-saved values.
+- [x] 2.10 Roadmap S-04 status flipped `proposed` → `done`; Open Question #3 annotated as dissolved.
+- [x] 2.11 change.md status flipped through `implementing` → `implemented`.

@@ -94,6 +94,18 @@ class TestLoad:
         """The dialog's window title is the documented label."""
         assert dialog.windowTitle() == "Settings"
 
+    def test_spinbox_tooltip_explains_range(self, dialog: SettingsDialog) -> None:
+        """The spinbox tooltip surfaces FR-006's [1, 240] range to the user.
+
+        QSpinBox bounds prevent the *value* from leaving [1, 240] but the
+        underlying QLineEdit accepts out-of-range typing that gets
+        silently clamped on commit. A permanent tooltip exposes the
+        constraint on hover so the bump isn't surprising.
+        """
+        tooltip = dialog._break_interval_spinbox.toolTip()
+        assert "1" in tooltip
+        assert "240" in tooltip
+
 
 # ---------------------------------------------------------------------------
 # Save — OK persists, Cancel discards

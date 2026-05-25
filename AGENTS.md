@@ -95,7 +95,7 @@ The system-tray right-click menu, in order:
 1. **Take break now** — opens the modal break dialog with `snooze_remaining=0`. User must click "I'll take a break" to actually clear the cycle. Two clicks; logs a TAKEN event.
 2. **Reset** — one-click equivalent. Bypasses the dialog, calls `_apply_break_taken()` directly. Same FR-015 logging, same snooze-cap clear, same scheduler re-arm.
 3. **Pause / Resume** — single QAction whose label flips on `_refresh_tooltip()`. FR-016 lifecycle.
-4. **Open settings…** — placeholder until FR-005's settings window lands.
+4. **Open settings…** — opens the FR-005 settings window (`ui/settings_dialog.py`). Currently exposes the FR-006 break-interval editor; S-02..S-08 add tabs for autostart, snooze, voice, and custom-reminder CRUD.
 5. **Quit** — clean `QApplication.quit()`.
 
 Take-break-now and Reset are **deliberately redundant**. They serve different mental models: "I'm taking a break" (dialog-confirmed, deliberate) vs "restart my timer" (one-click, no ceremony). Both record TAKEN in FR-015 so the Primary Success Criterion measurement (≥80% breaks taken) stays clean regardless of which the user picks. **Do not** "clean up" by removing one of them — see the FR-004 Socratic note in the PRD.
@@ -179,7 +179,7 @@ These are wired as `Settings` keys with defaults; flipping the default doesn't r
 
 The bootstrap stops at runnable skeletons. The following are stubbed and clearly marked with `TODO(FR-xxx)`:
 
-- Settings UI window (FR-005 / FR-006 / FR-011 / FR-012). The tray menu has a placeholder "Open settings…" entry.
+- Custom-reminder editor surfaces inside the settings window (FR-011 / FR-012). FR-005 / FR-006 shipped in v0.2.0 (`ui/settings_dialog.py`); the reminders tab arrives in S-05..S-08 (see `context/foundation/roadmap.md`).
 - Custom-reminder editor dialog (FR-011 / FR-012 CRUD).
 - Focus Assist + system-mute query (US-01 acceptance).
 - Real tray-icon + window-icon resources (currently using `QStyle` defaults).

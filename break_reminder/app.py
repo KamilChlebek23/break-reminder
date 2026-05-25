@@ -35,6 +35,7 @@ from break_reminder.storage.event_log import EventLog, EventType, Outcome
 from break_reminder.storage.paths import APPLICATION_NAME
 from break_reminder.storage.reminders import ReminderStore
 from break_reminder.storage.settings import Settings
+from break_reminder.ui.settings_dialog import SettingsDialog
 
 logger = logging.getLogger(__name__)
 
@@ -276,16 +277,18 @@ class BreakReminderApp:
         self._refresh_tooltip()
 
     def _on_open_settings(self) -> None:
-        # TODO(FR-005 / FR-006 / FR-011 / FR-012): build the main settings
-        # window (interval entry, voice toggle, custom reminder CRUD).
-        # The placeholder below keeps the menu wiring honest.
-        QMessageBox.information(
-            None,
-            "Settings",
-            "The settings window is not implemented yet.\n\n"
-            f"Until it lands, edit\n  {self._settings_path()}\n"
-            "and restart the app.",
-        )
+        """Open the settings window (FR-005).
+
+        Constructs a fresh ``SettingsDialog`` against the app's existing
+        ``Settings`` instance and runs it modally. No long-lived member
+        is kept — the dialog is GC'd as soon as ``exec()`` returns, so
+        every open is a fresh load with no stale state.
+
+        The "Scheduling" tab carries the FR-006 break-interval editor
+        today. Custom-reminder CRUD (FR-011 / FR-012) lands in S-05..S-08
+        as additional tabs in this same dialog.
+        """
+        SettingsDialog(settings=self._settings).exec()
 
     def _on_check_for_updates(self) -> None:
         """Open the GitHub Releases page in the user's default browser.
@@ -366,15 +369,6 @@ class BreakReminderApp:
         self._active_break_dialog = None
         self._break_scheduler.start()
         self._refresh_tooltip()
-
-    # -------------------------------------------------------------------
-    # Helpers
-    # -------------------------------------------------------------------
-
-    def _settings_path(self) -> str:
-        from break_reminder.storage.paths import settings_ini_path
-
-        return str(settings_ini_path())
 
 
 def main() -> int:

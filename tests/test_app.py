@@ -281,3 +281,103 @@ class TestTrayIcon:
         actual = app._tray.icon().actualSize(QSize(32, 32))
         assert actual.width() > 0
         assert actual.height() > 0
+
+
+# ---------------------------------------------------------------------------
+# Open settings… action — wires to the FR-005 / FR-006 settings dialog
+# ---------------------------------------------------------------------------
+
+
+class TestOpenSettingsAction:
+    """Triggering 'Open settings…' constructs the new ``SettingsDialog``.
+
+    These tests substitute ``break_reminder.app.SettingsDialog`` with a
+    stub class so the slot's call is observable without spinning up a
+    real modal dialog. Patching the imported symbol (rather than the
+    class's ``__init__`` / ``exec``) keeps the stub free of Qt internals
+    and makes the assertions purely about the wiring contract.
+    """
+
+    @staticmethod
+    def _make_stub(captures: list[dict]) -> type:
+        """Return a stub class that records init kwargs and exec calls into ``captures``."""
+
+        class _StubSettingsDialog:
+            def __init__(self, **kwargs: object) -> None:
+                captures.append({"init_kwargs": kwargs, "exec_called": False})
+
+            def exec(self) -> int:
+                captures[-1]["exec_called"] = True
+                return 0
+
+        return _StubSettingsDialog
+
+    def test_action_constructs_and_execs_settings_dialog(
+        self, app: BreakReminderApp, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Triggering the action constructs a ``SettingsDialog`` and calls ``exec`` once."""
+        captures: list[dict] = []
+        monkeypatch.setattr("break_reminder.app.SettingsDialog", self._make_stub(captures))
+
+        _find_action(app, "Open settings…").trigger()
+
+        assert len(captures) == 1
+        assert captures[0]["exec_called"] is True
+
+    def test_dialog_receives_app_settings_instance(
+        self, app: BreakReminderApp, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The dialog is constructed with the app's own ``Settings`` instance."""
+        # Identity check — not equality. If a future refactor accidentally
+        # constructs a duplicate Settings(), the dialog would write into
+        # a different QSettings handle and the user's edits would not be
+        # observable to the running scheduler.
+        captures: list[dict] = []
+        monkeypatch.setattr("break_reminder.app.SettingsDialog", self._make_stub(captures))
+
+        _find_action(app, "Open settings…").trigger()
+
+        assert captures[0]["init_kwargs"]["settings"] is app._settings
+
+    def test_action_no_longer_shows_placeholder_message_box(
+        self, app: BreakReminderApp, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The placeholder ``QMessageBox.information`` path is dead.
+
+        Tripwire: if a future agent re-introduces the placeholder code
+        path (e.g., as a fallback when the dialog fails to construct),
+        this test fires and forces a deliberate decision rather than a
+        silent regression to the v0.1.0 stub UX.
+        """
+        from PySide6.QtWidgets import QMessageBox
+
+        info_calls: list[None] = []
+
+        def _record_info(*args: object, **kwargs: object) -> object:
+            info_calls.append(None)
+            return None
+
+        monkeypatch.setattr(QMessageBox, "information", _record_info)
+        captures: list[dict] = []
+        monkeypatch.setattr("break_reminder.app.SettingsDialog", self._make_stub(captures))
+
+        _find_action(app, "Open settings…").trigger()
+
+        assert info_calls == []
+
+    def test_left_click_on_tray_also_opens_settings(
+        self, app: BreakReminderApp, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A left-click activation goes through the same slot (FR-004 wiring)."""
+        # The Trigger activation reason is what _on_tray_activated routes
+        # to _on_open_settings — keep both paths covered so a future
+        # change to either doesn't silently drop the left-click affordance.
+        from PySide6.QtWidgets import QSystemTrayIcon
+
+        captures: list[dict] = []
+        monkeypatch.setattr("break_reminder.app.SettingsDialog", self._make_stub(captures))
+
+        app._on_tray_activated(QSystemTrayIcon.ActivationReason.Trigger)
+
+        assert len(captures) == 1
+        assert captures[0]["exec_called"] is True

@@ -26,11 +26,22 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QSpinBox,
     QTabWidget,
+    QToolTip,
     QVBoxLayout,
     QWidget,
 )
 
 from break_reminder.storage.settings import Settings
+
+# FR-006 break interval is bounded to this inclusive range. Sourced from
+# the Settings.break_interval_min docstring; surfaced here so the dialog
+# tooltip and the bounds setters share one source of truth.
+_BREAK_INTERVAL_MIN_MINUTES = 1
+_BREAK_INTERVAL_MAX_MINUTES = 240
+_BREAK_INTERVAL_RANGE_MESSAGE = (
+    f"Break interval must be between {_BREAK_INTERVAL_MIN_MINUTES} "
+    f"and {_BREAK_INTERVAL_MAX_MINUTES} minutes."
+)
 
 
 class SettingsDialog(QDialog):
@@ -95,18 +106,46 @@ class SettingsDialog(QDialog):
 
         self._break_interval_spinbox = QSpinBox(tab)
         # FR-006: break interval is bounded to [1, 240] minutes. Setting
-        # the bounds at the widget level makes out-of-range entries
-        # physically impossible — the user cannot type a value that the
-        # Settings setter would reject.
-        self._break_interval_spinbox.setMinimum(1)
-        self._break_interval_spinbox.setMaximum(240)
+        # the bounds at the widget level constrains the resulting value,
+        # but the underlying QLineEdit still accepts text like "0" that
+        # gets silently clamped on commit. _on_break_interval_edited
+        # surfaces a tooltip when this happens so the bump isn't mute.
+        self._break_interval_spinbox.setMinimum(_BREAK_INTERVAL_MIN_MINUTES)
+        self._break_interval_spinbox.setMaximum(_BREAK_INTERVAL_MAX_MINUTES)
         self._break_interval_spinbox.setSuffix(" min")
+        self._break_interval_spinbox.setToolTip(_BREAK_INTERVAL_RANGE_MESSAGE)
         self._break_interval_spinbox.setValue(self._settings.break_interval_min)
+        self._break_interval_spinbox.editingFinished.connect(self._on_break_interval_edited)
 
         form = QFormLayout(tab)
         form.addRow("Break interval (minutes):", self._break_interval_spinbox)
 
         return tab
+
+    def _on_break_interval_edited(self) -> None:
+        """Show a transient tooltip when the user typed an out-of-range value.
+
+        ``QSpinBox`` silently clamps to ``setMinimum`` / ``setMaximum`` on
+        commit (Enter, focus loss, or any path that calls ``value()``).
+        Compare the typed text against the post-clamp value; on mismatch,
+        surface a brief popup so the user sees the FR-006 constraint
+        rather than a mute bump.
+        """
+        line_edit = self._break_interval_spinbox.lineEdit()
+        if line_edit is None:
+            return
+        typed = line_edit.text().strip()
+        actual = str(self._break_interval_spinbox.value())
+        if not typed or typed == actual:
+            return
+        widget = self._break_interval_spinbox
+        QToolTip.showText(
+            widget.mapToGlobal(widget.rect().bottomLeft()),
+            _BREAK_INTERVAL_RANGE_MESSAGE,
+            widget,
+            widget.rect(),
+            3000,
+        )
 
     def accept(self) -> None:
         """Persist the spinbox value and close the dialog.

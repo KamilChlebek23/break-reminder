@@ -275,30 +275,30 @@ None — no data migration. Existing `BreakReminder.ini` files from v0.1.0 are r
 
 #### Automated
 
-- [x] 1.1 Unit tests pass: `uv run pytest tests/test_settings_dialog.py`
-- [x] 1.2 Full suite still passes: `uv run pytest`
-- [x] 1.3 Type check passes: `uv run pyright break_reminder/ui/ tests/test_settings_dialog.py`
-- [x] 1.4 Lint passes (incl. `D` rule group): `uv run ruff check break_reminder/ui/ tests/test_settings_dialog.py`
-- [x] 1.5 Format check passes: `uv run ruff format --check break_reminder/ui/ tests/test_settings_dialog.py`
-- [x] 1.6 `python -c "from break_reminder.ui.settings_dialog import SettingsDialog"` does not raise.
+- [x] 1.1 Unit tests pass: `uv run pytest tests/test_settings_dialog.py` — eaa1b69
+- [x] 1.2 Full suite still passes: `uv run pytest` — eaa1b69
+- [x] 1.3 Type check passes: `uv run pyright break_reminder/ui/ tests/test_settings_dialog.py` — eaa1b69
+- [x] 1.4 Lint passes (incl. `D` rule group): `uv run ruff check break_reminder/ui/ tests/test_settings_dialog.py` — eaa1b69
+- [x] 1.5 Format check passes: `uv run ruff format --check break_reminder/ui/ tests/test_settings_dialog.py` — eaa1b69
+- [x] 1.6 `python -c "from break_reminder.ui.settings_dialog import SettingsDialog"` does not raise. — eaa1b69
 
 ### Phase 2: Wire the dialog into the tray menu
 
 #### Automated
 
-- [ ] 2.1 Updated tests pass: `uv run pytest tests/test_app.py`
-- [ ] 2.2 Full suite still passes: `uv run pytest`
-- [ ] 2.3 Type check passes: `uv run pyright break_reminder/app.py tests/test_app.py`
-- [ ] 2.4 Lint passes: `uv run ruff check break_reminder/app.py tests/test_app.py`
-- [ ] 2.5 Format check passes: `uv run ruff format --check break_reminder/app.py tests/test_app.py`
+- [x] 2.1 Updated tests pass: `uv run pytest tests/test_app.py`
+- [x] 2.2 Full suite still passes: `uv run pytest`
+- [x] 2.3 Type check passes: `uv run pyright break_reminder/app.py tests/test_app.py`
+- [x] 2.4 Lint passes: `uv run ruff check break_reminder/app.py tests/test_app.py`
+- [x] 2.5 Format check passes: `uv run ruff format --check break_reminder/app.py tests/test_app.py`
 
 #### Manual
 
-- [ ] 2.6 The "Open settings…" tray menu item opens the new modal dialog (NOT the `QMessageBox` placeholder).
-- [ ] 2.7 A left-click on the tray icon also opens the new dialog.
-- [ ] 2.8 The spinbox is pre-populated with the current `break_interval_min` value (cross-checked against `BreakReminder.ini`).
-- [ ] 2.9 Editing the spinbox to a new value and clicking OK closes the dialog and persists the value to the INI.
-- [ ] 2.10 Within ≤1 second of clicking OK, the tray tooltip's countdown reflects the new interval.
-- [ ] 2.11 Clicking Cancel after editing closes the dialog and leaves the INI value unchanged.
-- [ ] 2.12 Quitting and restarting the app persists the last saved value.
-- [ ] 2.13 The spinbox does not allow values below 1 or above 240 at the widget level.
+- [x] 2.6 The "Open settings…" tray menu item opens the new modal dialog (NOT the `QMessageBox` placeholder).
+- [x] 2.7 A left-click on the tray icon also opens the new dialog.
+- [x] 2.8 The spinbox is pre-populated with the current `break_interval_min` value (cross-checked against `BreakReminder.ini`).
+- [x] 2.9 Editing the spinbox to a new value and clicking OK closes the dialog and persists the value to the INI.
+- [x] 2.10 Within ≤1 second of clicking OK, the tray tooltip's countdown reflects the new interval.
+- [x] 2.11 Clicking Cancel after editing closes the dialog and leaves the INI value unchanged.
+- [x] 2.12 Quitting and restarting the app persists the last saved value.
+- [x] 2.13 The spinbox does not allow values below 1 or above 240 at the widget level.

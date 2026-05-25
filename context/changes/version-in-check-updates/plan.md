@@ -198,11 +198,11 @@ None. Pure UX add to an existing slot; no persisted state, no schema, no install
 
 #### Manual
 
-- [x] 2.1 Dialog title is "About BreakReminder"
-- [x] 2.2 Dialog body shows the bold "BreakReminder v0.2.0" line
-- [x] 2.3 Dialog body shows the pyproject description
-- [x] 2.4 Two buttons exist with labels "Open Releases" and "Close"
-- [x] 2.5 "Open Releases" is the default (Enter triggers it)
-- [x] 2.6 "Close" dismisses the dialog without opening a browser
-- [x] 2.7 "Open Releases" opens the GitHub Releases URL in the default browser
-- [ ] 2.8 change.md flipped from `implementing` to `implemented`
+- [x] 2.1 Dialog title is "About BreakReminder" — b52b084
+- [x] 2.2 Dialog body shows the bold "BreakReminder v0.2.0" line — b52b084
+- [x] 2.3 Dialog body shows the pyproject description — b52b084
+- [x] 2.4 Two buttons exist with labels "Open Releases" and "Close" — b52b084
+- [x] 2.5 "Open Releases" is the default (Enter triggers it) — b52b084
+- [x] 2.6 "Close" dismisses the dialog without opening a browser — b52b084
+- [x] 2.7 "Open Releases" opens the GitHub Releases URL in the default browser — b52b084
+- [x] 2.8 change.md flipped from `implementing` to `implemented`

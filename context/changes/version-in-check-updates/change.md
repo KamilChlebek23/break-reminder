@@ -1,7 +1,7 @@
 ---
 change_id: version-in-check-updates
 title: Show installed app version when user checks for updates
-status: implementing
+status: implemented
 created: 2026-05-25
 updated: 2026-05-25
 archived_at: null

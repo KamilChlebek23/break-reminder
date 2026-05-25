@@ -280,15 +280,17 @@ class BreakReminderApp:
         """Open the settings window (FR-005).
 
         Constructs a fresh ``SettingsDialog`` against the app's existing
-        ``Settings`` instance and runs it modally. No long-lived member
-        is kept — the dialog is GC'd as soon as ``exec()`` returns, so
-        every open is a fresh load with no stale state.
+        ``Settings`` and ``VoiceNotifier`` instances and runs it modally.
+        No long-lived member is kept — the dialog is GC'd as soon as
+        ``exec()`` returns, so every open is a fresh load with no stale
+        state.
 
-        The "Scheduling" tab carries the FR-006 break-interval editor
-        today. Custom-reminder CRUD (FR-011 / FR-012) lands in S-05..S-08
-        as additional tabs in this same dialog.
+        The "Scheduling" tab carries the FR-006 break-interval editor;
+        the "Notifications" tab carries the FR-007 voice toggle, phrase
+        editor, and Test button. Custom-reminder CRUD (FR-011 / FR-012)
+        lands in S-05..S-08 as additional tabs in this same dialog.
         """
-        SettingsDialog(settings=self._settings).exec()
+        SettingsDialog(settings=self._settings, voice=self._voice).exec()
 
     def _on_check_for_updates(self) -> None:
         """Open the GitHub Releases page in the user's default browser.

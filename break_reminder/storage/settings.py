@@ -150,10 +150,40 @@ class Settings:
         """Whether the voice channel is on (FR-007 — opt-in by default)."""
         return self._get_bool(_Keys.VOICE_ENABLED, DEFAULT_VOICE_ENABLED)
 
+    @voice_enabled.setter
+    def voice_enabled(self, value: bool) -> None:
+        """Persist the FR-007 voice gate.
+
+        Args:
+            value: ``True`` to enable voice notification (popup still
+                fires alongside per FR-007), ``False`` to disable.
+                Coerced via ``bool(value)`` so a stray int or other
+                truthy value writes the canonical bool.
+        """
+        self._qs.setValue(_Keys.VOICE_ENABLED, bool(value))
+
     @property
     def voice_phrase(self) -> str:
         """Phrase ``VoiceNotifier`` speaks for break events (FR-007)."""
         return self._get_str(_Keys.VOICE_PHRASE, DEFAULT_VOICE_PHRASE)
+
+    @voice_phrase.setter
+    def voice_phrase(self, phrase: str) -> None:
+        """Persist the FR-007 voice phrase.
+
+        The setter is intentionally permissive — empty and whitespace-only
+        phrases are accepted at the persistence layer. The dialog
+        (``break_reminder.ui.settings_dialog.SettingsDialog``) enforces
+        the non-empty contract when ``voice_enabled`` is true so the
+        confused (``voice_enabled=True, voice_phrase=""``) state cannot
+        land via the GUI. Direct callers that bypass the dialog (e.g.,
+        a future "reset to defaults" path) own whatever string they
+        write here.
+
+        Args:
+            phrase: The phrase ``VoiceNotifier.speak`` will pronounce.
+        """
+        self._qs.setValue(_Keys.VOICE_PHRASE, phrase)
 
     @property
     def autostart(self) -> bool:

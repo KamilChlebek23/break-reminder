@@ -339,6 +339,25 @@ class TestOpenSettingsAction:
 
         assert captures[0]["init_kwargs"]["settings"] is app._settings
 
+    def test_dialog_receives_app_voice_instance(
+        self, app: BreakReminderApp, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The dialog is constructed with the app's own ``VoiceNotifier`` instance.
+
+        Identity check — same rationale as ``test_dialog_receives_app_settings_instance``.
+        If a future refactor accidentally constructs a fresh
+        ``VoiceNotifier()`` for the dialog, the Test-voice button would
+        speak through a different ``pyttsx3`` worker pool than the one
+        the break / reminder events use, and a user who tested the
+        phrase successfully might still hear nothing on the next break.
+        """
+        captures: list[dict] = []
+        monkeypatch.setattr("break_reminder.app.SettingsDialog", self._make_stub(captures))
+
+        _find_action(app, "Open settings…").trigger()
+
+        assert captures[0]["init_kwargs"]["voice"] is app._voice
+
     def test_action_no_longer_shows_placeholder_message_box(
         self, app: BreakReminderApp, monkeypatch: pytest.MonkeyPatch
     ) -> None:

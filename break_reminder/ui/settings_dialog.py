@@ -1,12 +1,18 @@
-"""Settings dialog (FR-005 / FR-006).
+"""Settings dialog (FR-005 / FR-006 / FR-007).
 
-A modal ``QDialog`` that lets the user view and edit the break interval
-inside a real settings window. Replaces the v0.1.0 placeholder
-``QMessageBox`` that instructed hand-editing the INI file.
+A modal ``QDialog`` that lets the user view and edit BreakReminder's
+preferences inside a real settings window. Replaces the v0.1.0
+placeholder ``QMessageBox`` that instructed hand-editing the INI file.
 
-Layout uses a ``QTabWidget`` from day one (single "Scheduling" tab today)
-so future settings slices (S-02..S-05 in ``context/foundation/roadmap.md``)
-can land additional fields without re-organizing the layout.
+Layout uses a ``QTabWidget`` from day one. The current tabs:
+
+- **Scheduling** (S-01) — the FR-006 break-interval editor.
+- **Notifications** (S-04) — the FR-007 voice toggle, editable phrase,
+  and a "Test voice" button that previews the unsaved phrase. The
+  "Voice phrase cannot be empty when voice is enabled" rule is enforced
+  in ``accept()`` via the same transient ``QToolTip`` pattern the
+  Scheduling tab uses for the FR-006 range message — saving with that
+  combination surfaces the tooltip and skips the persistence write.
 
 Validation is split across two layers, intentionally:
 
@@ -32,14 +38,24 @@ The dialog is constructed fresh on every "Open settings…" click in
 ``BreakReminderApp._on_open_settings()`` — no long-lived member, no
 stale state across opens. Same lifetime pattern as
 ``notifications/reminder_dialog.py``'s per-fire instantiation.
+
+``VoiceNotifier`` is injected via the constructor as a required
+keyword-only parameter so tests can pass a stub instead of spinning
+up a real ``pyttsx3`` worker pool — see
+``context/changes/settings-voice-toggle/plan.md`` "Critical
+Implementation Details" for the rationale.
 """
 
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
+    QCheckBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
+    QHBoxLayout,
+    QLineEdit,
+    QPushButton,
     QSpinBox,
     QTabWidget,
     QToolTip,
@@ -47,6 +63,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from break_reminder.notifications.voice import VoiceNotifier
 from break_reminder.storage.settings import (
     BREAK_INTERVAL_MAX_MINUTES,
     BREAK_INTERVAL_MIN_MINUTES,
@@ -62,31 +79,55 @@ _BREAK_INTERVAL_RANGE_MESSAGE = (
     f"and {BREAK_INTERVAL_MAX_MINUTES} minutes."
 )
 
+# Tooltip on the voice checkbox. Conveys the FR-007 contract once at
+# the surface where the user is already deciding whether to flip the
+# toggle — popup is mandatory; voice is an additional channel, not a
+# replacement.
+_VOICE_ENABLED_TOOLTIP = "Voice plays alongside the break popup, not instead of it."
+
+# Transient feedback when the user clicks OK with voice enabled but
+# a blank/whitespace phrase. Anchored below the phrase line edit so
+# the message lands next to the field that must be fixed.
+_VOICE_PHRASE_REQUIRED_MESSAGE = "Voice phrase cannot be empty when voice is enabled."
+
 
 class SettingsDialog(QDialog):
-    """Modal settings window — break interval editor (FR-005 / FR-006).
+    """Modal settings window (FR-005 / FR-006 / FR-007).
 
-    The dialog reads the current break interval from the injected
-    ``Settings`` instance at construction time, lets the user edit it
-    via a bounded ``QSpinBox``, and on **OK** persists the new value
-    through ``Settings.break_interval_min``. **Cancel** discards and
-    closes without writing.
+    The dialog reads the current break interval and voice settings from
+    the injected ``Settings`` instance at construction time, lets the
+    user edit them across two tabs ("Scheduling" and "Notifications"),
+    and on **OK** persists the new values through ``Settings``.
+    **Cancel** discards and closes without writing.
+
+    The "Notifications" tab also exposes a "Test voice" button that
+    speaks the line edit's current (unsaved) text via the injected
+    ``VoiceNotifier``. The button is a pure side-effect — it does not
+    touch ``Settings`` and never triggers a save.
     """
 
     SCHEDULING_TAB_LABEL = "Scheduling"
+    NOTIFICATIONS_TAB_LABEL = "Notifications"
 
     def __init__(
         self,
         *,
         settings: Settings,
+        voice: VoiceNotifier,
         parent: QWidget | None = None,
     ) -> None:
-        """Build the dialog and pre-populate the spinbox from ``settings``.
+        """Build the dialog and pre-populate widgets from ``settings``.
 
         Args:
-            settings: ``Settings`` instance whose ``break_interval_min``
-                getter is read at construction and whose setter is called
-                when the user clicks OK.
+            settings: ``Settings`` instance whose ``break_interval_min``,
+                ``voice_enabled``, and ``voice_phrase`` getters are read
+                at construction and whose setters are called when the
+                user clicks OK.
+            voice: ``VoiceNotifier`` the "Test voice" button speaks
+                through. Required (no default) so tests must inject a
+                stub — defaulting to a fresh ``VoiceNotifier()`` would
+                spin up a real ``pyttsx3`` worker pool every time the
+                test suite constructs the dialog.
             parent: Optional Qt parent. Defaults to ``None`` so the
                 dialog gets its own top-level taskbar entry, matching
                 the convention used by ``BreakDialog`` and
@@ -94,12 +135,14 @@ class SettingsDialog(QDialog):
         """
         super().__init__(parent)
         self._settings = settings
+        self._voice = voice
         self._user_typed_text: str | None = None
 
         self.setWindowTitle("Settings")
 
         self._tabs = QTabWidget(self)
         self._tabs.addTab(self._build_scheduling_tab(), self.SCHEDULING_TAB_LABEL)
+        self._tabs.addTab(self._build_notifications_tab(), self.NOTIFICATIONS_TAB_LABEL)
 
         self._buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
@@ -148,6 +191,64 @@ class SettingsDialog(QDialog):
 
         return tab
 
+    def _build_notifications_tab(self) -> QWidget:
+        """Construct the "Notifications" tab (FR-007 voice toggle + phrase + Test).
+
+        The tab carries three widgets:
+
+        - ``self._voice_enabled_checkbox`` — pre-populated from
+          ``Settings.voice_enabled``. The checkbox tooltip explains the
+          FR-007 contract that the popup is mandatory and voice plays
+          alongside, not instead of it.
+        - ``self._voice_phrase_edit`` — a ``QLineEdit`` pre-populated
+          from ``Settings.voice_phrase``. Always editable regardless of
+          the checkbox state so the user can prepare the phrase before
+          flipping the gate.
+        - ``self._voice_test_button`` — a ``QPushButton`` whose
+          ``clicked`` signal calls ``_on_test_voice_clicked`` to speak
+          the line edit's current (unsaved) text through the injected
+          ``VoiceNotifier``.
+
+        Returns:
+            A ``QWidget`` ready to be added to ``self._tabs``.
+        """
+        tab = QWidget(self._tabs)
+
+        self._voice_enabled_checkbox = QCheckBox("Enable voice notification", tab)
+        self._voice_enabled_checkbox.setChecked(self._settings.voice_enabled)
+        self._voice_enabled_checkbox.setToolTip(_VOICE_ENABLED_TOOLTIP)
+
+        self._voice_phrase_edit = QLineEdit(tab)
+        self._voice_phrase_edit.setText(self._settings.voice_phrase)
+
+        self._voice_test_button = QPushButton("Test voice", tab)
+        self._voice_test_button.clicked.connect(self._on_test_voice_clicked)
+
+        # Phrase + Test button share a row so the preview lands right
+        # next to the field whose contents it speaks.
+        phrase_row = QWidget(tab)
+        phrase_row_layout = QHBoxLayout(phrase_row)
+        phrase_row_layout.setContentsMargins(0, 0, 0, 0)
+        phrase_row_layout.addWidget(self._voice_phrase_edit, 1)
+        phrase_row_layout.addWidget(self._voice_test_button, 0)
+
+        form = QFormLayout(tab)
+        form.addRow(self._voice_enabled_checkbox)
+        form.addRow("Voice phrase:", phrase_row)
+
+        return tab
+
+    def _on_test_voice_clicked(self) -> None:
+        """Speak the phrase line edit's current (unsaved) text.
+
+        Pure side-effect — does not touch ``Settings`` and does not
+        chain into the save path. Calls ``VoiceNotifier.speak`` which
+        already runs on a single-worker thread pool, so the GUI thread
+        does not block. ``VoiceNotifier.speak("")`` is a documented
+        no-op, so an empty phrase produces no audio without raising.
+        """
+        self._voice.speak(self._voice_phrase_edit.text())
+
     def _on_break_interval_text_edited(self, text: str) -> None:
         """Capture the user's raw typed text before Qt's fixup rewrites it.
 
@@ -192,13 +293,38 @@ class SettingsDialog(QDialog):
         )
 
     def accept(self) -> None:
-        """Persist the spinbox value and close the dialog.
+        """Validate then persist all editable settings and close the dialog.
 
-        Writes ``self._settings.break_interval_min`` from the spinbox
-        and then chains to ``QDialog.accept`` for the standard close
-        path. The widget-level bounds (set in ``_build_scheduling_tab``)
-        guarantee the value is in FR-006's [1, 240] range, so no
-        try/except is needed around the setter.
+        Validation gate (FR-007 voice tab): if the voice checkbox is
+        ticked but the phrase line edit is blank or whitespace-only,
+        surface a transient ``QToolTip`` below the phrase field with
+        ``_VOICE_PHRASE_REQUIRED_MESSAGE`` and return early — no setter
+        runs and the dialog stays open. The ``(voice_enabled=True,
+        voice_phrase="")`` confused state cannot land on disk via the
+        GUI.
+
+        Persistence: the break interval (FR-006) is written first via
+        ``Settings.break_interval_min`` — its widget-level bounds
+        guarantee a [1, 240] value, so the setter's ``ValueError``
+        branch is unreachable here. The voice toggle and phrase
+        (FR-007) are written next; the ``voice_phrase`` setter is
+        permissive at the persistence layer (the dialog-level gate
+        above is the only enforcement of the non-empty contract).
+        Then chains to ``QDialog.accept`` for the standard close path.
         """
+        if self._voice_enabled_checkbox.isChecked() and not self._voice_phrase_edit.text().strip():
+            anchor = self._voice_phrase_edit.mapToGlobal(
+                self._voice_phrase_edit.rect().bottomLeft()
+            )
+            QToolTip.showText(
+                anchor,
+                _VOICE_PHRASE_REQUIRED_MESSAGE,
+                self._voice_phrase_edit,
+                msecShowTime=3000,
+            )
+            return
+
         self._settings.break_interval_min = self._break_interval_spinbox.value()
+        self._settings.voice_enabled = self._voice_enabled_checkbox.isChecked()
+        self._settings.voice_phrase = self._voice_phrase_edit.text()
         super().accept()

@@ -160,6 +160,65 @@ class TestValidation:
         assert settings.break_interval_min == DEFAULT_BREAK_INTERVAL_MIN
 
 
+class TestVoiceSettersRoundTrip:
+    """FR-007: ``voice_enabled`` and ``voice_phrase`` setter round-trip.
+
+    The dialog (``break_reminder.ui.settings_dialog.SettingsDialog``)
+    is the only production caller of these setters today. The setters
+    are intentionally permissive at the persistence layer — the dialog
+    enforces the non-empty contract when ``voice_enabled`` is true.
+    These tests pin the persistence behavior; the dialog-level gate
+    is covered in ``tests/test_settings_dialog.py``.
+    """
+
+    def test_voice_enabled_setter_writes_true(self, settings: Settings) -> None:
+        """Setting ``voice_enabled`` to True is observable via the getter."""
+        settings.voice_enabled = True
+        assert settings.voice_enabled is True
+
+    def test_voice_enabled_setter_writes_false(self, settings: Settings) -> None:
+        """Setting ``voice_enabled`` to False is observable via the getter."""
+        # Pre-set to True so the False write is observable as a state change.
+        settings.voice_enabled = True
+        settings.voice_enabled = False
+        assert settings.voice_enabled is False
+
+    def test_voice_enabled_persists_across_instances(self, ini_path: Path) -> None:
+        """A ``voice_enabled`` write is observable from a freshly constructed instance."""
+        first = Settings(ini_path=ini_path)
+        first.voice_enabled = True
+        first._qs.sync()
+        del first
+
+        second = Settings(ini_path=ini_path)
+        assert second.voice_enabled is True
+
+    def test_voice_phrase_setter_writes_custom_phrase(self, settings: Settings) -> None:
+        """Setting ``voice_phrase`` to a custom string is observable via the getter."""
+        settings.voice_phrase = "Stretch your back"
+        assert settings.voice_phrase == "Stretch your back"
+
+    def test_voice_phrase_setter_accepts_empty_string(self, settings: Settings) -> None:
+        """The persistence layer accepts an empty phrase (the dialog gates non-empty).
+
+        Direct setter callers own whatever string they write. The dialog
+        blocks empty-when-enabled at its own layer; without that gate
+        nothing in the storage layer rejects the write.
+        """
+        settings.voice_phrase = ""
+        assert settings.voice_phrase == ""
+
+    def test_voice_phrase_persists_across_instances(self, ini_path: Path) -> None:
+        """A ``voice_phrase`` write is observable from a freshly constructed instance."""
+        first = Settings(ini_path=ini_path)
+        first.voice_phrase = "Time for a break"
+        first._qs.sync()
+        del first
+
+        second = Settings(ini_path=ini_path)
+        assert second.voice_phrase == "Time for a break"
+
+
 class TestPausedLifecycle:
     """FR-016: paused state persists until explicit resume OR reboot."""
 

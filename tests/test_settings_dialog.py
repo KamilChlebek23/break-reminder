@@ -1,15 +1,15 @@
-"""Tests for ``SettingsDialog`` — the FR-005 / FR-006 settings window.
+"""Tests for ``SettingsDialog`` — the FR-005 / FR-006 / FR-007 settings window.
 
 Covers the load / save / cancel contract in isolation, without showing
 the dialog (no ``exec()``, no event loop pumping). Each test gets a
-``tmp_path``-bound ``Settings`` instance so the suite never touches the
-real ``%APPDATA%`` location, mirroring the pattern in
-``tests/test_settings.py``.
+``tmp_path``-bound ``Settings`` instance and a ``StubVoiceNotifier`` so
+the suite never touches the real ``%APPDATA%`` location and never
+spins up a ``pyttsx3`` worker pool, mirroring the pattern in
+``tests/test_settings.py`` and ``tests/test_app.py``.
 
 Layout invariants are also asserted as tripwires — if a future slice
-silently flattens the ``QTabWidget`` or re-labels the "Scheduling" tab,
-the affected tests fail loudly instead of letting the layout drift
-unnoticed.
+silently flattens the ``QTabWidget`` or re-labels a tab, the affected
+tests fail loudly instead of letting the layout drift unnoticed.
 """
 
 from __future__ import annotations
@@ -17,13 +17,30 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from PySide6.QtWidgets import QSpinBox, QTabWidget
+from PySide6.QtWidgets import QCheckBox, QLineEdit, QPushButton, QSpinBox, QTabWidget
 
 from break_reminder.storage.settings import (
     DEFAULT_BREAK_INTERVAL_MIN,
+    DEFAULT_VOICE_PHRASE,
     Settings,
 )
 from break_reminder.ui.settings_dialog import SettingsDialog
+
+
+class StubVoiceNotifier:
+    """No-op ``VoiceNotifier`` stub — same surface, no thread pool.
+
+    Records every ``speak`` call into ``self.spoken`` so tests can
+    assert on the Test-button payload without exercising ``pyttsx3``.
+    """
+
+    def __init__(self) -> None:
+        """Initialize the stub with an empty call log."""
+        self.spoken: list[str] = []
+
+    def speak(self, phrase: str) -> None:
+        """Record one ``speak`` invocation by appending ``phrase`` to ``spoken``."""
+        self.spoken.append(phrase)
 
 
 @pytest.fixture
@@ -39,14 +56,20 @@ def settings(ini_path: Path) -> Settings:
 
 
 @pytest.fixture
-def dialog(qtbot, settings: Settings) -> SettingsDialog:
-    """A ``SettingsDialog`` wired against the per-test ``settings`` fixture.
+def voice() -> StubVoiceNotifier:
+    """A ``StubVoiceNotifier`` injected wherever the dialog needs ``VoiceNotifier``."""
+    return StubVoiceNotifier()
+
+
+@pytest.fixture
+def dialog(qtbot, settings: Settings, voice: StubVoiceNotifier) -> SettingsDialog:
+    """A ``SettingsDialog`` wired against the per-test ``settings`` and ``voice`` fixtures.
 
     Registered with ``qtbot.addWidget`` so the dialog is destroyed at
     test teardown regardless of test outcome — matches the convention
     in ``tests/test_break_dialog.py``.
     """
-    d = SettingsDialog(settings=settings)
+    d = SettingsDialog(settings=settings, voice=voice)  # type: ignore[arg-type]
     qtbot.addWidget(d)
     return d
 
@@ -71,7 +94,10 @@ class TestLoad:
         pre_set.break_interval_min = 45
         del pre_set
 
-        d = SettingsDialog(settings=Settings(ini_path=ini_path))
+        d = SettingsDialog(
+            settings=Settings(ini_path=ini_path),
+            voice=StubVoiceNotifier(),  # type: ignore[arg-type]
+        )
         qtbot.addWidget(d)
 
         assert d._break_interval_spinbox.value() == 45
@@ -128,7 +154,10 @@ class TestSave:
     def test_accept_persists_across_settings_instances(self, qtbot, ini_path: Path) -> None:
         """A persisted value is observable from a freshly constructed ``Settings``."""
         first_settings = Settings(ini_path=ini_path)
-        d = SettingsDialog(settings=first_settings)
+        d = SettingsDialog(
+            settings=first_settings,
+            voice=StubVoiceNotifier(),  # type: ignore[arg-type]
+        )
         qtbot.addWidget(d)
         d._break_interval_spinbox.setValue(90)
         d.accept()
@@ -146,7 +175,10 @@ class TestSave:
         settings.break_interval_min = 75
         # Construct a fresh dialog so the spinbox loads the new value.
         # (The fixture-built dialog was constructed before this test set 75.)
-        d = SettingsDialog(settings=settings)
+        d = SettingsDialog(
+            settings=settings,
+            voice=StubVoiceNotifier(),  # type: ignore[arg-type]
+        )
         qtbot.addWidget(d)
         d._break_interval_spinbox.setValue(15)
 
@@ -159,7 +191,10 @@ class TestSave:
         # Fresh INI path: the file should not exist, and Cancel must not
         # cause it to exist either.
         s = Settings(ini_path=ini_path)
-        d = SettingsDialog(settings=s)
+        d = SettingsDialog(
+            settings=s,
+            voice=StubVoiceNotifier(),  # type: ignore[arg-type]
+        )
         qtbot.addWidget(d)
         d._break_interval_spinbox.setValue(120)
 
@@ -172,24 +207,22 @@ class TestSave:
 
 
 # ---------------------------------------------------------------------------
-# Layout — single "Scheduling" tab today (S-01)
+# Layout — Scheduling + Notifications tabs (S-01 + S-04)
 # ---------------------------------------------------------------------------
 
 
 class TestLayout:
-    """Layout invariants for S-01 — single tab today, more tabs in S-02..S-05."""
+    """Layout invariants for the Scheduling tab (S-01).
+
+    The Notifications tab's own structural invariants live in
+    ``TestNotificationsTabLayout`` below.
+    """
 
     def test_dialog_contains_a_tab_widget(self, dialog: SettingsDialog) -> None:
         """The dialog hosts a ``QTabWidget`` (not a single-pane form)."""
         # Tripwire for the tabbed-from-day-one decision in
         # context/changes/settings-break-interval/plan-brief.md.
         assert dialog.findChild(QTabWidget) is not None
-
-    def test_tab_widget_has_exactly_one_tab(self, dialog: SettingsDialog) -> None:
-        """S-01 ships with exactly one tab; S-02..S-05 add more."""
-        tabs = dialog.findChild(QTabWidget)
-        assert tabs is not None
-        assert tabs.count() == 1
 
     def test_tab_label_is_scheduling(self, dialog: SettingsDialog) -> None:
         """The S-01 tab label is exactly ``"Scheduling"``."""
@@ -342,3 +375,382 @@ class TestValidationFeedback:
         # Garbage neither crashes nor surfaces the tooltip — the int()
         # parse fails and the slot returns early.
         assert calls == []
+
+
+# ---------------------------------------------------------------------------
+# Notifications tab — load (S-04)
+# ---------------------------------------------------------------------------
+
+
+class TestNotificationsTabLoad:
+    """Initial Notifications-tab state reflects ``Settings.voice_*`` (FR-007)."""
+
+    def test_checkbox_unchecked_by_default(self, dialog: SettingsDialog) -> None:
+        """FR-007: voice is opt-in — checkbox unchecked on a fresh INI."""
+        assert dialog._voice_enabled_checkbox.isChecked() is False
+
+    def test_checkbox_reflects_pre_set_voice_enabled(
+        self, qtbot, ini_path: Path, voice: StubVoiceNotifier
+    ) -> None:
+        """The checkbox shows whatever ``Settings.voice_enabled`` already holds."""
+        pre_set = Settings(ini_path=ini_path)
+        pre_set.voice_enabled = True
+        pre_set._qs.sync()
+        del pre_set
+
+        d = SettingsDialog(
+            settings=Settings(ini_path=ini_path),
+            voice=voice,  # type: ignore[arg-type]
+        )
+        qtbot.addWidget(d)
+
+        assert d._voice_enabled_checkbox.isChecked() is True
+
+    def test_phrase_field_shows_default_phrase(self, dialog: SettingsDialog) -> None:
+        """The phrase field is pre-filled with ``DEFAULT_VOICE_PHRASE`` on a fresh INI."""
+        assert dialog._voice_phrase_edit.text() == DEFAULT_VOICE_PHRASE
+
+    def test_phrase_field_reflects_pre_set_voice_phrase(
+        self, qtbot, ini_path: Path, voice: StubVoiceNotifier
+    ) -> None:
+        """The phrase field shows whatever ``Settings.voice_phrase`` already holds."""
+        pre_set = Settings(ini_path=ini_path)
+        pre_set.voice_phrase = "Stretch your back"
+        pre_set._qs.sync()
+        del pre_set
+
+        d = SettingsDialog(
+            settings=Settings(ini_path=ini_path),
+            voice=voice,  # type: ignore[arg-type]
+        )
+        qtbot.addWidget(d)
+
+        assert d._voice_phrase_edit.text() == "Stretch your back"
+
+    def test_checkbox_tooltip_explains_alongside_contract(self, dialog: SettingsDialog) -> None:
+        """The checkbox tooltip surfaces the FR-007 popup-is-mandatory contract.
+
+        Tripwire for the Q4 commitment in
+        ``context/changes/settings-voice-toggle/plan-brief.md`` — the
+        tooltip is the only UI surface that explains the popup-vs-voice
+        relationship; if it goes missing the user has no way to learn
+        that voice is additive, not a replacement.
+        """
+        tooltip = dialog._voice_enabled_checkbox.toolTip()
+        assert "alongside" in tooltip.lower()
+
+    def test_phrase_field_enabled_when_checkbox_unchecked(self, dialog: SettingsDialog) -> None:
+        """Phrase is editable even when voice is off (Q2: always editable)."""
+        # Sanity precondition: the fixture-built dialog has the checkbox
+        # unchecked. The phrase line edit must still accept input so
+        # the user can prepare the phrase before flipping the gate.
+        assert dialog._voice_enabled_checkbox.isChecked() is False
+        assert dialog._voice_phrase_edit.isEnabled() is True
+
+    def test_phrase_field_enabled_when_checkbox_checked(self, dialog: SettingsDialog) -> None:
+        """Phrase remains editable when voice is on (Q2: always editable)."""
+        dialog._voice_enabled_checkbox.setChecked(True)
+        assert dialog._voice_phrase_edit.isEnabled() is True
+
+
+# ---------------------------------------------------------------------------
+# Notifications tab — save (S-04)
+# ---------------------------------------------------------------------------
+
+
+class TestNotificationsTabSave:
+    """OK persists voice settings; Cancel discards. Co-saves with break interval."""
+
+    def test_accept_persists_checkbox_true(
+        self, dialog: SettingsDialog, settings: Settings
+    ) -> None:
+        """``accept()`` writes ``voice_enabled = True`` through the setter."""
+        dialog._voice_enabled_checkbox.setChecked(True)
+
+        dialog.accept()
+
+        assert settings.voice_enabled is True
+
+    def test_accept_persists_phrase_change(
+        self, dialog: SettingsDialog, settings: Settings
+    ) -> None:
+        """``accept()`` writes the edited phrase through ``Settings.voice_phrase``."""
+        dialog._voice_phrase_edit.setText("Stand up and stretch")
+
+        dialog.accept()
+
+        assert settings.voice_phrase == "Stand up and stretch"
+
+    def test_accept_persists_voice_across_settings_instances(
+        self, qtbot, ini_path: Path, voice: StubVoiceNotifier
+    ) -> None:
+        """Voice settings are observable from a freshly constructed ``Settings``."""
+        first_settings = Settings(ini_path=ini_path)
+        d = SettingsDialog(
+            settings=first_settings,
+            voice=voice,  # type: ignore[arg-type]
+        )
+        qtbot.addWidget(d)
+        d._voice_enabled_checkbox.setChecked(True)
+        d._voice_phrase_edit.setText("Time for a stretch")
+        d.accept()
+        first_settings._qs.sync()
+        del first_settings
+
+        second_settings = Settings(ini_path=ini_path)
+        assert second_settings.voice_enabled is True
+        assert second_settings.voice_phrase == "Time for a stretch"
+
+    def test_reject_does_not_persist_voice(
+        self, qtbot, settings: Settings, voice: StubVoiceNotifier
+    ) -> None:
+        """``reject()`` after editing voice fields leaves ``Settings`` untouched."""
+        # Pre-set known values so absence-of-write is observable.
+        settings.voice_enabled = True
+        settings.voice_phrase = "original phrase"
+        settings._qs.sync()
+
+        d = SettingsDialog(settings=settings, voice=voice)  # type: ignore[arg-type]
+        qtbot.addWidget(d)
+        d._voice_enabled_checkbox.setChecked(False)
+        d._voice_phrase_edit.setText("rejected phrase")
+
+        d.reject()
+
+        assert settings.voice_enabled is True
+        assert settings.voice_phrase == "original phrase"
+
+    def test_accept_co_saves_break_interval_and_voice(
+        self, dialog: SettingsDialog, settings: Settings
+    ) -> None:
+        """A single ``accept()`` persists Scheduling AND Notifications fields together.
+
+        Tripwire for an S-01 regression — extending ``accept()`` to
+        cover the voice fields must NOT skip the break-interval write.
+        """
+        dialog._break_interval_spinbox.setValue(45)
+        dialog._voice_enabled_checkbox.setChecked(True)
+        dialog._voice_phrase_edit.setText("Combined save")
+
+        dialog.accept()
+
+        assert settings.break_interval_min == 45
+        assert settings.voice_enabled is True
+        assert settings.voice_phrase == "Combined save"
+
+
+# ---------------------------------------------------------------------------
+# Notifications tab — validation (voice on + blank phrase blocks save)
+# ---------------------------------------------------------------------------
+
+
+class TestNotificationsTabValidation:
+    """The (voice on, blank phrase) combination cannot land via the GUI.
+
+    The persistence-layer setter accepts an empty phrase (see
+    ``tests/test_settings.py::TestVoiceSettersRoundTrip``); the dialog
+    is the only place that gates the combination. These tests pin
+    that gate in place.
+    """
+
+    @staticmethod
+    def _patch_show_text(monkeypatch: pytest.MonkeyPatch) -> list[tuple]:
+        """Replace ``QToolTip.showText`` with a recording stub."""
+        calls: list[tuple] = []
+
+        def _stub(*args: object, **kwargs: object) -> None:
+            calls.append((args, kwargs))
+
+        monkeypatch.setattr(
+            "break_reminder.ui.settings_dialog.QToolTip.showText",
+            _stub,
+        )
+        return calls
+
+    def test_voice_on_blank_phrase_blocks_save(
+        self,
+        dialog: SettingsDialog,
+        settings: Settings,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Voice on + empty phrase → no setter writes, no ``super().accept()``."""
+        self._patch_show_text(monkeypatch)
+        # Pre-set a known persisted state so absence of writes is observable.
+        settings.voice_enabled = False
+        settings.voice_phrase = "untouched"
+        settings._qs.sync()
+
+        # Fresh dialog so it loads the persisted state.
+        dialog._voice_enabled_checkbox.setChecked(True)
+        dialog._voice_phrase_edit.setText("")
+
+        dialog.accept()
+
+        # The early-return path means the setters never ran.
+        # Re-read from disk to be sure no write slipped through.
+        fresh = Settings(ini_path=Path(settings._qs.fileName()))
+        assert fresh.voice_enabled is False
+        assert fresh.voice_phrase == "untouched"
+        # Dialog stays open — Qt's accept() chain was skipped.
+        assert dialog.result() == 0
+
+    def test_voice_on_whitespace_phrase_blocks_save(
+        self,
+        dialog: SettingsDialog,
+        settings: Settings,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Voice on + whitespace-only phrase → blocked the same as fully blank."""
+        self._patch_show_text(monkeypatch)
+        settings.voice_enabled = False
+        settings.voice_phrase = "untouched"
+        settings._qs.sync()
+
+        dialog._voice_enabled_checkbox.setChecked(True)
+        dialog._voice_phrase_edit.setText("   \t  ")
+
+        dialog.accept()
+
+        fresh = Settings(ini_path=Path(settings._qs.fileName()))
+        assert fresh.voice_enabled is False
+        assert fresh.voice_phrase == "untouched"
+
+    def test_voice_on_blank_phrase_surfaces_tooltip(
+        self,
+        dialog: SettingsDialog,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The blocking branch surfaces the FR-007 required-phrase tooltip."""
+        calls = self._patch_show_text(monkeypatch)
+        dialog._voice_enabled_checkbox.setChecked(True)
+        dialog._voice_phrase_edit.setText("")
+
+        dialog.accept()
+
+        assert len(calls) == 1
+        args, _kwargs = calls[0]
+        # Second positional arg is the tooltip text.
+        assert "voice phrase" in args[1].lower()
+        assert "empty" in args[1].lower()
+
+    def test_voice_on_non_empty_phrase_saves(
+        self, dialog: SettingsDialog, settings: Settings
+    ) -> None:
+        """Voice on + non-empty phrase → save proceeds and dialog closes."""
+        dialog._voice_enabled_checkbox.setChecked(True)
+        dialog._voice_phrase_edit.setText("Stretch")
+
+        dialog.accept()
+
+        assert settings.voice_enabled is True
+        assert settings.voice_phrase == "Stretch"
+
+    def test_voice_off_empty_phrase_saves(self, dialog: SettingsDialog, settings: Settings) -> None:
+        """Voice off + empty phrase → save proceeds; the empty phrase persists silently.
+
+        The dialog only gates the (voice on, empty phrase) combination.
+        With voice off the empty phrase is unobservable to the user
+        and harmless on disk.
+        """
+        dialog._voice_enabled_checkbox.setChecked(False)
+        dialog._voice_phrase_edit.setText("")
+
+        dialog.accept()
+
+        assert settings.voice_enabled is False
+        assert settings.voice_phrase == ""
+
+
+# ---------------------------------------------------------------------------
+# Notifications tab — Test voice button
+# ---------------------------------------------------------------------------
+
+
+class TestNotificationsTabTestButton:
+    """The Test button speaks the line edit's current text via injected ``VoiceNotifier``."""
+
+    def test_click_calls_speak_once(self, dialog: SettingsDialog, voice: StubVoiceNotifier) -> None:
+        """One Test-button click results in exactly one ``speak`` invocation."""
+        dialog._voice_test_button.click()
+
+        assert len(voice.spoken) == 1
+
+    def test_click_speaks_current_text(
+        self, dialog: SettingsDialog, voice: StubVoiceNotifier
+    ) -> None:
+        """``speak`` receives the line edit's CURRENT (unsaved) text."""
+        dialog._voice_phrase_edit.setText("preview phrase")
+
+        dialog._voice_test_button.click()
+
+        assert voice.spoken == ["preview phrase"]
+
+    def test_click_speaks_unsaved_edits(
+        self, dialog: SettingsDialog, voice: StubVoiceNotifier
+    ) -> None:
+        """Editing then clicking Test (without OK) → speak gets the unsaved text."""
+        # Default phrase is in the line edit; user types something else
+        # but doesn't click OK.
+        dialog._voice_phrase_edit.setText("not yet saved")
+
+        dialog._voice_test_button.click()
+
+        assert voice.spoken == ["not yet saved"]
+
+    def test_click_does_not_write_to_settings(
+        self, dialog: SettingsDialog, settings: Settings
+    ) -> None:
+        """Clicking Test is a pure side-effect — ``Settings`` is not touched."""
+        # Pre-set known values; clicking Test must not change them.
+        settings.voice_enabled = False
+        settings.voice_phrase = "before"
+        settings._qs.sync()
+
+        dialog._voice_phrase_edit.setText("during preview")
+        dialog._voice_test_button.click()
+
+        assert settings.voice_enabled is False
+        assert settings.voice_phrase == "before"
+
+
+# ---------------------------------------------------------------------------
+# Notifications tab — layout
+# ---------------------------------------------------------------------------
+
+
+class TestNotificationsTabLayout:
+    """Layout invariants for the Notifications tab (S-04)."""
+
+    def test_dialog_has_two_tabs(self, dialog: SettingsDialog) -> None:
+        """S-04 ships a second tab alongside Scheduling."""
+        tabs = dialog.findChild(QTabWidget)
+        assert tabs is not None
+        assert tabs.count() == 2
+
+    def test_second_tab_label_is_notifications(self, dialog: SettingsDialog) -> None:
+        """The Notifications tab label is exactly ``"Notifications"``."""
+        # Tripwire: future slices should not silently rename — other
+        # tests and docs reference this label.
+        tabs = dialog.findChild(QTabWidget)
+        assert tabs is not None
+        assert tabs.tabText(1) == "Notifications"
+
+    def test_notifications_tab_contains_a_checkbox(self, dialog: SettingsDialog) -> None:
+        """The Notifications tab contains a ``QCheckBox`` for the voice toggle."""
+        assert dialog.findChild(QCheckBox) is not None
+
+    def test_notifications_tab_contains_a_line_edit(self, dialog: SettingsDialog) -> None:
+        """The Notifications tab contains a ``QLineEdit`` for the phrase."""
+        # The Scheduling tab's spinbox owns its own QLineEdit child, so
+        # we assert against the dialog-level dialog-owned line edit
+        # the builder stores as a public-ish attribute.
+        assert dialog._voice_phrase_edit is not None
+        assert isinstance(dialog._voice_phrase_edit, QLineEdit)
+
+    def test_notifications_tab_contains_a_test_button(self, dialog: SettingsDialog) -> None:
+        """The Notifications tab contains the Test-voice ``QPushButton``."""
+        # Find any QPushButton in the dialog tree. The DialogButtonBox
+        # also contains buttons, so we filter by the documented label.
+        buttons = dialog.findChildren(QPushButton)
+        labels = [b.text() for b in buttons]
+        assert "Test voice" in labels

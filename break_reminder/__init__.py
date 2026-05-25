@@ -4,5 +4,5 @@ The user-visible PRD lives at ``context/foundation/prd.md``. The conventions
 agents must follow live at ``AGENTS.md``. This package implements the runtime.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __all__ = ["__version__"]

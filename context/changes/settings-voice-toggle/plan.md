@@ -308,14 +308,14 @@ None. Existing `BreakReminder.ini` files from v0.1.0 / v0.2.x already have or wi
 
 #### Manual
 
-- [x] 2.1 Settings dialog opens with two tabs (Scheduling + Notifications).
-- [x] 2.2 Voice checkbox default unchecked; phrase shows "Time to take a break"; tooltip explains alongside-not-instead.
-- [x] 2.3 Test voice button speaks the typed (unsaved) phrase through system audio.
-- [x] 2.4 OK persists both keys to BreakReminder.ini under `[notifications]`.
-- [x] 2.5 On next break event, popup AND voice fire (popup mandatory, voice opt-in additional).
-- [x] 2.6 Reopening settings shows persisted values; Cancel discards changes.
-- [x] 2.7 Voice on + blank phrase + OK → tooltip appears; dialog stays open.
-- [x] 2.8 Voice off + blank phrase + OK → save proceeds; next break = popup only.
-- [x] 2.9 Quit + restart preserves last-saved values.
-- [x] 2.10 Roadmap S-04 status flipped `proposed` → `done`; Open Question #3 annotated as dissolved.
-- [x] 2.11 change.md status flipped through `implementing` → `implemented`.
+- [x] 2.1 Settings dialog opens with two tabs (Scheduling + Notifications). — d6be26c
+- [x] 2.2 Voice checkbox default unchecked; phrase shows "Time to take a break"; tooltip explains alongside-not-instead. — d6be26c
+- [x] 2.3 Test voice button speaks the typed (unsaved) phrase through system audio. — d6be26c
+- [x] 2.4 OK persists both keys to BreakReminder.ini under `[notifications]`. — d6be26c
+- [x] 2.5 On next break event, popup AND voice fire (popup mandatory, voice opt-in additional). — d6be26c
+- [x] 2.6 Reopening settings shows persisted values; Cancel discards changes. — d6be26c
+- [x] 2.7 Voice on + blank phrase + OK → tooltip appears; dialog stays open. — d6be26c
+- [x] 2.8 Voice off + blank phrase + OK → save proceeds; next break = popup only. — d6be26c
+- [x] 2.9 Quit + restart preserves last-saved values. — d6be26c
+- [x] 2.10 Roadmap S-04 status flipped `proposed` → `done`; Open Question #3 annotated as dissolved. — d6be26c
+- [x] 2.11 change.md status flipped through `implementing` → `implemented`. — d6be26c

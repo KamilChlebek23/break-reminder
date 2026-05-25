@@ -2,7 +2,7 @@
 id: settings-voice-toggle
 type: slice
 roadmap_ref: S-04
-status: implementing
+status: implemented
 created: 2026-05-25
 updated: 2026-05-25
 prd_refs: [FR-005, FR-007]

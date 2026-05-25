@@ -123,6 +123,21 @@ class Settings:
 
     @break_interval_min.setter
     def break_interval_min(self, minutes: int) -> None:
+        """Persist the FR-006 break-interval after enforcing its range.
+
+        Unlike the bool / string setters in this class, this one validates
+        on write rather than coercing. The dialog's ``QSpinBox`` already
+        clamps user input visually, but a direct caller (test helper, future
+        CLI flag, default-reset path) gets a clear ``ValueError`` instead of
+        a silently truncated value.
+
+        Args:
+            minutes: Break interval in minutes. Must satisfy
+                ``BREAK_INTERVAL_MIN_MINUTES <= minutes <= BREAK_INTERVAL_MAX_MINUTES``.
+
+        Raises:
+            ValueError: If ``minutes`` is outside the FR-006 range.
+        """
         if not BREAK_INTERVAL_MIN_MINUTES <= minutes <= BREAK_INTERVAL_MAX_MINUTES:
             raise ValueError(
                 f"break_interval_min must be in "
@@ -180,8 +195,17 @@ class Settings:
         a future "reset to defaults" path) own whatever string they
         write here.
 
+        Note: unlike ``voice_enabled.setter`` (which coerces via ``bool(value)``),
+        this setter writes ``phrase`` straight through without ``str(...)``
+        coercion. Callers are expected to pass a ``str``. The matching getter
+        already coerces on read with ``str(value)``, so a non-string write
+        won't crash the next read — but the on-disk representation may surprise
+        you (e.g., ``Path("…")`` round-trips as ``"."``-relative output, not
+        the absolute path you stored). See impl-review F5.
+
         Args:
             phrase: The phrase ``VoiceNotifier.speak`` will pronounce.
+                Must be a ``str``; no coercion is performed at the setter.
         """
         self._qs.setValue(_Keys.VOICE_PHRASE, phrase)
 
@@ -197,9 +221,17 @@ class Settings:
 
     @paused.setter
     def paused(self, value: bool) -> None:
-        # FR-016: paused state persists until explicitly resumed or until
-        # next reboot. Reboot-reset is handled by ``app.main`` clearing the
-        # key at startup; this setter only handles explicit user toggles.
+        """Persist the FR-016 pause flag.
+
+        Paused state survives until either an explicit resume (a setter call
+        with ``False``) or the next reboot. Reboot-reset is handled by
+        ``app.main`` calling ``clear_paused_on_reboot`` at startup; this
+        setter handles only explicit user toggles. Coerced via ``bool(value)``
+        for symmetry with the other bool setters in this class.
+
+        Args:
+            value: ``True`` to pause break scheduling, ``False`` to resume.
+        """
         self._qs.setValue(_Keys.PAUSED, bool(value))
 
     def clear_paused_on_reboot(self) -> None:

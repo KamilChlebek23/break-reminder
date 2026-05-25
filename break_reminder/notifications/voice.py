@@ -38,8 +38,15 @@ class VoiceNotifier:
     # ---- public API -----------------------------------------------------
 
     def speak(self, phrase: str) -> None:
-        """Queue ``phrase`` for speaking unless the system gates block it."""
-        if not phrase:
+        """Queue ``phrase`` for speaking unless the system gates block it.
+
+        Empty *and* whitespace-only phrases are treated as no-ops so callers
+        (notably the settings dialog's Test-voice button) can pass user
+        input straight through without an upstream strip — silence on
+        ``"   "`` would otherwise look like the audio path is broken
+        (impl-review F4).
+        """
+        if not phrase or not phrase.strip():
             return
         if self.is_blocked():
             logger.info(

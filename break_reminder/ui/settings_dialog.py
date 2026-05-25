@@ -142,7 +142,12 @@ class SettingsDialog(QDialog):
 
         self._tabs = QTabWidget(self)
         self._tabs.addTab(self._build_scheduling_tab(), self.SCHEDULING_TAB_LABEL)
-        self._tabs.addTab(self._build_notifications_tab(), self.NOTIFICATIONS_TAB_LABEL)
+        # Stored on self so accept()'s validation gate can switch to the
+        # Notifications tab before anchoring the empty-phrase tooltip — see
+        # the impl-review F1 fix in
+        # ``context/changes/settings-voice-toggle/reviews/impl-review.md``.
+        self._notifications_tab = self._build_notifications_tab()
+        self._tabs.addTab(self._notifications_tab, self.NOTIFICATIONS_TAB_LABEL)
 
         self._buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
@@ -246,7 +251,12 @@ class SettingsDialog(QDialog):
         already runs on a single-worker thread pool, so the GUI thread
         does not block. ``VoiceNotifier.speak("")`` is a documented
         no-op, so an empty phrase produces no audio without raising.
+
+        ``stop()`` is called before ``speak()`` so that rapid Test-button
+        clicks cancel the prior in-flight preview rather than queuing
+        five copies of the speech serially (impl-review F3).
         """
+        self._voice.stop()
         self._voice.speak(self._voice_phrase_edit.text())
 
     def _on_break_interval_text_edited(self, text: str) -> None:
@@ -313,6 +323,12 @@ class SettingsDialog(QDialog):
         Then chains to ``QDialog.accept`` for the standard close path.
         """
         if self._voice_enabled_checkbox.isChecked() and not self._voice_phrase_edit.text().strip():
+            # Surface the Notifications tab BEFORE anchoring the tooltip —
+            # the user may have clicked OK from the Scheduling tab, in which
+            # case the phrase line edit is on a hidden tab and the tooltip
+            # would float anchored to nothing visible. Switching tabs first
+            # ensures the message points at the field that needs fixing.
+            self._tabs.setCurrentWidget(self._notifications_tab)
             anchor = self._voice_phrase_edit.mapToGlobal(
                 self._voice_phrase_edit.rect().bottomLeft()
             )

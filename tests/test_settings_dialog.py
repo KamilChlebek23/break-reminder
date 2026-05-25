@@ -30,17 +30,24 @@ from break_reminder.ui.settings_dialog import SettingsDialog
 class StubVoiceNotifier:
     """No-op ``VoiceNotifier`` stub — same surface, no thread pool.
 
-    Records every ``speak`` call into ``self.spoken`` so tests can
-    assert on the Test-button payload without exercising ``pyttsx3``.
+    Records every ``speak`` call into ``self.spoken`` and counts ``stop``
+    calls so tests can assert on the Test-button payload AND on the
+    rapid-click cancellation contract (impl-review F3) without
+    exercising ``pyttsx3``.
     """
 
     def __init__(self) -> None:
-        """Initialize the stub with an empty call log."""
+        """Initialize the stub with an empty call log and zero stop count."""
         self.spoken: list[str] = []
+        self.stop_calls = 0
 
     def speak(self, phrase: str) -> None:
         """Record one ``speak`` invocation by appending ``phrase`` to ``spoken``."""
         self.spoken.append(phrase)
+
+    def stop(self) -> None:
+        """Record one ``stop`` invocation by incrementing ``stop_calls``."""
+        self.stop_calls += 1
 
 
 @pytest.fixture
@@ -578,21 +585,33 @@ class TestNotificationsTabValidation:
         # Pre-set a known persisted state so absence of writes is observable.
         settings.voice_enabled = False
         settings.voice_phrase = "untouched"
+        # Distinct break-interval so we can prove the gate is atomic — the
+        # break-interval edit must NOT leak through when the voice gate trips
+        # (impl-review F2 tripwire).
+        settings.break_interval_min = 60
         settings._qs.sync()
 
-        # Fresh dialog so it loads the persisted state.
+        dialog._break_interval_spinbox.setValue(30)
         dialog._voice_enabled_checkbox.setChecked(True)
         dialog._voice_phrase_edit.setText("")
 
         dialog.accept()
 
-        # The early-return path means the setters never ran.
+        # The early-return path means none of the setters ran.
         # Re-read from disk to be sure no write slipped through.
         fresh = Settings(ini_path=Path(settings._qs.fileName()))
         assert fresh.voice_enabled is False
         assert fresh.voice_phrase == "untouched"
+        # F2: atomic-save tripwire — the otherwise-valid break-interval edit
+        # must NOT have leaked through when the voice gate trips. If a future
+        # refactor reorders the setters before the validation gate, this asserts.
+        assert fresh.break_interval_min == 60
         # Dialog stays open — Qt's accept() chain was skipped.
         assert dialog.result() == 0
+        # F1: the user must land on the Notifications tab so the tooltip
+        # anchor (`_voice_phrase_edit`) is on the visible tab. If the user
+        # clicked OK from Scheduling, the dialog flips for them.
+        assert dialog._tabs.currentWidget() is dialog._notifications_tab
 
     def test_voice_on_whitespace_phrase_blocks_save(
         self,
@@ -674,6 +693,25 @@ class TestNotificationsTabTestButton:
         dialog._voice_test_button.click()
 
         assert len(voice.spoken) == 1
+
+    def test_click_cancels_prior_in_flight_speech(
+        self, dialog: SettingsDialog, voice: StubVoiceNotifier
+    ) -> None:
+        """Each Test click calls ``stop()`` first so rapid clicks don't queue (F3).
+
+        Without this contract, five rapid clicks would queue five copies of
+        the speech in the single-worker thread pool. Calling ``stop()``
+        before each ``speak()`` lets each click cancel its predecessor,
+        matching the user's mental model of "click again to replace".
+        """
+        dialog._voice_test_button.click()
+        dialog._voice_test_button.click()
+        dialog._voice_test_button.click()
+
+        # One stop per click, including the very first (idempotent on a
+        # cold notifier — the F3 contract is "always cancel before speak").
+        assert voice.stop_calls == 3
+        assert len(voice.spoken) == 3
 
     def test_click_speaks_current_text(
         self, dialog: SettingsDialog, voice: StubVoiceNotifier

@@ -26,6 +26,7 @@ import csv
 from pathlib import Path
 
 import pytest
+from PySide6.QtCore import QUrl
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QApplication
 
@@ -400,3 +401,207 @@ class TestOpenSettingsAction:
 
         assert len(captures) == 1
         assert captures[0]["exec_called"] is True
+
+
+# ---------------------------------------------------------------------------
+# Check for updates action — installed-version dialog (version-in-check-updates)
+# ---------------------------------------------------------------------------
+
+
+class TestCheckForUpdatesAction:
+    """Triggering 'Check for updates' shows the version dialog.
+
+    Pattern-mirrored from ``TestOpenSettingsAction``. Substitutes
+    ``break_reminder.app.QMessageBox`` with a recording stub so the slot
+    runs without spinning up a real modal, and the conditional
+    ``QDesktopServices.openUrl`` call is observable via a second stub.
+    Identity check on ``clickedButton()`` is what drives the conditional
+    URL hop, so the stub returns the same button instance the slot
+    captured from ``addButton``.
+    """
+
+    @staticmethod
+    def _make_stub(captures: list[dict], simulate_click_label: str) -> type:
+        """Build a stub QMessageBox class that records calls.
+
+        Args:
+            captures: Each constructed stub appends its instance under
+                ``"box"`` so tests can inspect title / text / buttons.
+            simulate_click_label: Drives ``clickedButton()`` post-exec.
+                Pass ``"Open Releases"`` to exercise the URL-open path
+                or ``"Close"`` to exercise the no-op dismiss path.
+
+        Returns:
+            A class that pytest can drop in via ``monkeypatch.setattr``
+            for ``break_reminder.app.QMessageBox``. The class re-exports
+            ``Icon`` and ``ButtonRole`` from the real ``QMessageBox`` so
+            the slot's ``QMessageBox.Icon.Information`` and
+            ``QMessageBox.ButtonRole.AcceptRole`` accesses keep working.
+        """
+        from PySide6.QtWidgets import QMessageBox as RealQMessageBox
+
+        class _StubButton:
+            """Sentinel object the slot's identity check compares against."""
+
+            def __init__(self, label: str) -> None:
+                self.label = label
+
+        class _StubMessageBox:
+            """No-op QMessageBox stand-in that records every setter call."""
+
+            Icon = RealQMessageBox.Icon
+            ButtonRole = RealQMessageBox.ButtonRole
+
+            def __init__(self) -> None:
+                self.window_title: str = ""
+                self.text: str = ""
+                self.informative_text: str = ""
+                self.icon: object | None = None
+                self.buttons: dict[str, _StubButton] = {}
+                self.default_button: _StubButton | None = None
+                captures.append({"box": self})
+
+            def setIcon(self, icon: object) -> None:
+                self.icon = icon
+
+            def setWindowTitle(self, title: str) -> None:
+                self.window_title = title
+
+            def setText(self, text: str) -> None:
+                self.text = text
+
+            def setInformativeText(self, text: str) -> None:
+                self.informative_text = text
+
+            def addButton(self, label: str, role: object) -> _StubButton:
+                button = _StubButton(label)
+                self.buttons[label] = button
+                return button
+
+            def setDefaultButton(self, button: _StubButton) -> None:
+                self.default_button = button
+
+            def exec(self) -> int:
+                return 0
+
+            def clickedButton(self) -> _StubButton | None:
+                return self.buttons.get(simulate_click_label)
+
+        return _StubMessageBox
+
+    @staticmethod
+    def _stub_desktop_services(opened_urls: list[QUrl]) -> type:
+        """Build a stub ``QDesktopServices`` that records ``openUrl`` calls.
+
+        Args:
+            opened_urls: Each ``openUrl`` invocation appends its argument
+                so tests can assert the URL string verbatim.
+
+        Returns:
+            A class with a static ``openUrl`` method, drop-in for
+            ``break_reminder.app.QDesktopServices`` via monkeypatch.
+        """
+
+        class _StubDesktopServices:
+            @staticmethod
+            def openUrl(url: QUrl) -> bool:
+                opened_urls.append(url)
+                return True
+
+        return _StubDesktopServices
+
+    def test_action_label_is_check_for_updates(self, app: BreakReminderApp) -> None:
+        """Sanity tripwire: the menu item label must remain 'Check for updates'.
+
+        If a future agent renames the action, this test fires — and so do
+        all the other tests in this class via ``_find_action``. Keeping
+        the explicit assertion here makes the diagnostic obvious.
+        """
+        assert _find_action(app, "Check for updates") is not None
+
+    def test_dialog_text_includes_installed_version(
+        self, app: BreakReminderApp, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The dialog's main text contains ``break_reminder.__version__`` verbatim.
+
+        Pinning the version string in the dialog body is the entire
+        point of this slice. If a future refactor ever drops the version
+        substitution, this assertion is the canary.
+        """
+        from break_reminder import __version__
+
+        captures: list[dict] = []
+        monkeypatch.setattr(
+            "break_reminder.app.QMessageBox",
+            self._make_stub(captures, simulate_click_label="Close"),
+        )
+
+        _find_action(app, "Check for updates").trigger()
+
+        assert len(captures) == 1
+        assert __version__ in captures[0]["box"].text
+
+    def test_dialog_text_includes_app_description(
+        self, app: BreakReminderApp, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The dialog's informative text contains the pyproject description verbatim."""
+        captures: list[dict] = []
+        monkeypatch.setattr(
+            "break_reminder.app.QMessageBox",
+            self._make_stub(captures, simulate_click_label="Close"),
+        )
+
+        _find_action(app, "Check for updates").trigger()
+
+        assert (
+            "A Windows-11 break reminder for phone-free deep-focus workspaces."
+            in captures[0]["box"].informative_text
+        )
+
+    def test_open_releases_button_opens_url(
+        self, app: BreakReminderApp, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Clicking 'Open Releases' fires ``QDesktopServices.openUrl(QUrl(RELEASES_URL))``."""
+        from break_reminder.app import RELEASES_URL
+
+        captures: list[dict] = []
+        monkeypatch.setattr(
+            "break_reminder.app.QMessageBox",
+            self._make_stub(captures, simulate_click_label="Open Releases"),
+        )
+        opened_urls: list[QUrl] = []
+        monkeypatch.setattr(
+            "break_reminder.app.QDesktopServices",
+            self._stub_desktop_services(opened_urls),
+        )
+
+        _find_action(app, "Check for updates").trigger()
+
+        assert len(opened_urls) == 1
+        assert opened_urls[0].toString() == RELEASES_URL
+
+    def test_close_button_does_not_open_url(
+        self, app: BreakReminderApp, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Clicking 'Close' must NOT call ``QDesktopServices.openUrl``.
+
+        Tripwire for the conditional branch in the slot. If a future
+        edit accidentally moves the ``openUrl`` call out of the
+        ``if box.clickedButton() is open_button`` guard, this test
+        catches the regression — the user would otherwise see a browser
+        tab open every time they dismissed the dialog.
+        """
+        captures: list[dict] = []
+        monkeypatch.setattr(
+            "break_reminder.app.QMessageBox",
+            self._make_stub(captures, simulate_click_label="Close"),
+        )
+        opened_urls: list[QUrl] = []
+        monkeypatch.setattr(
+            "break_reminder.app.QDesktopServices",
+            self._stub_desktop_services(opened_urls),
+        )
+
+        _find_action(app, "Check for updates").trigger()
+
+        assert opened_urls == []

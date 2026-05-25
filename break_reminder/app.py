@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QSystemTrayIcon,
 )
 
+from break_reminder import __version__
 from break_reminder.activity import ActivityMonitor
 from break_reminder.notifications.break_dialog import BreakDialog, BreakOutcome
 from break_reminder.notifications.reminder_dialog import ReminderDialog
@@ -43,6 +44,12 @@ logger = logging.getLogger(__name__)
 # the maintainer's GitHub login and MUST be replaced before the v0.1.0
 # tag push (see context/deployment/deploy-plan.md Phase 1 step 1).
 RELEASES_URL = "https://github.com/KamilChlebek23/break-reminder/releases/latest"
+
+# Mirror of pyproject.toml:4 — keep in sync when the description changes.
+# Hardcoded rather than read via importlib.metadata so the dialog works
+# in editable / source-tree dev runs without requiring an installed-
+# package metadata view (impl-plan version-in-check-updates).
+_APP_DESCRIPTION = "A Windows-11 break reminder for phone-free deep-focus workspaces."
 
 
 class BreakReminderApp:
@@ -293,15 +300,33 @@ class BreakReminderApp:
         SettingsDialog(settings=self._settings, voice=self._voice).exec()
 
     def _on_check_for_updates(self) -> None:
-        """Open the GitHub Releases page in the user's default browser.
+        """Show the installed version, then optionally open GitHub Releases.
 
-        Pure-Python equivalent of an in-app "Check for updates" web link.
+        Pops a modal ``QMessageBox`` titled "About BreakReminder" with the
+        installed version (``break_reminder.__version__``) and the app
+        description, plus two buttons: "Open Releases" (default — does
+        the same browser hop as before) and "Close" (dismisses without
+        browsing). Identity check on the clicked button drives the
+        conditional ``QDesktopServices.openUrl`` call.
+
         No network calls happen inside the app — the OS opens the browser
         — so the local-only NFR stays intact. Pre-staged mitigation for
         the "users stay on stale versions" risk in
         ``context/foundation/infrastructure.md``.
         """
-        QDesktopServices.openUrl(QUrl(RELEASES_URL))
+        box = QMessageBox()
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setWindowTitle(f"About {APPLICATION_NAME}")
+        box.setText(f"<b>{APPLICATION_NAME} v{__version__}</b>")
+        box.setInformativeText(
+            f"{_APP_DESCRIPTION}\n\nClick 'Open Releases' to see if a newer version is available."
+        )
+        open_button = box.addButton("Open Releases", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("Close", QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(open_button)
+        box.exec()
+        if box.clickedButton() is open_button:
+            QDesktopServices.openUrl(QUrl(RELEASES_URL))
 
     def _on_quit(self) -> None:
         self._qt_app.quit()

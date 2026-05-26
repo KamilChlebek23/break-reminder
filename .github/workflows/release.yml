@@ -30,7 +30,15 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        # Pinned to an exact patch tag (v8.x). astral-sh/setup-uv v8.0.0
+        # stopped publishing rolling major/minor tags as a supply-chain
+        # hardening move (post-tj-actions incident, 2026-Q1) — see
+        # https://github.com/astral-sh/setup-uv/releases/tag/v8.0.0 —
+        # so `@v3` / `@v8` resolutions now point at archived SHAs and
+        # break the runner with "An action could not be found at the
+        # URI ...codeload.github.com/astral-sh/setup-uv/zip/<sha>".
+        # Bump the patch component when a newer release is verified.
+        uses: astral-sh/setup-uv@v8.1.0
         with:
           python-version: "3.12"
           enable-cache: true

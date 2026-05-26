@@ -235,6 +235,96 @@ once they exceed a size threshold.
 
 ---
 
+## Release history
+
+Newest first. Dates are tag-push dates.
+
+### v0.5.0 — 2026-05-26
+
+S-02 settings-autostart-toggle. New **Lifecycle** tab in the settings
+dialog with a single "Launch BreakReminder at Windows login" checkbox
+(FR-003).
+
+- Ticking + OK writes the per-user
+  `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\BreakReminder`
+  registry value to `"<install path>"`; unticking + OK deletes it.
+  No UAC prompt — per-user Run-key writes don't require elevation.
+  Default off.
+- Atomic save: any registry failure (group-policy block, ACL tampering,
+  etc.) anchors a transient tooltip on the checkbox and blocks the
+  entire OK save, leaving INI and registry both unchanged. Extends the
+  v0.4.0 snooze-config atomic-save invariant to a fourth field.
+- Closes the v0.1.0 "Known stubs" line for FR-003 — the settings key
+  was wired since v0.1.0; the registry write is wired now.
+- Stream A (settings panel) of the roadmap is now complete: FR-003
+  (autostart), FR-006 (break interval), FR-007 (voice on/off + phrase),
+  and FR-010 (snooze duration + cap) are all user-configurable from
+  the dialog.
+
+Test suite: 238 → 259.
+
+### v0.4.0 — 2026-05-26
+
+S-03 settings-snooze-config. **Scheduling** tab gains two spinboxes
+for snooze parameters (FR-010), and the tray tooltip becomes
+snooze-aware.
+
+- New **Snooze duration (minutes)** spinbox (1–30) and **Max snoozes
+  per cycle** spinbox (0–5; 0 = no snoozes, the break must be taken
+  or missed). Closes PRD Open Question #1.
+- Tray tooltip flips to `BreakReminder — snooze time left Xm YYs`
+  while a snooze window is open, then back to the regular countdown
+  when the snooze elapses or the user takes a break. Pause still wins
+  (paused > snoozing > regular countdown).
+- Setter validation on both new fields (`ValueError` on out-of-range);
+  getter clamps for hand-edited corrupt INI values so an invalid file
+  doesn't crash the app.
+
+Test suite: 198 → 238.
+
+### v0.3.0 — 2026-05-25
+
+version-in-check-updates. The tray menu's **Check for updates** item
+now displays the current app version inline (`Check for updates
+(v0.3.0)`), so users can confirm what they're running without opening
+a separate dialog.
+
+### v0.2.0 — 2026-05-25
+
+First real settings GUI. The **Open settings…** tray item now opens a
+tabbed dialog instead of the v0.1.x INI-path placeholder.
+
+- S-01 settings-break-interval. New **Scheduling** tab with the
+  break-interval spinbox (FR-005, FR-006).
+- S-04 settings-voice-toggle. New **Notifications** tab with a
+  voice-on/off checkbox, editable phrase line edit, **Test voice**
+  button, and a voice-empty-phrase validation gate (FR-007). Dissolves
+  PRD Open Question #3.
+
+Test suite: 33 → 198.
+
+### v0.1.0 — 2026-05-21
+
+First public release. Tray-resident, non-dismissable break reminder.
+
+- Centered, non-dismissable break dialog (FR-008, FR-009). `Esc`,
+  `Alt+F4`, click-outside, and focus-loss are all swallowed; the user
+  picks "I'll take a break" or "Snooze".
+- Active-time accounting: the timer counts only active keyboard /
+  mouse input, pausing automatically when you walk away from the desk
+  and resuming when you return (FR-008).
+- Tray menu: Take break now / Reset / Pause / Open settings / Check
+  for updates / Quit (FR-004).
+- Pause does NOT survive a reboot — the next boot is unpaused (FR-016).
+- INI-based settings under `%APPDATA%\BreakReminder\BreakReminder.ini`
+  (the GUI shipped in v0.2.0).
+- Per-user NSIS installer with no UAC prompt; settings preserved on
+  uninstall (FR-002).
+
+Test suite: 33.
+
+---
+
 ## For developers
 
 The rest of this README covers building from source, running the test

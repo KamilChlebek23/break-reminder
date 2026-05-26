@@ -14,6 +14,7 @@ tests fail loudly instead of letting the layout drift unnoticed.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -26,6 +27,7 @@ from break_reminder.storage.settings import (
     DEFAULT_VOICE_PHRASE,
     Settings,
 )
+from break_reminder.ui import settings_dialog as settings_dialog_module
 from break_reminder.ui.settings_dialog import SettingsDialog
 
 
@@ -674,19 +676,28 @@ class TestNotificationsTabValidation:
         settings: Settings,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Voice on + empty phrase → no setter writes, no ``super().accept()``."""
+        """Voice on + empty phrase → no setter writes, no ``super().accept()``.
+
+        Atomic-save tripwire: every persisted field — break interval,
+        snooze duration, max snoozes, voice toggle, voice phrase, AND
+        autostart — must remain at its pre-edit value when the voice
+        gate trips. If a future refactor reorders any setter before the
+        validation gate, one of the assertions below catches it.
+        """
         self._patch_show_text(monkeypatch)
         # Pre-set a known persisted state so absence of writes is observable.
         settings.voice_enabled = False
         settings.voice_phrase = "untouched"
-        # Distinct values across all three Scheduling-tab fields so we can
-        # prove the gate is atomic — every edit must NOT leak through when
-        # the voice gate trips (impl-review F2 tripwire). The break-interval
-        # tripwire pre-dates this slice; the snooze-duration / max-snoozes
-        # tripwires were added during the settings-snooze-config impl-review.
+        # Distinct values across all four persisted fields so we can prove
+        # the gate is atomic — every edit must NOT leak through when the
+        # voice gate trips (impl-review F2 tripwire). The break-interval
+        # tripwire pre-dates this slice; the snooze tripwires were added
+        # during settings-snooze-config impl-review F2; the autostart
+        # tripwire was added during settings-autostart-toggle.
         settings.break_interval_min = 60
         settings.snooze_duration_min = 10
         settings.max_snoozes = 3
+        settings.autostart = False
         settings._qs.sync()
 
         dialog._break_interval_spinbox.setValue(30)
@@ -694,6 +705,25 @@ class TestNotificationsTabValidation:
         dialog._max_snoozes_spinbox.setValue(4)
         dialog._voice_enabled_checkbox.setChecked(True)
         dialog._voice_phrase_edit.setText("")
+        # Tick the autostart checkbox too — the test must prove that
+        # neither the registry side-effect NOR the autostart INI write
+        # fires when the voice gate trips first. Stub the helpers so a
+        # gate failure is the ONLY thing that could possibly skip the
+        # writes (eliminates "the registry call swallowed an exception"
+        # as a confounder).
+        write_calls: list[str] = []
+        delete_calls: list[None] = []
+        monkeypatch.setattr(
+            settings_dialog_module,
+            "_write_autostart_runkey",
+            lambda command: write_calls.append(command),
+        )
+        monkeypatch.setattr(
+            settings_dialog_module,
+            "_delete_autostart_runkey",
+            lambda: delete_calls.append(None),
+        )
+        dialog._autostart_checkbox.setChecked(True)
 
         dialog.accept()
 
@@ -702,13 +732,20 @@ class TestNotificationsTabValidation:
         fresh = Settings(ini_path=Path(settings._qs.fileName()))
         assert fresh.voice_enabled is False
         assert fresh.voice_phrase == "untouched"
-        # F2: atomic-save tripwire — every otherwise-valid Scheduling-tab edit
-        # must NOT have leaked through when the voice gate trips. If a future
-        # refactor reorders any of these setters before the validation gate,
-        # the corresponding line below asserts.
+        # F2: atomic-save tripwire — every otherwise-valid Scheduling-tab
+        # and Lifecycle-tab edit must NOT have leaked through when the
+        # voice gate trips. If a future refactor reorders any of these
+        # setters before the validation gate, the corresponding line
+        # below asserts.
         assert fresh.break_interval_min == 60
         assert fresh.snooze_duration_min == 10
         assert fresh.max_snoozes == 3
+        assert fresh.autostart is False
+        # And critically: the autostart side-effect must NOT have fired
+        # either — the voice gate is the FIRST thing in accept(), before
+        # the side-effect block. Both helper stubs stay empty.
+        assert write_calls == []
+        assert delete_calls == []
         # Dialog stays open — Qt's accept() chain was skipped.
         assert dialog.result() == 0
         # F1: the user must land on the Notifications tab so the tooltip
@@ -862,11 +899,11 @@ class TestNotificationsTabTestButton:
 class TestNotificationsTabLayout:
     """Layout invariants for the Notifications tab (S-04)."""
 
-    def test_dialog_has_two_tabs(self, dialog: SettingsDialog) -> None:
-        """S-04 ships a second tab alongside Scheduling."""
+    def test_dialog_has_three_tabs(self, dialog: SettingsDialog) -> None:
+        """S-02 + S-04 ship two tabs alongside Scheduling — total three."""
         tabs = dialog.findChild(QTabWidget)
         assert tabs is not None
-        assert tabs.count() == 2
+        assert tabs.count() == 3
 
     def test_second_tab_label_is_notifications(self, dialog: SettingsDialog) -> None:
         """The Notifications tab label is exactly ``"Notifications"``."""
@@ -895,3 +932,413 @@ class TestNotificationsTabLayout:
         buttons = dialog.findChildren(QPushButton)
         labels = [b.text() for b in buttons]
         assert "Test voice" in labels
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle tab — layout (S-02)
+# ---------------------------------------------------------------------------
+
+
+class TestLifecycleTabLayout:
+    """Layout invariants for the Lifecycle tab (S-02 / FR-003)."""
+
+    def test_third_tab_label_is_lifecycle(self, dialog: SettingsDialog) -> None:
+        """The Lifecycle tab label is exactly ``"Lifecycle"``.
+
+        Tripwire: future slices may add tabs but should not silently
+        rename this one — the plan, README, and other tests reference
+        the label.
+        """
+        tabs = dialog.findChild(QTabWidget)
+        assert tabs is not None
+        assert tabs.tabText(2) == "Lifecycle"
+
+    def test_lifecycle_tab_contains_autostart_checkbox(self, dialog: SettingsDialog) -> None:
+        """The Lifecycle tab exposes the autostart ``QCheckBox`` attribute."""
+        assert dialog._autostart_checkbox is not None
+        assert isinstance(dialog._autostart_checkbox, QCheckBox)
+
+    def test_autostart_checkbox_label_matches_roadmap_wording(self, dialog: SettingsDialog) -> None:
+        """The checkbox text is the exact roadmap S-02 wording.
+
+        Tripwire: the wording is the contract between the roadmap, the
+        plan, and the running UI. Drift would silently break docs and
+        the manual smoke checklist.
+        """
+        assert dialog._autostart_checkbox.text() == "Launch BreakReminder at Windows login"
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle tab — load (S-02 / FR-003)
+# ---------------------------------------------------------------------------
+
+
+class TestLifecycleTabLoad:
+    """Initial Lifecycle-tab state reflects ``Settings.autostart`` (FR-003)."""
+
+    def test_autostart_checkbox_unchecked_when_setting_false(self, dialog: SettingsDialog) -> None:
+        """FR-003 default: autostart is opt-in — checkbox unchecked on a fresh INI."""
+        assert dialog._autostart_checkbox.isChecked() is False
+
+    def test_autostart_checkbox_checked_when_setting_true(
+        self, qtbot, ini_path: Path, voice: StubVoiceNotifier
+    ) -> None:
+        """The checkbox shows whatever ``Settings.autostart`` already holds."""
+        pre_set = Settings(ini_path=ini_path)
+        pre_set.autostart = True
+        pre_set._qs.sync()
+        del pre_set
+
+        d = SettingsDialog(
+            settings=Settings(ini_path=ini_path),
+            voice=voice,  # type: ignore[arg-type]
+        )
+        qtbot.addWidget(d)
+
+        assert d._autostart_checkbox.isChecked() is True
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle tab — save (S-02 / FR-003)
+# ---------------------------------------------------------------------------
+
+
+def _patch_runkey_helpers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[list[str], list[None]]:
+    """Replace the autostart Run-key helpers with capture stubs.
+
+    Returns:
+        Two lists. The first records every ``_write_autostart_runkey``
+        call's ``command`` argument; the second appends one ``None`` per
+        ``_delete_autostart_runkey`` call. Tests assert against
+        ``len(...)`` and the recorded payload.
+    """
+    write_calls: list[str] = []
+    delete_calls: list[None] = []
+
+    monkeypatch.setattr(
+        settings_dialog_module,
+        "_write_autostart_runkey",
+        lambda command: write_calls.append(command),
+    )
+    monkeypatch.setattr(
+        settings_dialog_module,
+        "_delete_autostart_runkey",
+        lambda: delete_calls.append(None),
+    )
+    return write_calls, delete_calls
+
+
+class TestAutostartTabSave:
+    """OK persists autostart through ``Settings`` AND the Run-key helpers (FR-003).
+
+    The Run-key helpers are monkeypatched to capture stubs so the suite
+    never touches the real Windows registry. Tests for the helpers
+    themselves live in ``TestRunkeyHelpers`` below.
+    """
+
+    def test_check_and_ok_writes_runkey_with_quoted_executable(
+        self,
+        dialog: SettingsDialog,
+        settings: Settings,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Tick + OK → ``_write_autostart_runkey`` called once with quoted ``sys.executable``."""
+        write_calls, delete_calls = _patch_runkey_helpers(monkeypatch)
+        dialog._autostart_checkbox.setChecked(True)
+
+        dialog.accept()
+
+        assert write_calls == [f'"{sys.executable}"']
+        assert delete_calls == []
+        assert settings.autostart is True
+
+    def test_uncheck_and_ok_deletes_runkey(
+        self,
+        qtbot,
+        ini_path: Path,
+        voice: StubVoiceNotifier,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Untick + OK → ``_delete_autostart_runkey`` called once; INI flips to False."""
+        # Pre-set autostart=True so unticking is a state change.
+        pre_set = Settings(ini_path=ini_path)
+        pre_set.autostart = True
+        pre_set._qs.sync()
+        del pre_set
+
+        s = Settings(ini_path=ini_path)
+        d = SettingsDialog(settings=s, voice=voice)  # type: ignore[arg-type]
+        qtbot.addWidget(d)
+
+        write_calls, delete_calls = _patch_runkey_helpers(monkeypatch)
+        d._autostart_checkbox.setChecked(False)
+
+        d.accept()
+
+        assert write_calls == []
+        assert len(delete_calls) == 1
+        assert s.autostart is False
+
+    def test_no_change_still_idempotently_re_issues(
+        self,
+        qtbot,
+        ini_path: Path,
+        voice: StubVoiceNotifier,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Opening with autostart=True and OK without changing the box still re-issues the write.
+
+        Per the "no reconciliation" drift policy: every OK click issues
+        an idempotent write or delete from scratch. A user who manually
+        deleted the Run-key in regedit gets it back next OK without
+        having to toggle the checkbox.
+        """
+        # Pre-set autostart=True; open dialog; click OK without touching
+        # the checkbox.
+        pre_set = Settings(ini_path=ini_path)
+        pre_set.autostart = True
+        pre_set._qs.sync()
+        del pre_set
+
+        s = Settings(ini_path=ini_path)
+        d = SettingsDialog(settings=s, voice=voice)  # type: ignore[arg-type]
+        qtbot.addWidget(d)
+        # Sanity: the dialog loaded the True state.
+        assert d._autostart_checkbox.isChecked() is True
+
+        write_calls, delete_calls = _patch_runkey_helpers(monkeypatch)
+
+        d.accept()
+
+        assert write_calls == [f'"{sys.executable}"']
+        assert delete_calls == []
+
+    def test_runkey_helper_oserror_blocks_save_and_anchors_tooltip(
+        self,
+        dialog: SettingsDialog,
+        settings: Settings,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Helper raises ``OSError`` → no INI fields modified, dialog stays open, tab is Lifecycle."""
+
+        def _raise(_command: str) -> None:
+            raise OSError("simulated registry failure")
+
+        monkeypatch.setattr(settings_dialog_module, "_write_autostart_runkey", _raise)
+        # Patch QToolTip so the test doesn't depend on real Qt cursor geometry.
+        tooltip_calls: list[tuple] = []
+        monkeypatch.setattr(
+            "break_reminder.ui.settings_dialog.QToolTip.showText",
+            lambda *args, **kwargs: tooltip_calls.append((args, kwargs)),
+        )
+
+        # Pre-set distinct INI values across all four fields so absence
+        # of writes is observable.
+        settings.break_interval_min = 60
+        settings.snooze_duration_min = 10
+        settings.max_snoozes = 3
+        settings.voice_enabled = False
+        settings.voice_phrase = "untouched"
+        settings.autostart = False
+        settings._qs.sync()
+
+        # User edits everything and ticks autostart.
+        dialog._break_interval_spinbox.setValue(30)
+        dialog._snooze_duration_spinbox.setValue(7)
+        dialog._max_snoozes_spinbox.setValue(4)
+        dialog._voice_enabled_checkbox.setChecked(True)
+        dialog._voice_phrase_edit.setText("Edited")
+        dialog._autostart_checkbox.setChecked(True)
+
+        dialog.accept()
+
+        # Atomic save: NO INI field was written.
+        fresh = Settings(ini_path=Path(settings._qs.fileName()))
+        assert fresh.break_interval_min == 60
+        assert fresh.snooze_duration_min == 10
+        assert fresh.max_snoozes == 3
+        assert fresh.voice_enabled is False
+        assert fresh.voice_phrase == "untouched"
+        assert fresh.autostart is False
+        # Dialog stayed open.
+        assert dialog.result() == 0
+        # User landed on the Lifecycle tab so the tooltip is visible.
+        assert dialog._tabs.currentWidget() is dialog._lifecycle_tab
+        # And the tooltip surfaced with the documented failure message.
+        assert len(tooltip_calls) == 1
+        args, _kwargs = tooltip_calls[0]
+        assert "autostart" in args[1].lower()
+
+    def test_runkey_helper_permissionerror_also_blocks_save(
+        self,
+        dialog: SettingsDialog,
+        settings: Settings,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """``PermissionError`` (subclass of ``OSError``) trips the same atomic-save guarantee."""
+
+        def _raise(_command: str) -> None:
+            raise PermissionError("simulated GPO block")
+
+        monkeypatch.setattr(settings_dialog_module, "_write_autostart_runkey", _raise)
+        monkeypatch.setattr(
+            "break_reminder.ui.settings_dialog.QToolTip.showText",
+            lambda *args, **kwargs: None,
+        )
+        settings.break_interval_min = 60
+        settings._qs.sync()
+
+        dialog._break_interval_spinbox.setValue(30)
+        dialog._autostart_checkbox.setChecked(True)
+
+        dialog.accept()
+
+        fresh = Settings(ini_path=Path(settings._qs.fileName()))
+        # No INI write slipped through.
+        assert fresh.break_interval_min == 60
+        assert fresh.autostart is False
+        assert dialog.result() == 0
+        assert dialog._tabs.currentWidget() is dialog._lifecycle_tab
+
+
+# ---------------------------------------------------------------------------
+# winreg helper internals (S-02 / FR-003)
+# ---------------------------------------------------------------------------
+
+
+class TestRunkeyHelpers:
+    """The two module-level winreg helpers behave correctly against a stubbed registry.
+
+    Tests monkeypatch ``winreg.OpenKey`` / ``SetValueEx`` / ``DeleteValue``
+    so the suite never touches the real Windows registry. The dialog
+    flow tests in ``TestAutostartTabSave`` patch the helpers themselves;
+    these tests pin the helpers' contract independent of the dialog.
+    """
+
+    @staticmethod
+    def _patch_winreg(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[tuple]]:
+        """Replace the load-bearing ``winreg`` calls with capture stubs.
+
+        ``OpenKey`` is patched to return a context-manager-friendly fake
+        handle (``OpenKey`` is used as ``with winreg.OpenKey(...) as
+        key:`` in both helpers). ``SetValueEx`` / ``DeleteValue`` are
+        patched to record their args.
+
+        Returns:
+            A dict with three keys: ``open``, ``set``, ``delete``. Each
+            maps to a list of ``(args, kwargs)`` tuples — the calls
+            captured during the test.
+        """
+        captured: dict[str, list[tuple]] = {"open": [], "set": [], "delete": []}
+
+        class _FakeHandle:
+            def __enter__(self) -> object:
+                return self
+
+            def __exit__(self, exc_type, exc, tb) -> None:
+                return None
+
+        def _open_stub(*args: object, **kwargs: object) -> _FakeHandle:
+            captured["open"].append((args, kwargs))
+            return _FakeHandle()
+
+        def _set_stub(*args: object, **kwargs: object) -> None:
+            captured["set"].append((args, kwargs))
+
+        def _delete_stub(*args: object, **kwargs: object) -> None:
+            captured["delete"].append((args, kwargs))
+
+        monkeypatch.setattr("break_reminder.ui.settings_dialog.winreg.OpenKey", _open_stub)
+        monkeypatch.setattr("break_reminder.ui.settings_dialog.winreg.SetValueEx", _set_stub)
+        monkeypatch.setattr("break_reminder.ui.settings_dialog.winreg.DeleteValue", _delete_stub)
+        return captured
+
+    def test_write_helper_calls_set_value_ex_with_correct_args(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """``_write_autostart_runkey`` writes ``(value_name, 0, REG_SZ, command)``."""
+        import winreg
+
+        captured = self._patch_winreg(monkeypatch)
+
+        settings_dialog_module._write_autostart_runkey('"C:\\path with spaces\\BreakReminder.exe"')
+
+        assert len(captured["set"]) == 1
+        args, _kwargs = captured["set"][0]
+        # Args are (key, value_name, reserved, type, data) per winreg.SetValueEx.
+        # We don't assert on `key` (it's the FakeHandle) but DO assert on
+        # the rest of the contract.
+        _key, value_name, reserved, value_type, data = args
+        assert value_name == "BreakReminder"
+        assert reserved == 0
+        assert value_type == winreg.REG_SZ
+        assert data == '"C:\\path with spaces\\BreakReminder.exe"'
+
+    def test_write_helper_uses_hkcu_run_subkey(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The OpenKey call targets HKCU + the documented Run subkey."""
+        import winreg
+
+        captured = self._patch_winreg(monkeypatch)
+
+        settings_dialog_module._write_autostart_runkey('"x"')
+
+        assert len(captured["open"]) == 1
+        args, _kwargs = captured["open"][0]
+        # Args are (hkey, subkey, reserved, access).
+        hkey, subkey, _reserved, access = args
+        assert hkey == winreg.HKEY_CURRENT_USER
+        assert subkey == r"Software\Microsoft\Windows\CurrentVersion\Run"
+        assert access == winreg.KEY_SET_VALUE
+
+    def test_delete_helper_calls_delete_value(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """``_delete_autostart_runkey`` calls ``DeleteValue`` with the right value name."""
+        captured = self._patch_winreg(monkeypatch)
+
+        settings_dialog_module._delete_autostart_runkey()
+
+        assert len(captured["delete"]) == 1
+        args, _kwargs = captured["delete"][0]
+        # Args are (key, value_name).
+        _key, value_name = args
+        assert value_name == "BreakReminder"
+
+    def test_delete_helper_swallows_filenotfounderror(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Deleting an absent value is success — ``FileNotFoundError`` is swallowed.
+
+        Without this, an untick-then-OK on a system that never had the
+        Run-key entry would raise into ``accept()`` and trip the
+        atomic-save tooltip. The helper deliberately treats the
+        not-present case as already-deleted.
+        """
+        # Patch OpenKey to a fake handle that survives `with`, then
+        # patch DeleteValue to raise.
+        self._patch_winreg(monkeypatch)
+
+        def _raise(*_args: object, **_kwargs: object) -> None:
+            raise FileNotFoundError("absent value")
+
+        monkeypatch.setattr("break_reminder.ui.settings_dialog.winreg.DeleteValue", _raise)
+
+        # Must not raise.
+        settings_dialog_module._delete_autostart_runkey()
+
+    def test_delete_helper_propagates_other_oserror(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Non-``FileNotFoundError`` ``OSError``s propagate out of the helper.
+
+        Tripwire: the broad-catch ``except FileNotFoundError`` must NOT
+        accidentally turn into ``except OSError`` — that would mask
+        permission errors as silent success.
+        """
+        self._patch_winreg(monkeypatch)
+
+        def _raise(*_args: object, **_kwargs: object) -> None:
+            raise PermissionError("simulated GPO block")
+
+        monkeypatch.setattr("break_reminder.ui.settings_dialog.winreg.DeleteValue", _raise)
+
+        with pytest.raises(PermissionError):
+            settings_dialog_module._delete_autostart_runkey()

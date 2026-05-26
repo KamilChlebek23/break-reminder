@@ -364,6 +364,61 @@ class TestSnoozeValidation:
         assert settings.max_snoozes == DEFAULT_MAX_SNOOZES
 
 
+class TestAutostartSetterRoundTrip:
+    """FR-003: ``autostart`` setter round-trip.
+
+    Mirrors ``TestVoiceSettersRoundTrip`` for the bool side of FR-007 —
+    pins setter writes, getter reads, and cross-instance persistence
+    for the autostart opt-in flag. The setter is intentionally
+    unconditional (no ``ValueError`` branch) and coerces via
+    ``bool(value)`` for symmetry with ``voice_enabled.setter`` and
+    ``paused.setter``. The matching Windows-side side-effect (the
+    per-user Run-key write) lives in
+    ``break_reminder/ui/settings_dialog.py`` and is covered by
+    ``tests/test_settings_dialog.py``.
+    """
+
+    def test_setter_persists_true_round_trip(self, settings: Settings) -> None:
+        """Setting ``autostart`` to True is observable via the getter."""
+        settings.autostart = True
+        assert settings.autostart is True
+
+    def test_setter_persists_false_round_trip(self, settings: Settings) -> None:
+        """Setting ``autostart`` to False is observable via the getter."""
+        # Pre-set to True so the False write is observable as a state change.
+        settings.autostart = True
+        settings.autostart = False
+        assert settings.autostart is False
+
+    def test_autostart_persists_across_instances(self, ini_path: Path) -> None:
+        """An ``autostart`` write is observable from a freshly constructed instance."""
+        first = Settings(ini_path=ini_path)
+        first.autostart = True
+        first._qs.sync()
+        del first
+
+        second = Settings(ini_path=ini_path)
+        assert second.autostart is True
+
+    def test_setter_coerces_truthy_input(self, settings: Settings) -> None:
+        """Non-bool truthy inputs round-trip as the canonical ``True`` bool.
+
+        Mirrors ``voice_enabled.setter``'s ``bool(value)`` coercion. A
+        future caller that hands the setter ``1`` or another truthy
+        non-bool gets the canonical ``True`` back through the getter,
+        not a string-coerced reflection of whatever they wrote.
+        """
+        settings.autostart = 1  # type: ignore[assignment]
+        assert settings.autostart is True
+
+    def test_setter_coerces_falsy_input(self, settings: Settings) -> None:
+        """Non-bool falsy inputs round-trip as the canonical ``False`` bool."""
+        # Pre-set True so absence of the False write is observable.
+        settings.autostart = True
+        settings.autostart = 0  # type: ignore[assignment]
+        assert settings.autostart is False
+
+
 class TestPausedLifecycle:
     """FR-016: paused state persists until explicit resume OR reboot."""
 

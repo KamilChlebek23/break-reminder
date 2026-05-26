@@ -212,7 +212,7 @@ Keys and constraints:
 | `scheduling/max_snoozes` | `1` | 0&ndash;5 | Consecutive snoozes allowed before the dialog stops offering Snooze and forces a break. |
 | `notifications/voice_enabled` | `false` | `true`/`false` | Speak the phrase aloud (via Windows SAPI) when a break is due. Off by default. |
 | `notifications/voice_phrase` | `Time to take a break` | any text | What the voice says when `voice_enabled=true`. |
-| `lifecycle/autostart` | `false` | `true`/`false` | Launch BreakReminder on Windows login. Toggling this writes to the per-user Run registry key. |
+| `lifecycle/autostart` | `false` | `true`/`false` | Launch BreakReminder on Windows login. Tickable from **Settings → Lifecycle tab** ("Launch BreakReminder at Windows login"); flipping the box writes (or deletes) the per-user `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\BreakReminder` value. Default off (FR-003 opt-in). |
 
 Out-of-range values are silently clamped at read time, so a typo like
 `break_interval_min=9999` becomes `240` rather than crashing the app.

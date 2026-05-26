@@ -183,7 +183,6 @@ The bootstrap stops at runnable skeletons. The following are stubbed and clearly
 - Custom-reminder editor dialog (FR-011 / FR-012 CRUD).
 - Focus Assist + system-mute query (US-01 acceptance).
 - Real tray-icon + window-icon resources (currently using `QStyle` defaults).
-- Autostart toggle (FR-003) — reads from settings but the registry write is stubbed.
 - Snooze countdown UI affordance (the snooze action works; the countdown display in the popup is a placeholder).
 
 When you implement any of the above, remove the `TODO(FR-xxx)` and update this file.

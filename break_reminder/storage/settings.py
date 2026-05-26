@@ -276,6 +276,30 @@ class Settings:
         """Whether the app registers for Windows autostart (FR-003)."""
         return self._get_bool(_Keys.AUTOSTART, DEFAULT_AUTOSTART)
 
+    @autostart.setter
+    def autostart(self, value: bool) -> None:
+        r"""Persist the FR-003 autostart opt-in flag.
+
+        The persistence layer captures the user's *intent*. The matching
+        Windows-side side-effect (writing or deleting the per-user
+        ``HKCU\...\Run\BreakReminder`` value) is owned by
+        ``break_reminder.ui.settings_dialog`` — see its module docstring
+        and the S-02 plan for the atomic side-effect-then-persist
+        ordering. Direct callers that bypass the dialog (test helpers,
+        a future "reset to defaults" path) are responsible for keeping
+        the registry in sync if they care about the OS state.
+
+        Coerced via ``bool(value)`` for symmetry with the other bool
+        setters in this class (``voice_enabled``, ``paused``).
+
+        Args:
+            value: ``True`` to record that the user opted into Windows
+                autostart, ``False`` to record opt-out. The value is
+                coerced with ``bool(value)`` so a stray int / truthy
+                value writes the canonical bool.
+        """
+        self._qs.setValue(_Keys.AUTOSTART, bool(value))
+
     @property
     def paused(self) -> bool:
         """Pause flag (FR-016). Cleared at every reboot by ``app.main``."""

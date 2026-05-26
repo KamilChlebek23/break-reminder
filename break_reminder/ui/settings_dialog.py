@@ -1,4 +1,4 @@
-"""Settings dialog (FR-005 / FR-006 / FR-007).
+r"""Settings dialog (FR-003 / FR-005 / FR-006 / FR-007 / FR-010).
 
 A modal ``QDialog`` that lets the user view and edit BreakReminder's
 preferences inside a real settings window. Replaces the v0.1.0
@@ -6,13 +6,21 @@ placeholder ``QMessageBox`` that instructed hand-editing the INI file.
 
 Layout uses a ``QTabWidget`` from day one. The current tabs:
 
-- **Scheduling** (S-01) — the FR-006 break-interval editor.
+- **Scheduling** (S-01 + S-03) — the FR-006 break-interval editor and
+  the FR-010 snooze duration / max-snoozes spinboxes.
 - **Notifications** (S-04) — the FR-007 voice toggle, editable phrase,
   and a "Test voice" button that previews the unsaved phrase. The
   "Voice phrase cannot be empty when voice is enabled" rule is enforced
   in ``accept()`` via the same transient ``QToolTip`` pattern the
   Scheduling tab uses for the FR-006 range message — saving with that
   combination surfaces the tooltip and skips the persistence write.
+- **Lifecycle** (S-02) — the FR-003 Windows-autostart checkbox. Ticking +
+  OK writes the per-user
+  ``HKCU\Software\Microsoft\Windows\CurrentVersion\Run\BreakReminder``
+  value with data ``"<sys.executable>"``; unticking + OK deletes it.
+  On winreg failure the dialog surfaces a transient ``QToolTip`` on the
+  checkbox and blocks the entire save (atomic save — see S-03 impl-review
+  F2 invariant, now extended across all four persisted fields).
 
 Validation is split across two layers, intentionally:
 
@@ -47,6 +55,9 @@ Implementation Details" for the rationale.
 """
 
 from __future__ import annotations
+
+import sys
+import winreg
 
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -102,24 +113,96 @@ _VOICE_ENABLED_TOOLTIP = "Voice plays alongside the break popup, not instead of 
 # the message lands next to the field that must be fixed.
 _VOICE_PHRASE_REQUIRED_MESSAGE = "Voice phrase cannot be empty when voice is enabled."
 
+# FR-003 autostart wiring. The subkey lives under HKCU (per-user, no
+# elevation) so the FR-003 "user opts in via the settings panel" UX
+# holds without UAC prompting. The value name matches the tray
+# application name so a user inspecting Task Manager → Startup or
+# regedit sees a row labeled "BreakReminder".
+_AUTOSTART_RUNKEY_SUBKEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+_AUTOSTART_VALUE_NAME = "BreakReminder"
+
+# Transient feedback when the per-user Run-key write/delete fails (e.g.,
+# locked-down corporate machine, group-policy-blocked HKCU\...\Run, or
+# a winreg API error). Anchored on the autostart checkbox by ``accept()``
+# and paired with an early return so the entire save is blocked
+# (atomic save — see the S-03 impl-review F2 invariant, extended here).
+_AUTOSTART_FAILURE_MESSAGE = (
+    "Could not update Windows autostart — try running BreakReminder as your normal user."
+)
+
+
+def _write_autostart_runkey(command: str) -> None:
+    """Write the per-user autostart Run-key value (FR-003).
+
+    Idempotent: re-issuing the same command is a no-op for the OS, so
+    callers can safely re-write on every Settings → OK without checking
+    whether the value already exists. The dialog's "no reconciliation"
+    drift policy depends on this.
+
+    Args:
+        command: Fully-quoted command string Windows will execute on
+            user login. Production callers pass ``f'"{sys.executable}"'``;
+            tests pass any string they want to capture.
+
+    Raises:
+        OSError: If the registry call fails (``PermissionError`` on a
+            locked-down machine, generic ``OSError`` on a registry
+            corruption case). The dialog's ``accept()`` catches this
+            and surfaces a tooltip; nothing else in the codebase calls
+            this helper.
+    """
+    with winreg.OpenKey(
+        winreg.HKEY_CURRENT_USER, _AUTOSTART_RUNKEY_SUBKEY, 0, winreg.KEY_SET_VALUE
+    ) as key:
+        winreg.SetValueEx(key, _AUTOSTART_VALUE_NAME, 0, winreg.REG_SZ, command)
+
+
+def _delete_autostart_runkey() -> None:
+    """Delete the per-user autostart Run-key value if present (FR-003).
+
+    Swallows ``FileNotFoundError`` so unticking on a system that never
+    had the entry is a no-op rather than an error — the dialog can
+    always call this without first checking whether the value exists.
+
+    Raises:
+        OSError: If the registry call fails for any reason other than
+            "value does not exist" (which is silently treated as
+            success). The dialog's ``accept()`` catches this and
+            surfaces a tooltip.
+    """
+    with winreg.OpenKey(
+        winreg.HKEY_CURRENT_USER, _AUTOSTART_RUNKEY_SUBKEY, 0, winreg.KEY_SET_VALUE
+    ) as key:
+        try:
+            winreg.DeleteValue(key, _AUTOSTART_VALUE_NAME)
+        except FileNotFoundError:
+            return
+
 
 class SettingsDialog(QDialog):
-    """Modal settings window (FR-005 / FR-006 / FR-007).
+    """Modal settings window (FR-003 / FR-005 / FR-006 / FR-007 / FR-010).
 
-    The dialog reads the current break interval and voice settings from
-    the injected ``Settings`` instance at construction time, lets the
-    user edit them across two tabs ("Scheduling" and "Notifications"),
-    and on **OK** persists the new values through ``Settings``.
-    **Cancel** discards and closes without writing.
+    The dialog reads the current break interval, snooze, voice, and
+    autostart settings from the injected ``Settings`` instance at
+    construction time, lets the user edit them across three tabs
+    ("Scheduling", "Notifications", "Lifecycle"), and on **OK** persists
+    the new values through ``Settings``. **Cancel** discards and closes
+    without writing.
 
     The "Notifications" tab also exposes a "Test voice" button that
     speaks the line edit's current (unsaved) text via the injected
     ``VoiceNotifier``. The button is a pure side-effect — it does not
     touch ``Settings`` and never triggers a save.
+
+    The "Lifecycle" tab houses the FR-003 autostart checkbox; ticking +
+    OK writes the per-user Run-key entry, unticking + OK deletes it.
+    Failures surface as a transient tooltip on the checkbox and block
+    the entire save.
     """
 
     SCHEDULING_TAB_LABEL = "Scheduling"
     NOTIFICATIONS_TAB_LABEL = "Notifications"
+    LIFECYCLE_TAB_LABEL = "Lifecycle"
 
     def __init__(
         self,
@@ -160,6 +243,11 @@ class SettingsDialog(QDialog):
         # ``context/changes/settings-voice-toggle/reviews/impl-review.md``.
         self._notifications_tab = self._build_notifications_tab()
         self._tabs.addTab(self._notifications_tab, self.NOTIFICATIONS_TAB_LABEL)
+        # Stored on self for the same reason as ``_notifications_tab`` —
+        # the autostart-failure path in ``accept()`` switches to this tab
+        # before anchoring the tooltip on ``_autostart_checkbox``.
+        self._lifecycle_tab = self._build_lifecycle_tab()
+        self._tabs.addTab(self._lifecycle_tab, self.LIFECYCLE_TAB_LABEL)
 
         self._buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
@@ -278,6 +366,30 @@ class SettingsDialog(QDialog):
 
         return tab
 
+    def _build_lifecycle_tab(self) -> QWidget:
+        """Construct the "Lifecycle" tab (FR-003 autostart checkbox).
+
+        The tab carries one widget:
+
+        - ``self._autostart_checkbox`` — pre-populated from
+          ``Settings.autostart``. Ticking + OK fires the per-user
+          Run-key write in ``accept()``; unticking + OK fires the
+          delete. The checkbox label matches the roadmap S-02
+          wording verbatim so docs and code stay in sync.
+
+        Returns:
+            A ``QWidget`` ready to be added to ``self._tabs``.
+        """
+        tab = QWidget(self._tabs)
+
+        self._autostart_checkbox = QCheckBox("Launch BreakReminder at Windows login", tab)
+        self._autostart_checkbox.setChecked(self._settings.autostart)
+
+        form = QFormLayout(tab)
+        form.addRow(self._autostart_checkbox)
+
+        return tab
+
     def _on_test_voice_clicked(self) -> None:
         """Speak the phrase line edit's current (unsaved) text.
 
@@ -348,7 +460,19 @@ class SettingsDialog(QDialog):
         voice_phrase="")`` confused state cannot land on disk via the
         GUI.
 
-        Persistence order (Scheduling first, Notifications second):
+        Side-effect gate (FR-003 autostart): with the voice gate green,
+        the dialog issues the per-user Run-key write or delete BEFORE
+        any INI setter. If the registry call raises ``OSError`` (which
+        catches ``PermissionError`` and ``FileNotFoundError`` too), the
+        dialog switches to the Lifecycle tab, anchors a transient
+        ``QToolTip`` on the autostart checkbox, and returns early —
+        no INI is written at all. This preserves the S-03 impl-review F2
+        atomic-save invariant ("OK saves everything or nothing") across
+        all four persisted fields. On success, the autostart INI write
+        rides along with the Scheduling/Notifications writes below.
+
+        Persistence order (Scheduling first, Notifications second,
+        Lifecycle third):
 
         - **FR-006 break interval** — written via ``Settings.break_interval_min``;
           widget-level bounds guarantee a [1, 240] value, so the setter's
@@ -363,6 +487,10 @@ class SettingsDialog(QDialog):
           ``voice_phrase`` setter is permissive at the persistence layer
           (the dialog-level gate above is the only enforcement of the
           non-empty contract).
+        - **FR-003 autostart** — written last; the corresponding
+          registry side-effect already succeeded in the side-effect gate
+          above, so this write just records the user's intent in the
+          INI for the next dialog open.
 
         Then chains to ``QDialog.accept`` for the standard close path.
         """
@@ -384,9 +512,38 @@ class SettingsDialog(QDialog):
             )
             return
 
+        # FR-003: side-effect BEFORE any INI write so a registry failure
+        # leaves no partial state behind. ``sys.executable`` resolves to
+        # the PyInstaller-frozen ``BreakReminder.exe`` in production and
+        # to the python interpreter for source-runs. We deliberately do
+        # not support source-run autostart (see plan: "What We're NOT
+        # Doing"); the quoted command future-proofs install paths that
+        # contain spaces.
+        autostart_enabled = self._autostart_checkbox.isChecked()
+        try:
+            if autostart_enabled:
+                _write_autostart_runkey(f'"{sys.executable}"')
+            else:
+                _delete_autostart_runkey()
+        except OSError:
+            # Switch first so the tooltip anchor is on the visible tab,
+            # mirroring the voice-empty gate above.
+            self._tabs.setCurrentWidget(self._lifecycle_tab)
+            anchor = self._autostart_checkbox.mapToGlobal(
+                self._autostart_checkbox.rect().bottomLeft()
+            )
+            QToolTip.showText(
+                anchor,
+                _AUTOSTART_FAILURE_MESSAGE,
+                self._autostart_checkbox,
+                msecShowTime=3000,
+            )
+            return
+
         self._settings.break_interval_min = self._break_interval_spinbox.value()
         self._settings.snooze_duration_min = self._snooze_duration_spinbox.value()
         self._settings.max_snoozes = self._max_snoozes_spinbox.value()
         self._settings.voice_enabled = self._voice_enabled_checkbox.isChecked()
         self._settings.voice_phrase = self._voice_phrase_edit.text()
+        self._settings.autostart = autostart_enabled
         super().accept()

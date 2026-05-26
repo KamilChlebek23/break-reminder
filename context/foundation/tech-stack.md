@@ -88,7 +88,6 @@ The bootstrap is a runnable skeleton, not a finished app. These are intentional 
 - Settings / custom-reminder-CRUD UI (FR-005, FR-006, FR-011, FR-012). Tray menu has a placeholder `QMessageBox`.
 - Focus Assist + system-mute query (US-01 acceptance). Stubs return `False` so voice always plays.
 - Real tray-icon + window-icon resources. `QStyle.SP_ComputerIcon` is a placeholder.
-- Autostart toggle (FR-003). The settings key is wired; the registry write is not.
 - Snooze countdown affordance in the popup. The snooze action works; the visual countdown is missing.
 
 ## Off-registry caveat (preserved for context)

@@ -679,13 +679,19 @@ class TestNotificationsTabValidation:
         # Pre-set a known persisted state so absence of writes is observable.
         settings.voice_enabled = False
         settings.voice_phrase = "untouched"
-        # Distinct break-interval so we can prove the gate is atomic — the
-        # break-interval edit must NOT leak through when the voice gate trips
-        # (impl-review F2 tripwire).
+        # Distinct values across all three Scheduling-tab fields so we can
+        # prove the gate is atomic — every edit must NOT leak through when
+        # the voice gate trips (impl-review F2 tripwire). The break-interval
+        # tripwire pre-dates this slice; the snooze-duration / max-snoozes
+        # tripwires were added during the settings-snooze-config impl-review.
         settings.break_interval_min = 60
+        settings.snooze_duration_min = 10
+        settings.max_snoozes = 3
         settings._qs.sync()
 
         dialog._break_interval_spinbox.setValue(30)
+        dialog._snooze_duration_spinbox.setValue(7)
+        dialog._max_snoozes_spinbox.setValue(4)
         dialog._voice_enabled_checkbox.setChecked(True)
         dialog._voice_phrase_edit.setText("")
 
@@ -696,10 +702,13 @@ class TestNotificationsTabValidation:
         fresh = Settings(ini_path=Path(settings._qs.fileName()))
         assert fresh.voice_enabled is False
         assert fresh.voice_phrase == "untouched"
-        # F2: atomic-save tripwire — the otherwise-valid break-interval edit
+        # F2: atomic-save tripwire — every otherwise-valid Scheduling-tab edit
         # must NOT have leaked through when the voice gate trips. If a future
-        # refactor reorders the setters before the validation gate, this asserts.
+        # refactor reorders any of these setters before the validation gate,
+        # the corresponding line below asserts.
         assert fresh.break_interval_min == 60
+        assert fresh.snooze_duration_min == 10
+        assert fresh.max_snoozes == 3
         # Dialog stays open — Qt's accept() chain was skipped.
         assert dialog.result() == 0
         # F1: the user must land on the Notifications tab so the tooltip

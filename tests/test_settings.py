@@ -337,6 +337,32 @@ class TestSnoozeValidation:
         settings._qs.sync()
         assert settings.max_snoozes == 5
 
+    def test_max_snoozes_getter_clamps_corrupt_low_value(self, settings: Settings) -> None:
+        """A hand-edited below-range INI value is clamped to 0."""
+        # Mirrors ``test_snooze_duration_getter_clamps_corrupt_low_value``.
+        # The low end is 0 (zero is intentionally valid), so anything
+        # negative must clamp up to 0 rather than crash or honor the
+        # bad value.
+        settings._qs.setValue(_Keys.MAX_SNOOZES, -10)
+        settings._qs.sync()
+        assert settings.max_snoozes == 0
+
+    def test_snooze_duration_getter_falls_back_when_unparseable(self, settings: Settings) -> None:
+        """Non-integer strings on snooze_duration_min fall back to the default."""
+        # Mirrors ``TestValidation.test_getter_falls_back_when_value_unparseable``.
+        # QSettings stores everything as strings under IniFormat; the
+        # shared ``_get_int`` helper must catch the parse failure and
+        # return the default rather than raising into user code.
+        settings._qs.setValue(_Keys.SNOOZE_DURATION_MIN, "not-a-number")
+        settings._qs.sync()
+        assert settings.snooze_duration_min == DEFAULT_SNOOZE_DURATION_MIN
+
+    def test_max_snoozes_getter_falls_back_when_unparseable(self, settings: Settings) -> None:
+        """Non-integer strings on max_snoozes fall back to the default."""
+        settings._qs.setValue(_Keys.MAX_SNOOZES, "not-a-number")
+        settings._qs.sync()
+        assert settings.max_snoozes == DEFAULT_MAX_SNOOZES
+
 
 class TestPausedLifecycle:
     """FR-016: paused state persists until explicit resume OR reboot."""

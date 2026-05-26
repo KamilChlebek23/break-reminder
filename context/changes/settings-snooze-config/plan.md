@@ -361,8 +361,6 @@ None. Existing INI files without these keys fall through to the defaults the get
 - [x] 1.7 Lint passes (incl. `D` rule group): `uv run ruff check break_reminder/storage/settings.py break_reminder/ui/settings_dialog.py break_reminder/scheduler.py break_reminder/app.py tests/test_settings.py tests/test_settings_dialog.py tests/test_break_scheduler.py tests/test_app.py` — fc0f6b3
 - [x] 1.8 Format check passes: `uv run ruff format --check break_reminder/storage/settings.py break_reminder/ui/settings_dialog.py break_reminder/scheduler.py break_reminder/app.py tests/test_settings.py tests/test_settings_dialog.py tests/test_break_scheduler.py tests/test_app.py` — fc0f6b3
 
-> **Re-tick note (2026-05-26)**: 1.1 and 1.2 stayed green from the original Phase 1 commit; 1.3–1.8 were re-evaluated and re-ticked after the scope addendum landed (snooze-aware tooltip).
-
 ### Phase 2: Manual smoke + roadmap bookkeeping
 
 #### Manual

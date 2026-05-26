@@ -352,14 +352,14 @@ None. Existing INI files without these keys fall through to the defaults the get
 
 #### Automated
 
-- [x] 1.1 Persistence tests pass: `uv run pytest tests/test_settings.py::TestSnoozeSettersRoundTrip tests/test_settings.py::TestSnoozeValidation`
-- [x] 1.2 Dialog tests pass: `uv run pytest tests/test_settings_dialog.py`
-- [x] 1.3 Scheduler tests pass (incl. new `TestSecondsUntilSnoozeEnd`): `uv run pytest tests/test_break_scheduler.py`
-- [x] 1.4 App tests pass (incl. new `TestRefreshTooltipDuringSnooze`): `uv run pytest tests/test_app.py`
-- [x] 1.5 Full suite still passes: `uv run pytest` (235 passed)
-- [x] 1.6 Type check passes: `uv run pyright break_reminder/storage/settings.py break_reminder/ui/settings_dialog.py break_reminder/scheduler.py break_reminder/app.py tests/test_settings.py tests/test_settings_dialog.py tests/test_break_scheduler.py tests/test_app.py`
-- [x] 1.7 Lint passes (incl. `D` rule group): `uv run ruff check break_reminder/storage/settings.py break_reminder/ui/settings_dialog.py break_reminder/scheduler.py break_reminder/app.py tests/test_settings.py tests/test_settings_dialog.py tests/test_break_scheduler.py tests/test_app.py`
-- [x] 1.8 Format check passes: `uv run ruff format --check break_reminder/storage/settings.py break_reminder/ui/settings_dialog.py break_reminder/scheduler.py break_reminder/app.py tests/test_settings.py tests/test_settings_dialog.py tests/test_break_scheduler.py tests/test_app.py`
+- [x] 1.1 Persistence tests pass: `uv run pytest tests/test_settings.py::TestSnoozeSettersRoundTrip tests/test_settings.py::TestSnoozeValidation` — fc0f6b3
+- [x] 1.2 Dialog tests pass: `uv run pytest tests/test_settings_dialog.py` — fc0f6b3
+- [x] 1.3 Scheduler tests pass (incl. new `TestSecondsUntilSnoozeEnd`): `uv run pytest tests/test_break_scheduler.py` — fc0f6b3
+- [x] 1.4 App tests pass (incl. new `TestRefreshTooltipDuringSnooze`): `uv run pytest tests/test_app.py` — fc0f6b3
+- [x] 1.5 Full suite still passes: `uv run pytest` (235 passed) — fc0f6b3
+- [x] 1.6 Type check passes: `uv run pyright break_reminder/storage/settings.py break_reminder/ui/settings_dialog.py break_reminder/scheduler.py break_reminder/app.py tests/test_settings.py tests/test_settings_dialog.py tests/test_break_scheduler.py tests/test_app.py` — fc0f6b3
+- [x] 1.7 Lint passes (incl. `D` rule group): `uv run ruff check break_reminder/storage/settings.py break_reminder/ui/settings_dialog.py break_reminder/scheduler.py break_reminder/app.py tests/test_settings.py tests/test_settings_dialog.py tests/test_break_scheduler.py tests/test_app.py` — fc0f6b3
+- [x] 1.8 Format check passes: `uv run ruff format --check break_reminder/storage/settings.py break_reminder/ui/settings_dialog.py break_reminder/scheduler.py break_reminder/app.py tests/test_settings.py tests/test_settings_dialog.py tests/test_break_scheduler.py tests/test_app.py` — fc0f6b3
 
 > **Re-tick note (2026-05-26)**: 1.1 and 1.2 stayed green from the original Phase 1 commit; 1.3–1.8 were re-evaluated and re-ticked after the scope addendum landed (snooze-aware tooltip).
 
@@ -367,13 +367,13 @@ None. Existing INI files without these keys fall through to the defaults the get
 
 #### Manual
 
-- [ ] 2.1 Three rows on Scheduling tab in order: Break interval, Snooze duration, Max snoozes
-- [ ] 2.2 Max snoozes spinbox tooltip shows the zero-state explanation
-- [ ] 2.3 Snooze duration save round-trips; next break's Snooze defers by the new minutes
-- [ ] 2.4 Max snoozes save round-trips; cap behavior honors the new value
-- [ ] 2.5 max_snoozes = 0 hides the snooze button on the next break dialog
-- [ ] 2.6 Tray tooltip reads `BreakReminder — snooze time left Xm YYs` immediately after Snooze, then flips back to the regular countdown when the snooze elapses or the user takes a break
-- [ ] 2.7 Pause during snooze shows `BreakReminder — paused`; resume returns to the snooze-time-left form
-- [ ] 2.8 Corrupt INI value (e.g., 999) is clamped silently when the dialog re-opens
-- [ ] 2.9 change.md flipped from `implementing` to `implemented`
-- [ ] 2.10 Roadmap S-03 status flipped from `proposed` to `done`; backlog handoff updated; PRD Open Question #1 annotated as dissolved
+- [x] 2.1 Three rows on Scheduling tab in order: Break interval, Snooze duration, Max snoozes
+- [x] 2.2 Max snoozes spinbox tooltip shows the zero-state explanation
+- [x] 2.3 Snooze duration save round-trips; next break's Snooze defers by the new minutes
+- [x] 2.4 Max snoozes save round-trips; cap behavior honors the new value
+- [x] 2.5 max_snoozes = 0 hides the snooze button on the next break dialog
+- [x] 2.6 Tray tooltip reads `BreakReminder — snooze time left Xm YYs` immediately after Snooze, then flips back to the regular countdown when the snooze elapses or the user takes a break
+- [x] 2.7 Pause during snooze shows `BreakReminder — paused`; resume returns to the snooze-time-left form
+- [x] 2.8 Corrupt INI value (e.g., 999) is clamped silently when the dialog re-opens
+- [x] 2.9 change.md flipped from `implementing` to `implemented`
+- [x] 2.10 Roadmap S-03 status flipped from `proposed` to `done`; backlog handoff updated; PRD Open Question #1 annotated as dissolved

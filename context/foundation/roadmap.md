@@ -3,7 +3,7 @@ project: BreakReminder
 version: 1
 status: draft
 created: 2026-05-25
-updated: 2026-05-25
+updated: 2026-05-26
 prd_version: 1
 main_goal: low-complexity
 top_blocker: none
@@ -31,7 +31,7 @@ BreakReminder is a Windows 11 tray-resident utility for focus-minded solo progra
 |---|---|---|---|---|---|
 | S-01 | settings-break-interval | open settings from tray and edit the break interval | — | FR-005, FR-006 | ready |
 | S-02 | settings-autostart-toggle | enable autostart-on-Windows-login from settings | S-01 | FR-003, FR-005 | proposed |
-| S-03 | settings-snooze-config | edit snooze duration and max snoozes from settings | S-01 | FR-005, FR-010 | proposed |
+| S-03 | settings-snooze-config | edit snooze duration and max snoozes from settings | S-01 | FR-005, FR-010 | done |
 | S-04 | settings-voice-toggle | enable voice notification and edit the voice phrase from settings | S-01 | FR-005, FR-007 | done |
 | S-05 | reminders-list-view | see existing custom reminders in the settings dialog | S-01 | FR-005, FR-012 | proposed |
 | S-06 | reminders-add-form | add a one-shot custom reminder with a name and a date/time | S-05 | FR-011, FR-013 | proposed |
@@ -107,16 +107,16 @@ The PRD must-have FRs and user stories below are **already shipped in v0.1.0** a
 
 ### S-03: settings-snooze-config
 
-- **Outcome:** user opens settings, edits "Snooze duration (minutes)" (range 1–30) and "Max snoozes per cycle" (range 0–5), saves; the next break dialog respects the new values.
+- **Outcome:** user opens settings, edits "Snooze duration (minutes)" (range 1–30) and "Max snoozes per cycle" (range 0–5), saves; the next break dialog respects the new values. **Scope addendum shipped**: the tray-icon tooltip now flips to `BreakReminder — snooze time left Xm YYs` while a snooze window is open (paused still wins).
 - **Change ID:** `settings-snooze-config`
 - **PRD refs:** FR-005, FR-010
 - **Prerequisites:** S-01
 - **Parallel with:** S-02, S-04, S-05
 - **Blockers:** —
 - **Unknowns:**
-  - PRD Open Question #1 (snooze duration default 5 min) is currently unblocked by the working default; does S-03 collapse the question by giving the user a UI to set their own value, or does it remain open until self-observation lands? — Owner: user. Block: no.
+  - PRD Open Question #1 (snooze duration default 5 min) is currently unblocked by the working default; does S-03 collapse the question by giving the user a UI to set their own value, or does it remain open until self-observation lands? — Owner: user. Block: no. (dissolved by S-03 on 2026-05-26)
 - **Risk:** low. Two spinboxes in the same dialog as S-01. `Settings.snooze_duration_min` and `Settings.max_snoozes` getters/setters already exist.
-- **Status:** proposed
+- **Status:** done
 
 ### S-04: settings-voice-toggle
 
@@ -186,7 +186,7 @@ The PRD must-have FRs and user stories below are **already shipped in v0.1.0** a
 |---|---|---|---|---|
 | S-01 | `settings-break-interval` | Replace settings placeholder with real QDialog + break-interval edit | yes | `/10x-plan settings-break-interval` |
 | S-02 | `settings-autostart-toggle` | Wire FR-003 autostart toggle to per-user Run registry key | no | Run after S-01 |
-| S-03 | `settings-snooze-config` | Add snooze duration + max snoozes to settings dialog | no | Run after S-01 |
+| S-03 | `settings-snooze-config` | Add snooze duration + max snoozes to settings dialog | yes | Planned + shipped 2026-05-26 |
 | S-04 | `settings-voice-toggle` | Add voice on/off + phrase editor to settings dialog | yes | Planned + shipped 2026-05-25 |
 | S-05 | `reminders-list-view` | Reminders tab with read-only list bound to reminders.json | no | Run after S-01 |
 | S-06 | `reminders-add-form` | Add a one-shot custom reminder via sub-dialog | no | Run after S-05 |
@@ -195,7 +195,7 @@ The PRD must-have FRs and user stories below are **already shipped in v0.1.0** a
 
 ## Open Roadmap Questions
 
-1. **Snooze duration default value.** Lifted from PRD §Open Questions #1. Candidates: 5 / 10 minutes, or user-configurable. S-03 dissolves this once shipped (the user picks). — Owner: user. Block: S-03.
+1. **Snooze duration default value.** Lifted from PRD §Open Questions #1. Candidates: 5 / 10 minutes, or user-configurable. S-03 dissolves this once shipped (the user picks). — Owner: user. Block: S-03. (dissolved by S-03 on 2026-05-26)
 2. **Active-time idle threshold.** Lifted from PRD §Open Questions #2. Default 60s. Affects FR-008 user-observable behavior + Notification-timing-accuracy NFR. Not currently surfaced in the settings UI. — Owner: user. Block: roadmap-wide if elevated to a slice; today, no slice depends on resolving it.
 3. **Voice notification content.** Lifted from PRD §Open Questions #3. S-04 dissolves this. — Owner: user. Block: S-04. (dissolved by S-04 on 2026-05-25)
 4. **AI/ML smart break-time prediction in v2.** Lifted from PRD §Open Questions #4. Out of v1 scope. — Owner: user. Block: no.

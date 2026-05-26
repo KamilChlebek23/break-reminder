@@ -367,13 +367,13 @@ None. Existing INI files without these keys fall through to the defaults the get
 
 #### Manual
 
-- [x] 2.1 Three rows on Scheduling tab in order: Break interval, Snooze duration, Max snoozes
-- [x] 2.2 Max snoozes spinbox tooltip shows the zero-state explanation
-- [x] 2.3 Snooze duration save round-trips; next break's Snooze defers by the new minutes
-- [x] 2.4 Max snoozes save round-trips; cap behavior honors the new value
-- [x] 2.5 max_snoozes = 0 hides the snooze button on the next break dialog
-- [x] 2.6 Tray tooltip reads `BreakReminder — snooze time left Xm YYs` immediately after Snooze, then flips back to the regular countdown when the snooze elapses or the user takes a break
-- [x] 2.7 Pause during snooze shows `BreakReminder — paused`; resume returns to the snooze-time-left form
-- [x] 2.8 Corrupt INI value (e.g., 999) is clamped silently when the dialog re-opens
-- [x] 2.9 change.md flipped from `implementing` to `implemented`
-- [x] 2.10 Roadmap S-03 status flipped from `proposed` to `done`; backlog handoff updated; PRD Open Question #1 annotated as dissolved
+- [x] 2.1 Three rows on Scheduling tab in order: Break interval, Snooze duration, Max snoozes — 9aa8273
+- [x] 2.2 Max snoozes spinbox tooltip shows the zero-state explanation — 9aa8273
+- [x] 2.3 Snooze duration save round-trips; next break's Snooze defers by the new minutes — 9aa8273
+- [x] 2.4 Max snoozes save round-trips; cap behavior honors the new value — 9aa8273
+- [x] 2.5 max_snoozes = 0 hides the snooze button on the next break dialog — 9aa8273
+- [x] 2.6 Tray tooltip reads `BreakReminder — snooze time left Xm YYs` immediately after Snooze, then flips back to the regular countdown when the snooze elapses or the user takes a break — 9aa8273
+- [x] 2.7 Pause during snooze shows `BreakReminder — paused`; resume returns to the snooze-time-left form — 9aa8273
+- [x] 2.8 Corrupt INI value (e.g., 999) is clamped silently when the dialog re-opens — 9aa8273
+- [x] 2.9 change.md flipped from `implementing` to `implemented` — 9aa8273
+- [x] 2.10 Roadmap S-03 status flipped from `proposed` to `done`; backlog handoff updated; PRD Open Question #1 annotated as dissolved — 9aa8273

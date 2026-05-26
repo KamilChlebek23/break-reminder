@@ -56,6 +56,7 @@ Implementation Details" for the rationale.
 
 from __future__ import annotations
 
+import logging
 import sys
 import winreg
 
@@ -85,6 +86,8 @@ from break_reminder.storage.settings import (
     Settings,
 )
 
+logger = logging.getLogger(__name__)
+
 # UI-facing message for the FR-006 range. The bounds themselves come from
 # ``storage.settings`` (single source of truth); this string composes them
 # into the exact wording the spinbox tooltip and the transient validation
@@ -113,6 +116,12 @@ _VOICE_ENABLED_TOOLTIP = "Voice plays alongside the break popup, not instead of 
 # the message lands next to the field that must be fixed.
 _VOICE_PHRASE_REQUIRED_MESSAGE = "Voice phrase cannot be empty when voice is enabled."
 
+# Tooltip on the autostart checkbox. Surfaces the FR-003 "user opts
+# in via the settings panel, no UAC ceremony" commitment that the
+# label alone leaves implicit — security-conscious users may otherwise
+# assume autostart needs administrator rights.
+_AUTOSTART_TOOLTIP = "No admin required — writes to your per-user Windows startup list."
+
 # FR-003 autostart wiring. The subkey lives under HKCU (per-user, no
 # elevation) so the FR-003 "user opts in via the settings panel" UX
 # holds without UAC prompting. The value name matches the tray
@@ -127,7 +136,8 @@ _AUTOSTART_VALUE_NAME = "BreakReminder"
 # and paired with an early return so the entire save is blocked
 # (atomic save — see the S-03 impl-review F2 invariant, extended here).
 _AUTOSTART_FAILURE_MESSAGE = (
-    "Could not update Windows autostart — try running BreakReminder as your normal user."
+    "Could not update Windows autostart — your machine may block writes to the "
+    "per-user startup registry. Contact IT if this persists."
 )
 
 
@@ -383,6 +393,7 @@ class SettingsDialog(QDialog):
         tab = QWidget(self._tabs)
 
         self._autostart_checkbox = QCheckBox("Launch BreakReminder at Windows login", tab)
+        self._autostart_checkbox.setToolTip(_AUTOSTART_TOOLTIP)
         self._autostart_checkbox.setChecked(self._settings.autostart)
 
         form = QFormLayout(tab)
@@ -526,6 +537,7 @@ class SettingsDialog(QDialog):
             else:
                 _delete_autostart_runkey()
         except OSError:
+            logger.exception("autostart Run-key write/delete failed")
             # Switch first so the tooltip anchor is on the visible tab,
             # mirroring the voice-empty gate above.
             self._tabs.setCurrentWidget(self._lifecycle_tab)

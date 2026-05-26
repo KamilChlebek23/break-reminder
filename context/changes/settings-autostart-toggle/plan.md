@@ -373,10 +373,10 @@ None — `Settings.autostart` already returns `False` for any user with no INI v
 
 #### Automated
 
-- [x] 1.1 Unit tests pass: `uv run pytest`
-- [x] 1.2 Type checking passes: `uv run pyright`
-- [x] 1.3 Linting passes: `uv run ruff check`
-- [x] 1.4 Formatting passes: `uv run ruff format --check`
+- [x] 1.1 Unit tests pass: `uv run pytest` — e9f2ff0
+- [x] 1.2 Type checking passes: `uv run pyright` — e9f2ff0
+- [x] 1.3 Linting passes: `uv run ruff check` — e9f2ff0
+- [x] 1.4 Formatting passes: `uv run ruff format --check` — e9f2ff0
 
 ### Phase 2: Manual smoke + bookkeeping
 

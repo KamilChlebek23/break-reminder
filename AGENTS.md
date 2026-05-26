@@ -128,6 +128,8 @@ Voice playback **must stop** the moment the user clicks "I'll take a break" or "
 
 ## Build & release
 
+Local dev requires Windows. `break_reminder/ui/settings_dialog.py` imports `winreg` (Windows-only stdlib) at module top to wire the FR-003 autostart Run-key write, so `uv run pytest` fails to collect on Linux/macOS. CI runs on `windows-latest`; tag-driven releases (below) build there as well.
+
 ```powershell
 # Local dev
 uv sync

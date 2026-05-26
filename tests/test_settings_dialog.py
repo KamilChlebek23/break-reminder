@@ -1202,6 +1202,37 @@ class TestAutostartTabSave:
         assert dialog.result() == 0
         assert dialog._tabs.currentWidget() is dialog._lifecycle_tab
 
+    def test_delete_helper_oserror_blocks_save(
+        self,
+        dialog: SettingsDialog,
+        settings: Settings,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Untick path: ``_delete_autostart_runkey`` raises ``OSError`` → atomic-save tripwire fires symmetrically."""
+
+        def _raise() -> None:
+            raise OSError("simulated registry failure on delete")
+
+        monkeypatch.setattr(settings_dialog_module, "_delete_autostart_runkey", _raise)
+        monkeypatch.setattr(
+            "break_reminder.ui.settings_dialog.QToolTip.showText",
+            lambda *args, **kwargs: None,
+        )
+        settings.break_interval_min = 60
+        settings.autostart = True
+        settings._qs.sync()
+
+        dialog._break_interval_spinbox.setValue(30)
+        dialog._autostart_checkbox.setChecked(False)
+
+        dialog.accept()
+
+        fresh = Settings(ini_path=Path(settings._qs.fileName()))
+        assert fresh.break_interval_min == 60
+        assert fresh.autostart is True
+        assert dialog.result() == 0
+        assert dialog._tabs.currentWidget() is dialog._lifecycle_tab
+
 
 # ---------------------------------------------------------------------------
 # winreg helper internals (S-02 / FR-003)

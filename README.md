@@ -19,13 +19,13 @@ runs at &lt; 1% CPU and &lt; 100 MB RAM at idle, and it surfaces in two ways:
   take a break" or "Snooze". The dialog deliberately does **not** steal
   the keystroke you're in the middle of typing — the in-flight character
   lands where you intended it (US-02).
-- **Custom reminders** *(coming in v0.2.x — not part of v0.1.x).*
+- **Custom reminders** *(planned; not shipped yet).*
   User-defined recurring nudges — *"stand up at 11:00"*, *"drink water
   every hour during work days"* — that will fire as light, **dismissable**
   popups (FR-013, FR-014). Same widget, different severity, so the
   adjacent-job reminder rides on the break-reminder app rather than a
-  second utility. See [Custom reminders (v0.2.x scope)](#custom-reminders-v02x-scope)
-  below for what currently exists on disk.
+  second utility. See [Custom reminders](#custom-reminders) below for
+  the schema scaffolding that's already on disk.
 
 Both surfaces are local-only. No account, no cloud, no telemetry, no
 outbound HTTP calls during normal operation. Settings, custom reminders,
@@ -81,8 +81,8 @@ the topmost release. The file is roughly 50 MB; expansion on disk is about
 
 ### 2. First-run SmartScreen warning
 
-v0.1.x ships unsigned (no Authenticode certificate yet). On first run,
-Windows SmartScreen shows a blue dialog titled **"Windows protected your
+BreakReminder currently ships unsigned (no Authenticode certificate yet).
+On first run, Windows SmartScreen shows a blue dialog titled **"Windows protected your
 PC — Unrecognized app"**. This is expected. Click **More info → Run anyway**
 to proceed with the install. Code signing is on the roadmap; see the
 SmartScreen risk row in [`context/foundation/infrastructure.md`](context/foundation/infrastructure.md).
@@ -105,7 +105,7 @@ SmartScreen risk row in [`context/foundation/infrastructure.md`](context/foundat
 
 ### 5. Updating to a new version
 
-There is no auto-update channel in v0.1.x. To upgrade:
+There is no in-app auto-update channel. To upgrade:
 
 1. Right-click the tray icon &rarr; **Check for updates**.
 2. Download the new `BreakReminder-Setup-<version>.exe` from the Releases
@@ -139,8 +139,7 @@ countdown tooltip.
   down to the moment the next break fires. When paused, the tooltip
   reads `BreakReminder — paused` (paused beats both regular and
   snoozing).
-- **Left-click** the icon: opens the settings dialog (in v0.1.x this is a
-  placeholder pointing you at the INI file — see [Settings](#settings-v01x)).
+- **Left-click** the icon: opens the [settings dialog](#settings).
 - **Right-click** the icon: opens the full menu below.
 
 ### Tray menu
@@ -150,9 +149,9 @@ countdown tooltip.
 | **Take break now** | Show the break dialog immediately. Counts as a break when you pick "I'll take a break". |
 | **Reset** | Clears the active-time accumulator and snooze count without showing the dialog. Equivalent to "Take break now &rarr; I'll take a break", logged the same way. Does not change pause state. |
 | **Pause** / **Resume** | Pause the timer entirely (no breaks fire while paused). Pause does **not** survive a reboot — the next boot starts unpaused per FR-016. |
-| **Open settings…** | In v0.1.x, surfaces a placeholder dialog with the path to the INI file. The full settings UI ships in v0.2.x. |
+| **Open settings…** | Opens the tabbed [settings dialog](#settings): Scheduling, Notifications, Lifecycle. |
 | **Check for updates** | Opens [Releases](#1-download) in your default browser. No HTTP call inside the app. |
-| **Quit** | Exits BreakReminder. Closing the (placeholder) settings window does NOT quit; only this menu item or killing the process does. |
+| **Quit** | Exits BreakReminder. Closing the settings window does NOT quit; only this menu item or killing the process does. |
 
 ### The break dialog
 
@@ -178,11 +177,19 @@ This means a "60-minute break interval" really means "60 minutes of focused
 screen time", not 60 minutes of wall-clock time — which is the whole
 distinction from Windows' native screen-time toast (FR-008).
 
-### Settings (v0.1.x)
+### Settings
 
-The settings UI is a placeholder in v0.1.x; the GUI ships in v0.2.x. Until
-then, edit `%APPDATA%\BreakReminder\BreakReminder.ini` in any text editor
-and **restart BreakReminder** for the changes to take effect.
+BreakReminder's preferences live in a three-tab dialog opened via the
+**Open settings…** tray menu item: **Scheduling** (break interval,
+snooze duration, max snoozes), **Notifications** (voice on/off, voice
+phrase), and **Lifecycle** (autostart on Windows login). Clicking OK
+saves all fields atomically — if any field's validation or registry
+side-effect fails, none of them are written.
+
+The dialog persists to `%APPDATA%\BreakReminder\BreakReminder.ini`;
+you can also edit the file by hand and **restart BreakReminder** for
+the changes to take effect, if you prefer the text-editor route. The
+dialog and the file are equivalent surfaces over the same keys.
 
 The file uses standard INI section/key syntax. A complete example with
 defaults:
@@ -217,14 +224,16 @@ Keys and constraints:
 Out-of-range values are silently clamped at read time, so a typo like
 `break_interval_min=9999` becomes `240` rather than crashing the app.
 
-### Custom reminders (v0.2.x scope)
+### Custom reminders
 
 Beyond the break-cycle reminder, BreakReminder will support user-defined
 recurring reminders (FR-011 / FR-012) — e.g. *"stand up at 11:00"*, *"drink
-water every hour during work days"*. The data file is created at
-`%APPDATA%\BreakReminder\reminders.json` and is empty in v0.1.x; the
-add/edit GUI ships in v0.2.x. Schema reference for power users who want to
-hand-edit JSON early: [`break_reminder/storage/reminders.py`](break_reminder/storage/reminders.py).
+water every hour during work days"*. The data file at
+`%APPDATA%\BreakReminder\reminders.json` is initialised empty; the
+add/edit GUI is on the roadmap (Stream B — see
+[`context/foundation/roadmap.md`](context/foundation/roadmap.md)).
+Schema reference for power users who want to hand-edit JSON early:
+[`break_reminder/storage/reminders.py`](break_reminder/storage/reminders.py).
 
 ### Event log
 

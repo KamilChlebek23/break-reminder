@@ -1,7 +1,7 @@
 ---
 change_id: settings-autostart-toggle
 title: Wire FR-003 autostart toggle to per-user Run registry key
-status: impl_reviewed
+status: implemented
 created: 2026-05-26
 updated: 2026-05-26
 archived_at: null

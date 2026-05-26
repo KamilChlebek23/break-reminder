@@ -30,7 +30,7 @@ BreakReminder is a Windows 11 tray-resident utility for focus-minded solo progra
 | ID | Change ID | Outcome (user can …) | Prerequisites | PRD refs | Status |
 |---|---|---|---|---|---|
 | S-01 | settings-break-interval | open settings from tray and edit the break interval | — | FR-005, FR-006 | ready |
-| S-02 | settings-autostart-toggle | enable autostart-on-Windows-login from settings | S-01 | FR-003, FR-005 | proposed |
+| S-02 | settings-autostart-toggle | enable autostart-on-Windows-login from settings | S-01 | FR-003, FR-005 | done |
 | S-03 | settings-snooze-config | edit snooze duration and max snoozes from settings | S-01 | FR-005, FR-010 | done |
 | S-04 | settings-voice-toggle | enable voice notification and edit the voice phrase from settings | S-01 | FR-005, FR-007 | done |
 | S-05 | reminders-list-view | see existing custom reminders in the settings dialog | S-01 | FR-005, FR-012 | proposed |
@@ -103,7 +103,7 @@ The PRD must-have FRs and user stories below are **already shipped in v0.1.0** a
 - **Blockers:** —
 - **Unknowns:** —
 - **Risk:** low. `tech-stack.md` "Known stubs" says "settings key wired; registry write not". The `winreg` module path is well-trodden; a per-user Run-key write is ~5 lines plus a delete-on-untick branch. The Windows registry is mockable via the `monkeypatch` pytest fixture for the unit-test side.
-- **Status:** proposed
+- **Status:** done
 
 ### S-03: settings-snooze-config
 
@@ -185,7 +185,7 @@ The PRD must-have FRs and user stories below are **already shipped in v0.1.0** a
 | Roadmap ID | Change ID | Suggested issue title | Ready for `/10x-plan` | Notes |
 |---|---|---|---|---|
 | S-01 | `settings-break-interval` | Replace settings placeholder with real QDialog + break-interval edit | yes | `/10x-plan settings-break-interval` |
-| S-02 | `settings-autostart-toggle` | Wire FR-003 autostart toggle to per-user Run registry key | no | Run after S-01 |
+| S-02 | `settings-autostart-toggle` | Wire FR-003 autostart toggle to per-user Run registry key | yes | Planned + shipped 2026-05-26 |
 | S-03 | `settings-snooze-config` | Add snooze duration + max snoozes to settings dialog | yes | Planned + shipped 2026-05-26 |
 | S-04 | `settings-voice-toggle` | Add voice on/off + phrase editor to settings dialog | yes | Planned + shipped 2026-05-25 |
 | S-05 | `reminders-list-view` | Reminders tab with read-only list bound to reminders.json | no | Run after S-01 |

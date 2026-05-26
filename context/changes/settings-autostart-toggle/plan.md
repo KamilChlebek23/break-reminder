@@ -382,17 +382,17 @@ None — `Settings.autostart` already returns `False` for any user with no INI v
 
 #### Automated
 
-- [ ] 2.1 All Phase 1 automated gates remain green
-- [ ] 2.2 `git status` is clean after the bookkeeping commit
+- [x] 2.1 All Phase 1 automated gates remain green
+- [x] 2.2 `git status` is clean after the bookkeeping commit
 
 #### Manual
 
-- [ ] 2.3 Lifecycle tab visible with single autostart checkbox; default unchecked on fresh install
-- [ ] 2.4 Tick + OK → reopen → checkbox still ticked
-- [ ] 2.5 `regedit` confirms `BreakReminder` value with quoted executable path
-- [ ] 2.6 Logout/login → tray icon appears without manual launch
-- [ ] 2.7 Untick + OK → `BreakReminder` value gone from `regedit`
-- [ ] 2.8 Logout/login → app does NOT auto-launch
-- [ ] 2.9 Drift-policy round-trip: manual regedit delete → reopen Settings → still ticked → OK restores
-- [ ] 2.10 Atomic save: voice-empty + autostart-tick on same OK → autostart INI unchanged, no Run-key write
-- [ ] 2.11 Update-safety NFR confirmed (in-place install does not modify the Run-key)
+- [x] 2.3 Lifecycle tab visible with single autostart checkbox; default unchecked on fresh install
+- [x] 2.4 Tick + OK → reopen → checkbox still ticked
+- [x] 2.5 `regedit` confirms `BreakReminder` value with quoted executable path
+- [x] 2.6 Logout/login → tray icon appears without manual launch
+- [x] 2.7 Untick + OK → `BreakReminder` value gone from `regedit`
+- [x] 2.8 Logout/login → app does NOT auto-launch
+- [x] 2.9 Drift-policy round-trip: manual regedit delete → reopen Settings → still ticked → OK restores
+- [x] 2.10 Atomic save: voice-empty + autostart-tick on same OK → autostart INI unchanged, no Run-key write
+- [x] 2.11 Update-safety NFR confirmed (in-place install does not modify the Run-key)

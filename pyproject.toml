@@ -1,6 +1,6 @@
 [project]
 name = "break-reminder"
-version = "0.3.0"
+version = "0.4.0"
 description = "A Windows-11 break reminder for phone-free deep-focus workspaces."
 readme = "README.md"
 requires-python = ">=3.12"

@@ -142,7 +142,13 @@ _AUTOSTART_FAILURE_MESSAGE = (
 
 
 def _write_autostart_runkey(command: str) -> None:
-    """Write the per-user autostart Run-key value (FR-003).
+    r"""Write the per-user autostart Run-key value (FR-003).
+
+    Auto-creates the ``HKCU\Software\Microsoft\Windows\CurrentVersion\Run``
+    subkey if it does not already exist (the canonical Run-key idiom —
+    a freshly-provisioned Windows profile, e.g. a CI runner or a brand-new
+    user account, can lack the subkey entirely). Uses ``CreateKeyEx``,
+    which opens-the-subkey-or-creates-it-if-absent atomically.
 
     Idempotent: re-issuing the same command is a no-op for the OS, so
     callers can safely re-write on every Settings → OK without checking
@@ -161,32 +167,37 @@ def _write_autostart_runkey(command: str) -> None:
             and surfaces a tooltip; nothing else in the codebase calls
             this helper.
     """
-    with winreg.OpenKey(
+    with winreg.CreateKeyEx(
         winreg.HKEY_CURRENT_USER, _AUTOSTART_RUNKEY_SUBKEY, 0, winreg.KEY_SET_VALUE
     ) as key:
         winreg.SetValueEx(key, _AUTOSTART_VALUE_NAME, 0, winreg.REG_SZ, command)
 
 
 def _delete_autostart_runkey() -> None:
-    """Delete the per-user autostart Run-key value if present (FR-003).
+    r"""Delete the per-user autostart Run-key value if present (FR-003).
 
-    Swallows ``FileNotFoundError`` so unticking on a system that never
-    had the entry is a no-op rather than an error — the dialog can
-    always call this without first checking whether the value exists.
+    Swallows ``FileNotFoundError`` from either ``OpenKey`` (the Run
+    subkey itself is absent — e.g. a fresh GitHub Actions runner profile
+    that has never had anything written to
+    ``HKCU\Software\Microsoft\Windows\CurrentVersion\Run``) or
+    ``DeleteValue`` (the subkey exists but the BreakReminder value
+    inside it is already gone). Both map to the same "already-deleted"
+    semantic — the dialog can always call this without first checking
+    whether anything exists.
 
     Raises:
         OSError: If the registry call fails for any reason other than
-            "value does not exist" (which is silently treated as
-            success). The dialog's ``accept()`` catches this and
+            "subkey or value does not exist" (which is silently treated
+            as success). The dialog's ``accept()`` catches this and
             surfaces a tooltip.
     """
-    with winreg.OpenKey(
-        winreg.HKEY_CURRENT_USER, _AUTOSTART_RUNKEY_SUBKEY, 0, winreg.KEY_SET_VALUE
-    ) as key:
-        try:
+    try:
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER, _AUTOSTART_RUNKEY_SUBKEY, 0, winreg.KEY_SET_VALUE
+        ) as key:
             winreg.DeleteValue(key, _AUTOSTART_VALUE_NAME)
-        except FileNotFoundError:
-            return
+    except FileNotFoundError:
+        return
 
 
 class SettingsDialog(QDialog):

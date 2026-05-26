@@ -1242,27 +1242,35 @@ class TestAutostartTabSave:
 class TestRunkeyHelpers:
     """The two module-level winreg helpers behave correctly against a stubbed registry.
 
-    Tests monkeypatch ``winreg.OpenKey`` / ``SetValueEx`` / ``DeleteValue``
-    so the suite never touches the real Windows registry. The dialog
-    flow tests in ``TestAutostartTabSave`` patch the helpers themselves;
-    these tests pin the helpers' contract independent of the dialog.
+    Tests monkeypatch ``winreg.CreateKeyEx`` (write path) / ``winreg.OpenKey``
+    (delete path) / ``SetValueEx`` / ``DeleteValue`` so the suite never
+    touches the real Windows registry. The dialog flow tests in
+    ``TestAutostartTabSave`` patch the helpers themselves; these tests
+    pin the helpers' contract independent of the dialog.
     """
 
     @staticmethod
     def _patch_winreg(monkeypatch: pytest.MonkeyPatch) -> dict[str, list[tuple]]:
         """Replace the load-bearing ``winreg`` calls with capture stubs.
 
-        ``OpenKey`` is patched to return a context-manager-friendly fake
-        handle (``OpenKey`` is used as ``with winreg.OpenKey(...) as
-        key:`` in both helpers). ``SetValueEx`` / ``DeleteValue`` are
-        patched to record their args.
+        ``CreateKeyEx`` (used by the write helper to open-or-create the
+        Run subkey) and ``OpenKey`` (used by the delete helper) are both
+        patched to return a context-manager-friendly fake handle, since
+        the helpers use them as ``with winreg.CreateKeyEx(...) as key:``
+        and ``with winreg.OpenKey(...) as key:`` respectively.
+        ``SetValueEx`` / ``DeleteValue`` are patched to record their args.
 
         Returns:
-            A dict with three keys: ``open``, ``set``, ``delete``. Each
-            maps to a list of ``(args, kwargs)`` tuples — the calls
-            captured during the test.
+            A dict with four keys: ``create``, ``open``, ``set``,
+            ``delete``. Each maps to a list of ``(args, kwargs)`` tuples
+            — the calls captured during the test.
         """
-        captured: dict[str, list[tuple]] = {"open": [], "set": [], "delete": []}
+        captured: dict[str, list[tuple]] = {
+            "create": [],
+            "open": [],
+            "set": [],
+            "delete": [],
+        }
 
         class _FakeHandle:
             def __enter__(self) -> object:
@@ -1270,6 +1278,10 @@ class TestRunkeyHelpers:
 
             def __exit__(self, exc_type, exc, tb) -> None:
                 return None
+
+        def _create_stub(*args: object, **kwargs: object) -> _FakeHandle:
+            captured["create"].append((args, kwargs))
+            return _FakeHandle()
 
         def _open_stub(*args: object, **kwargs: object) -> _FakeHandle:
             captured["open"].append((args, kwargs))
@@ -1281,6 +1293,7 @@ class TestRunkeyHelpers:
         def _delete_stub(*args: object, **kwargs: object) -> None:
             captured["delete"].append((args, kwargs))
 
+        monkeypatch.setattr("break_reminder.ui.settings_dialog.winreg.CreateKeyEx", _create_stub)
         monkeypatch.setattr("break_reminder.ui.settings_dialog.winreg.OpenKey", _open_stub)
         monkeypatch.setattr("break_reminder.ui.settings_dialog.winreg.SetValueEx", _set_stub)
         monkeypatch.setattr("break_reminder.ui.settings_dialog.winreg.DeleteValue", _delete_stub)
@@ -1307,21 +1320,62 @@ class TestRunkeyHelpers:
         assert value_type == winreg.REG_SZ
         assert data == '"C:\\path with spaces\\BreakReminder.exe"'
 
-    def test_write_helper_uses_hkcu_run_subkey(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """The OpenKey call targets HKCU + the documented Run subkey."""
+    def test_write_helper_uses_createkeyex_against_hkcu_run_subkey(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The write helper calls ``CreateKeyEx`` against HKCU + the documented Run subkey.
+
+        ``CreateKeyEx`` (not ``OpenKey``) is the canonical Run-key idiom
+        — it opens the subkey if it exists and creates it if absent,
+        eliminating the "subkey missing on a fresh user profile"
+        failure mode that breaks plain ``OpenKey``.
+        """
         import winreg
 
         captured = self._patch_winreg(monkeypatch)
 
         settings_dialog_module._write_autostart_runkey('"x"')
 
-        assert len(captured["open"]) == 1
-        args, _kwargs = captured["open"][0]
+        assert len(captured["create"]) == 1, (
+            "write helper must use CreateKeyEx, not OpenKey — otherwise a "
+            "machine without an existing Run subkey (e.g. fresh CI runner) "
+            "fails on tick + OK"
+        )
+        assert captured["open"] == [], (
+            "write helper must NOT call OpenKey — the create-or-open semantic "
+            "of CreateKeyEx is required for the subkey-missing case"
+        )
+        args, _kwargs = captured["create"][0]
         # Args are (hkey, subkey, reserved, access).
         hkey, subkey, _reserved, access = args
         assert hkey == winreg.HKEY_CURRENT_USER
         assert subkey == r"Software\Microsoft\Windows\CurrentVersion\Run"
         assert access == winreg.KEY_SET_VALUE
+
+    def test_write_helper_succeeds_when_subkey_missing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        r"""Write helper does not raise when the Run subkey did not previously exist.
+
+        ``CreateKeyEx`` transparently creates the subkey in that case
+        and returns a usable handle, so ``SetValueEx`` still runs.
+        Direct regression test for the production scenario where a
+        brand-new Windows profile (CI runner, fresh user) has never
+        touched ``HKCU\...\Run`` — the previous ``OpenKey``-based
+        implementation would have raised ``FileNotFoundError`` here.
+        """
+        captured = self._patch_winreg(monkeypatch)
+
+        # Must not raise — the stubbed CreateKeyEx returns a fake handle
+        # regardless of whether the "real" subkey exists, mirroring the
+        # OS-level create-or-open behaviour.
+        settings_dialog_module._write_autostart_runkey('"x"')
+
+        assert len(captured["create"]) == 1
+        assert len(captured["set"]) == 1, (
+            "SetValueEx must run on the handle returned by CreateKeyEx, "
+            "even when the subkey had to be created from scratch"
+        )
 
     def test_delete_helper_calls_delete_value(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """``_delete_autostart_runkey`` calls ``DeleteValue`` with the right value name."""
@@ -1357,6 +1411,30 @@ class TestRunkeyHelpers:
         # Must not raise.
         settings_dialog_module._delete_autostart_runkey()
 
+    def test_delete_helper_swallows_filenotfounderror_when_subkey_missing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        r"""``OpenKey`` raising ``FileNotFoundError`` (subkey absent) is swallowed too.
+
+        Direct regression test for the CI-runner failure mode: on a
+        freshly provisioned Windows profile the
+        ``HKCU\Software\Microsoft\Windows\CurrentVersion\Run``
+        subkey itself does not exist, so ``OpenKey`` — not
+        ``DeleteValue`` — raises ``FileNotFoundError [WinError 2]``.
+        Both "subkey absent" and "value absent" must map to the same
+        "already-deleted" success semantic, otherwise every dialog save
+        on such a machine trips the atomic-save tooltip.
+        """
+        self._patch_winreg(monkeypatch)
+
+        def _raise(*_args: object, **_kwargs: object) -> None:
+            raise FileNotFoundError("absent subkey")
+
+        monkeypatch.setattr("break_reminder.ui.settings_dialog.winreg.OpenKey", _raise)
+
+        # Must not raise.
+        settings_dialog_module._delete_autostart_runkey()
+
     def test_delete_helper_propagates_other_oserror(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Non-``FileNotFoundError`` ``OSError``s propagate out of the helper.
 
@@ -1370,6 +1448,27 @@ class TestRunkeyHelpers:
             raise PermissionError("simulated GPO block")
 
         monkeypatch.setattr("break_reminder.ui.settings_dialog.winreg.DeleteValue", _raise)
+
+        with pytest.raises(PermissionError):
+            settings_dialog_module._delete_autostart_runkey()
+
+    def test_delete_helper_propagates_oserror_from_openkey(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """``OpenKey`` raising a non-``FileNotFoundError`` ``OSError`` propagates.
+
+        Symmetric tripwire to ``test_delete_helper_propagates_other_oserror``
+        (which exercises the ``DeleteValue`` raise-site). The broadened
+        outer ``except FileNotFoundError`` must continue to let
+        ``PermissionError`` / generic ``OSError`` from ``OpenKey``
+        bubble up so the dialog can surface its autostart tooltip.
+        """
+        self._patch_winreg(monkeypatch)
+
+        def _raise(*_args: object, **_kwargs: object) -> None:
+            raise PermissionError("simulated GPO block on OpenKey")
+
+        monkeypatch.setattr("break_reminder.ui.settings_dialog.winreg.OpenKey", _raise)
 
         with pytest.raises(PermissionError):
             settings_dialog_module._delete_autostart_runkey()

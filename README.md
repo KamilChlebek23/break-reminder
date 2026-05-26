@@ -269,8 +269,14 @@ dialog with a single "Launch BreakReminder at Windows login" checkbox
   (autostart), FR-006 (break interval), FR-007 (voice on/off + phrase),
   and FR-010 (snooze duration + cap) are all user-configurable from
   the dialog.
+- Hotfix (post-tag): autostart helpers now handle the case where the
+  `HKCU\...\Run` subkey doesn't pre-exist on the user profile (write
+  uses `CreateKeyEx` to create-or-open; delete swallows
+  `FileNotFoundError` from both `OpenKey` and `DeleteValue`).
+  Surfaced by the v0.5.0 CI run on `windows-latest`, where the
+  freshly-provisioned `runneradmin` profile had no Run subkey at all.
 
-Test suite: 238 → 259.
+Test suite: 238 → 262.
 
 ### v0.4.0 — 2026-05-26
 

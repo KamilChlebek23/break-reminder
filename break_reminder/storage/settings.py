@@ -18,7 +18,7 @@ from PySide6.QtCore import QSettings
 
 from break_reminder.storage.paths import settings_ini_path
 
-# --- Bounds (FR-006) ------------------------------------------------------
+# --- Bounds (FR-006 / FR-010) ---------------------------------------------
 
 # Inclusive range for the break interval in minutes. Single source of truth
 # for the persistence layer's clamp/validation (see ``break_interval_min``
@@ -27,6 +27,19 @@ from break_reminder.storage.paths import settings_ini_path
 # changing only this pair plus the matching FR-006 wording in the PRD.
 BREAK_INTERVAL_MIN_MINUTES = 1
 BREAK_INTERVAL_MAX_MINUTES = 240
+
+# FR-010 snooze-duration range. Same single-source-of-truth pattern as the
+# break-interval pair above; consumed by the ``snooze_duration_min``
+# getter/setter and the matching ``QSpinBox`` bounds in
+# ``break_reminder/ui/settings_dialog.py``.
+SNOOZE_DURATION_MIN_MINUTES = 1
+SNOOZE_DURATION_MAX_MINUTES = 30
+
+# FR-010 max-snoozes-per-cycle range. Lower bound 0 is intentional — the
+# user can disable snoozing entirely; the existing scheduler/dialog already
+# handle ``snooze_remaining = 0`` by hiding the snooze button.
+MAX_SNOOZES_MIN = 0
+MAX_SNOOZES_MAX = 5
 
 # --- Defaults -------------------------------------------------------------
 
@@ -153,12 +166,61 @@ class Settings:
     @property
     def snooze_duration_min(self) -> int:
         """How long a snooze defers the next break popup (FR-010)."""
-        return max(1, self._get_int(_Keys.SNOOZE_DURATION_MIN, DEFAULT_SNOOZE_DURATION_MIN))
+        raw = self._get_int(_Keys.SNOOZE_DURATION_MIN, DEFAULT_SNOOZE_DURATION_MIN)
+        return max(SNOOZE_DURATION_MIN_MINUTES, min(SNOOZE_DURATION_MAX_MINUTES, raw))
+
+    @snooze_duration_min.setter
+    def snooze_duration_min(self, minutes: int) -> None:
+        """Persist the FR-010 snooze duration after enforcing its range.
+
+        Same tight-validation contract as ``break_interval_min.setter`` —
+        the dialog's ``QSpinBox`` clamps user input visually so the
+        ``ValueError`` branch is unreachable from the GUI; a direct
+        caller (test helper, future CLI flag, default-reset path) gets
+        a clear error instead of a silently truncated value.
+
+        Args:
+            minutes: Snooze duration in minutes. Must satisfy
+                ``SNOOZE_DURATION_MIN_MINUTES <= minutes <= SNOOZE_DURATION_MAX_MINUTES``.
+
+        Raises:
+            ValueError: If ``minutes`` is outside the FR-010 range.
+        """
+        if not SNOOZE_DURATION_MIN_MINUTES <= minutes <= SNOOZE_DURATION_MAX_MINUTES:
+            raise ValueError(
+                f"snooze_duration_min must be in "
+                f"[{SNOOZE_DURATION_MIN_MINUTES}, {SNOOZE_DURATION_MAX_MINUTES}] (FR-010)"
+            )
+        self._qs.setValue(_Keys.SNOOZE_DURATION_MIN, minutes)
 
     @property
     def max_snoozes(self) -> int:
         """Maximum snoozes per cycle, clamped to FR-010's [0, 5]."""
-        return max(0, min(5, self._get_int(_Keys.MAX_SNOOZES, DEFAULT_MAX_SNOOZES)))
+        raw = self._get_int(_Keys.MAX_SNOOZES, DEFAULT_MAX_SNOOZES)
+        return max(MAX_SNOOZES_MIN, min(MAX_SNOOZES_MAX, raw))
+
+    @max_snoozes.setter
+    def max_snoozes(self, value: int) -> None:
+        """Persist the FR-010 max-snoozes-per-cycle cap after enforcing its range.
+
+        Zero is a valid input — the user can disable snoozing entirely;
+        the existing scheduler emits ``snooze_remaining = 0`` and the
+        break dialog hides the snooze button on that path. Same tight-
+        validation contract as ``break_interval_min.setter`` and
+        ``snooze_duration_min.setter``.
+
+        Args:
+            value: Max snoozes per break cycle. Must satisfy
+                ``MAX_SNOOZES_MIN <= value <= MAX_SNOOZES_MAX``.
+
+        Raises:
+            ValueError: If ``value`` is outside the FR-010 range.
+        """
+        if not MAX_SNOOZES_MIN <= value <= MAX_SNOOZES_MAX:
+            raise ValueError(
+                f"max_snoozes must be in [{MAX_SNOOZES_MIN}, {MAX_SNOOZES_MAX}] (FR-010)"
+            )
+        self._qs.setValue(_Keys.MAX_SNOOZES, value)
 
     @property
     def voice_enabled(self) -> bool:

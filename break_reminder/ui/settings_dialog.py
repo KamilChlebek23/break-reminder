@@ -67,6 +67,10 @@ from break_reminder.notifications.voice import VoiceNotifier
 from break_reminder.storage.settings import (
     BREAK_INTERVAL_MAX_MINUTES,
     BREAK_INTERVAL_MIN_MINUTES,
+    MAX_SNOOZES_MAX,
+    MAX_SNOOZES_MIN,
+    SNOOZE_DURATION_MAX_MINUTES,
+    SNOOZE_DURATION_MIN_MINUTES,
     Settings,
 )
 
@@ -78,6 +82,14 @@ _BREAK_INTERVAL_RANGE_MESSAGE = (
     f"Break interval must be between {BREAK_INTERVAL_MIN_MINUTES} "
     f"and {BREAK_INTERVAL_MAX_MINUTES} minutes."
 )
+
+# Tooltip on the max-snoozes spinbox. Surfaces the non-obvious zero-state
+# UX: setting the cap to 0 disables snoozing entirely on the next break.
+# Without this hint a user lowering the cap to 0 might expect the snooze
+# button to still appear and just refuse — the actual behavior is that
+# the existing ``snooze_remaining = 0`` path in the scheduler/break
+# dialog hides the button outright.
+_MAX_SNOOZES_ZERO_TOOLTIP = "0 = no snoozes; the break must be taken or missed."
 
 # Tooltip on the voice checkbox. Conveys the FR-007 contract once at
 # the surface where the user is already deciding whether to flip the
@@ -163,12 +175,14 @@ class SettingsDialog(QDialog):
         layout.addWidget(self._buttons)
 
     def _build_scheduling_tab(self) -> QWidget:
-        """Construct the "Scheduling" tab containing the break-interval spinbox.
+        """Construct the "Scheduling" tab containing the break-interval and snooze spinboxes.
 
         Returns:
-            A ``QWidget`` ready to be added to ``self._tabs``. The
-            spinbox is stored on ``self._break_interval_spinbox`` so the
-            save path can read its value.
+            A ``QWidget`` ready to be added to ``self._tabs``. Three
+            spinboxes are stored on ``self`` so the save path can read
+            their values: ``_break_interval_spinbox`` (FR-006),
+            ``_snooze_duration_spinbox`` (FR-010 duration), and
+            ``_max_snoozes_spinbox`` (FR-010 cap).
         """
         tab = QWidget(self._tabs)
 
@@ -191,8 +205,29 @@ class SettingsDialog(QDialog):
         if line_edit is not None:
             line_edit.textEdited.connect(self._on_break_interval_text_edited)
 
+        # FR-010 snooze duration. No typed-out-of-range tooltip pattern
+        # here (decided during /10x-plan): the 1-30 range is small enough
+        # that the spinbox's silent fixup is adequate; replicating the
+        # break-interval keystroke-capture pair would duplicate ~40 lines
+        # for no observable user benefit.
+        self._snooze_duration_spinbox = QSpinBox(tab)
+        self._snooze_duration_spinbox.setMinimum(SNOOZE_DURATION_MIN_MINUTES)
+        self._snooze_duration_spinbox.setMaximum(SNOOZE_DURATION_MAX_MINUTES)
+        self._snooze_duration_spinbox.setSuffix(" min")
+        self._snooze_duration_spinbox.setValue(self._settings.snooze_duration_min)
+
+        # FR-010 max snoozes per cycle. Lower bound 0 is intentional —
+        # see ``_MAX_SNOOZES_ZERO_TOOLTIP`` for the user-facing hint.
+        self._max_snoozes_spinbox = QSpinBox(tab)
+        self._max_snoozes_spinbox.setMinimum(MAX_SNOOZES_MIN)
+        self._max_snoozes_spinbox.setMaximum(MAX_SNOOZES_MAX)
+        self._max_snoozes_spinbox.setToolTip(_MAX_SNOOZES_ZERO_TOOLTIP)
+        self._max_snoozes_spinbox.setValue(self._settings.max_snoozes)
+
         form = QFormLayout(tab)
         form.addRow("Break interval (minutes):", self._break_interval_spinbox)
+        form.addRow("Snooze duration (minutes):", self._snooze_duration_spinbox)
+        form.addRow("Max snoozes per cycle:", self._max_snoozes_spinbox)
 
         return tab
 
@@ -313,13 +348,22 @@ class SettingsDialog(QDialog):
         voice_phrase="")`` confused state cannot land on disk via the
         GUI.
 
-        Persistence: the break interval (FR-006) is written first via
-        ``Settings.break_interval_min`` — its widget-level bounds
-        guarantee a [1, 240] value, so the setter's ``ValueError``
-        branch is unreachable here. The voice toggle and phrase
-        (FR-007) are written next; the ``voice_phrase`` setter is
-        permissive at the persistence layer (the dialog-level gate
-        above is the only enforcement of the non-empty contract).
+        Persistence order (Scheduling first, Notifications second):
+
+        - **FR-006 break interval** — written via ``Settings.break_interval_min``;
+          widget-level bounds guarantee a [1, 240] value, so the setter's
+          ``ValueError`` branch is unreachable here.
+        - **FR-010 snooze duration** — written via
+          ``Settings.snooze_duration_min``; widget-level [1, 30] bounds
+          make the setter's ``ValueError`` branch unreachable from here.
+        - **FR-010 max snoozes** — written via ``Settings.max_snoozes``;
+          widget-level [0, 5] bounds make the setter's ``ValueError``
+          branch unreachable from here.
+        - **FR-007 voice toggle and phrase** — written next; the
+          ``voice_phrase`` setter is permissive at the persistence layer
+          (the dialog-level gate above is the only enforcement of the
+          non-empty contract).
+
         Then chains to ``QDialog.accept`` for the standard close path.
         """
         if self._voice_enabled_checkbox.isChecked() and not self._voice_phrase_edit.text().strip():
@@ -341,6 +385,8 @@ class SettingsDialog(QDialog):
             return
 
         self._settings.break_interval_min = self._break_interval_spinbox.value()
+        self._settings.snooze_duration_min = self._snooze_duration_spinbox.value()
+        self._settings.max_snoozes = self._max_snoozes_spinbox.value()
         self._settings.voice_enabled = self._voice_enabled_checkbox.isChecked()
         self._settings.voice_phrase = self._voice_phrase_edit.text()
         super().accept()

@@ -231,11 +231,38 @@ class BreakReminderApp:
         return tray
 
     def _refresh_tooltip(self) -> None:
+        """Recompute the tray-icon tooltip and the Pause/Resume menu label.
+
+        Three branches in priority order:
+
+        1. **Paused** (FR-016) — ``BreakReminder — paused``. Wins over
+           snooze because pause is the more constraining state (no
+           breaks fire while paused, snoozed or not).
+        2. **Snoozing** (FR-010) — ``BreakReminder — snooze time left
+           Xm YYs``. Active when the scheduler reports a non-``None``
+           ``seconds_until_snooze_end``. Flips back to the regular
+           countdown the moment the snooze elapses.
+        3. **Regular countdown** (FR-008) — ``BreakReminder — next
+           break in Xm YYs``.
+
+        Driven by the 5-second ``_tooltip_timer`` plus eager calls from
+        every state-changing slot (``_on_toggle_pause``,
+        ``_apply_break_taken``, ``_apply_break_snoozed``).
+        """
         if self._break_scheduler.is_paused:
             self._tray.setToolTip(f"{APPLICATION_NAME} — paused")
             self._action_pause.setText("Resume")
             return
         self._action_pause.setText("Pause")
+
+        snooze_seconds = self._break_scheduler.seconds_until_snooze_end
+        if snooze_seconds is not None:
+            minutes, seconds = divmod(snooze_seconds, 60)
+            self._tray.setToolTip(
+                f"{APPLICATION_NAME} — snooze time left {minutes:d}m {seconds:02d}s"
+            )
+            return
+
         seconds = self._break_scheduler.seconds_until_break
         minutes, seconds = divmod(seconds, 60)
         self._tray.setToolTip(f"{APPLICATION_NAME} — next break in {minutes:d}m {seconds:02d}s")

@@ -134,8 +134,11 @@ countdown tooltip.
 ### The tray icon
 
 - **Hover** the icon: tooltip shows the time until the next break, e.g.
-  `BreakReminder — next break in 23m 14s`. When paused, the tooltip reads
-  `BreakReminder — paused`.
+  `BreakReminder — next break in 23m 14s`. While a snooze is active, the
+  tooltip reads `BreakReminder — snooze time left 4m 32s` and counts
+  down to the moment the next break fires. When paused, the tooltip
+  reads `BreakReminder — paused` (paused beats both regular and
+  snoozing).
 - **Left-click** the icon: opens the settings dialog (in v0.1.x this is a
   placeholder pointing you at the INI file — see [Settings](#settings-v01x)).
 - **Right-click** the icon: opens the full menu below.

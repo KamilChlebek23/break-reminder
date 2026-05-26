@@ -23,6 +23,7 @@ pynput listeners, neither of which we want fighting the test harness.
 from __future__ import annotations
 
 import csv
+import re
 from pathlib import Path
 
 import pytest
@@ -606,3 +607,57 @@ class TestCheckForUpdatesAction:
         _find_action(app, "Check for updates").trigger()
 
         assert opened_urls == []
+
+
+# ---------------------------------------------------------------------------
+# Tray tooltip — snooze-aware branch (FR-010 + FR-004)
+# ---------------------------------------------------------------------------
+
+
+class TestRefreshTooltipDuringSnooze:
+    """``_refresh_tooltip`` flips to the snooze form while a snooze is open.
+
+    Three branches in priority order: paused → snoozing → regular countdown.
+    These tests pin the snooze branch's text format and the precedence
+    relationships between the three branches. We don't pin the exact
+    seconds — the underlying clock is the real ``_utcnow``, so the
+    countdown reading depends on test-execution timing — but the regex
+    pin is enough to catch shape regressions.
+    """
+
+    _SNOOZE_RE = re.compile(r"^BreakReminder — snooze time left \d+m \d{2}s$")
+    _REGULAR_RE = re.compile(r"^BreakReminder — next break in \d+m \d{2}s$")
+
+    def test_tooltip_during_snooze_shows_snooze_form(self, app: BreakReminderApp) -> None:
+        """After ``_apply_break_snoozed`` the tray tooltip matches the snooze format."""
+        app._apply_break_snoozed()
+        tooltip = app._tray.toolTip()
+        assert self._SNOOZE_RE.match(tooltip), f"tooltip {tooltip!r} did not match snooze format"
+
+    def test_paused_takes_precedence_over_snooze(self, app: BreakReminderApp) -> None:
+        """Pause beats snooze: ``BreakReminder — paused`` wins even with a live snooze."""
+        # Snooze first, then pause — the eager refresh inside _apply_break_snoozed
+        # would otherwise show the snooze form. Final pause + manual refresh
+        # must put us back to the paused tooltip.
+        app._apply_break_snoozed()
+        app._break_scheduler.pause()
+        app._refresh_tooltip()
+        assert app._tray.toolTip() == "BreakReminder — paused"
+
+    def test_falls_back_to_regular_countdown_when_snooze_clears(
+        self, app: BreakReminderApp
+    ) -> None:
+        """Once ``on_break_taken`` clears the snooze the regular countdown returns.
+
+        Tripwire for the branch ordering: if a future edit changes the
+        snooze branch from ``return``-after-set to fallthrough, this
+        test catches it because the regular-countdown text would never
+        be reached after a snooze.
+        """
+        app._apply_break_snoozed()
+        assert self._SNOOZE_RE.match(app._tray.toolTip())
+        app._apply_break_taken()
+        tooltip = app._tray.toolTip()
+        assert self._REGULAR_RE.match(tooltip), (
+            f"tooltip {tooltip!r} did not match regular-countdown format after take"
+        )

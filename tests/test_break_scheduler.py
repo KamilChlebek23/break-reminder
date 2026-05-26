@@ -204,6 +204,49 @@ class TestSecondsUntilBreak:
         assert scheduler.seconds_until_break == 0
 
 
+class TestSecondsUntilSnoozeEnd:
+    """The ``seconds_until_snooze_end`` helper consumed by the tray-icon tooltip.
+
+    Drives the snooze-aware tooltip branch (FR-010): returns ``None`` when no
+    snooze is active or the window has elapsed, otherwise the whole-seconds
+    remaining (rounded up) until ``_snooze_until``.
+    """
+
+    def test_returns_none_when_no_snooze_active(self, scheduler: BreakScheduler) -> None:
+        """A fresh scheduler reports ``None`` — no snooze in progress."""
+        assert scheduler.seconds_until_snooze_end is None
+
+    def test_returns_positive_seconds_during_snooze(self, scheduler: BreakScheduler) -> None:
+        """Right after ``on_break_snoozed()`` returns the full snooze duration."""
+        scheduler.on_break_snoozed()
+        # Default snooze duration is 5 minutes = 300 seconds.
+        assert scheduler.seconds_until_snooze_end == 300
+
+    def test_decreases_as_clock_advances(self, scheduler: BreakScheduler, clock: Clock) -> None:
+        """The value tracks the wall-clock countdown to ``_snooze_until``."""
+        scheduler.on_break_snoozed()
+        clock.advance(60)
+        assert scheduler.seconds_until_snooze_end == 240
+
+    def test_returns_none_at_or_after_snooze_end(
+        self, scheduler: BreakScheduler, clock: Clock
+    ) -> None:
+        """Past ``_snooze_until`` returns ``None`` even before ``_tick`` clears the field.
+
+        Guarantees the tooltip flips back to the regular countdown the
+        moment the snooze elapses, without waiting up to one second for
+        the next ``_tick()``.
+        """
+        scheduler.on_break_snoozed()
+        clock.advance(5 * 60)  # exactly at _snooze_until
+        assert scheduler.seconds_until_snooze_end is None
+        # And well past:
+        clock.advance(60)
+        assert scheduler.seconds_until_snooze_end is None
+        # _snooze_until is intentionally not cleared yet — that's _tick's job.
+        assert scheduler._snooze_until is not None
+
+
 # ---------------------------------------------------------------------------
 # FR-016 — pause / resume
 # ---------------------------------------------------------------------------

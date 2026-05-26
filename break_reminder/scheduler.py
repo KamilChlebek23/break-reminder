@@ -25,6 +25,7 @@ wires the signals to the appropriate dialog.
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -115,6 +116,31 @@ class BreakScheduler(QObject):
             return 0
         threshold = self._settings.break_interval_min * 60
         return max(0, threshold - self._active_seconds)
+
+    @property
+    def seconds_until_snooze_end(self) -> int | None:
+        """How many wall-clock seconds remain in the active snooze window.
+
+        Used by the tray-icon tooltip (FR-004) to render
+        ``BreakReminder — snooze time left Xm YYs`` while a snooze is
+        open. Independent of pause: the tooltip layer is responsible for
+        gating on ``is_paused`` first.
+
+        Returns:
+            ``None`` when no snooze is active or the window has already
+            elapsed (so the tooltip flips back to the regular countdown
+            the moment the snooze ends, even before the next 1-second
+            ``_tick()`` clears ``_snooze_until``). Otherwise the number
+            of whole seconds remaining, rounded up so a fractional 0.4s
+            still displays as "0m 01s" (avoids a 1-second flicker
+            through "0m 00s" before this property returns ``None``).
+        """
+        if self._snooze_until is None:
+            return None
+        remaining = (self._snooze_until - self._clock()).total_seconds()
+        if remaining <= 0:
+            return None
+        return math.ceil(remaining)
 
     # ---- user-facing controls ------------------------------------------
 

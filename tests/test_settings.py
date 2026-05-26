@@ -28,6 +28,12 @@ from break_reminder.storage.settings import (
     _Keys,
 )
 
+# Note: range constants for the snooze setters
+# (``SNOOZE_DURATION_*_MINUTES`` / ``MAX_SNOOZES_*``) are referenced via
+# the literal numbers in the test names + ``ValueError`` regex strings
+# rather than imported, mirroring the way ``TestValidation`` pins the
+# break-interval [1, 240] bounds with literal regex matches.
+
 
 @pytest.fixture
 def ini_path(tmp_path: Path) -> Path:
@@ -217,6 +223,119 @@ class TestVoiceSettersRoundTrip:
 
         second = Settings(ini_path=ini_path)
         assert second.voice_phrase == "Time for a break"
+
+
+class TestSnoozeSettersRoundTrip:
+    """FR-010: ``snooze_duration_min`` and ``max_snoozes`` setter round-trip.
+
+    Mirrors ``TestVoiceSettersRoundTrip``'s shape — pins setter writes,
+    getter reads, and cross-instance persistence for both snooze
+    parameters. Validation contracts (range enforcement + getter clamp
+    on corrupt INI) live in ``TestSnoozeValidation`` below.
+    """
+
+    def test_snooze_duration_setter_writes_value(self, settings: Settings) -> None:
+        """Setting ``snooze_duration_min`` to 10 is observable via the getter."""
+        settings.snooze_duration_min = 10
+        assert settings.snooze_duration_min == 10
+
+    def test_snooze_duration_persists_across_instances(self, ini_path: Path) -> None:
+        """A ``snooze_duration_min`` write is observable from a fresh instance."""
+        first = Settings(ini_path=ini_path)
+        first.snooze_duration_min = 15
+        first._qs.sync()
+        del first
+
+        second = Settings(ini_path=ini_path)
+        assert second.snooze_duration_min == 15
+
+    def test_max_snoozes_setter_writes_value(self, settings: Settings) -> None:
+        """Setting ``max_snoozes`` to 3 is observable via the getter."""
+        settings.max_snoozes = 3
+        assert settings.max_snoozes == 3
+
+    def test_max_snoozes_persists_across_instances(self, ini_path: Path) -> None:
+        """A ``max_snoozes`` write is observable from a fresh instance."""
+        first = Settings(ini_path=ini_path)
+        first.max_snoozes = 4
+        first._qs.sync()
+        del first
+
+        second = Settings(ini_path=ini_path)
+        assert second.max_snoozes == 4
+
+
+class TestSnoozeValidation:
+    """FR-010: snooze setters enforce [1, 30] / [0, 5] ranges; getters clamp corrupt INI.
+
+    Mirrors ``TestValidation`` (which pins the break-interval [1, 240]
+    contract). The explicit zero coverage on ``max_snoozes`` is the
+    only deviation from that template — zero is intentionally a valid
+    input because the existing scheduler/dialog already handle the
+    no-snooze-button path correctly when ``max_snoozes = 0``.
+    """
+
+    def test_snooze_duration_setter_rejects_zero(self, settings: Settings) -> None:
+        """Setting snooze duration to 0 raises ``ValueError`` (FR-010 lower bound)."""
+        with pytest.raises(ValueError, match=r"\[1, 30\]"):
+            settings.snooze_duration_min = 0
+
+    def test_snooze_duration_setter_rejects_negative(self, settings: Settings) -> None:
+        """Setting snooze duration to a negative value raises ``ValueError``."""
+        with pytest.raises(ValueError, match=r"\[1, 30\]"):
+            settings.snooze_duration_min = -5
+
+    def test_snooze_duration_setter_rejects_above_30(self, settings: Settings) -> None:
+        """Setting snooze duration above 30 raises ``ValueError`` (FR-010 upper bound)."""
+        with pytest.raises(ValueError, match=r"\[1, 30\]"):
+            settings.snooze_duration_min = 31
+
+    def test_snooze_duration_setter_accepts_boundary_values(self, settings: Settings) -> None:
+        """Boundary values 1 and 30 round-trip through the setter."""
+        settings.snooze_duration_min = 1
+        assert settings.snooze_duration_min == 1
+        settings.snooze_duration_min = 30
+        assert settings.snooze_duration_min == 30
+
+    def test_snooze_duration_getter_clamps_corrupt_high_value(self, settings: Settings) -> None:
+        """A hand-edited above-range INI value is clamped to 30."""
+        settings._qs.setValue(_Keys.SNOOZE_DURATION_MIN, 9999)
+        settings._qs.sync()
+        assert settings.snooze_duration_min == 30
+
+    def test_snooze_duration_getter_clamps_corrupt_low_value(self, settings: Settings) -> None:
+        """A hand-edited below-range INI value is clamped to 1."""
+        settings._qs.setValue(_Keys.SNOOZE_DURATION_MIN, -50)
+        settings._qs.sync()
+        assert settings.snooze_duration_min == 1
+
+    def test_max_snoozes_setter_rejects_negative(self, settings: Settings) -> None:
+        """Setting max_snoozes to a negative value raises ``ValueError`` (FR-010 lower bound)."""
+        with pytest.raises(ValueError, match=r"\[0, 5\]"):
+            settings.max_snoozes = -1
+
+    def test_max_snoozes_setter_rejects_above_5(self, settings: Settings) -> None:
+        """Setting max_snoozes above 5 raises ``ValueError`` (FR-010 upper bound)."""
+        with pytest.raises(ValueError, match=r"\[0, 5\]"):
+            settings.max_snoozes = 6
+
+    def test_max_snoozes_setter_accepts_boundary_values(self, settings: Settings) -> None:
+        """Boundary values 0 and 5 round-trip through the setter (zero is intentional)."""
+        # Zero is the load-bearing case — it's the user-disables-snoozing
+        # state. The existing scheduler/break-dialog already handle the
+        # ``snooze_remaining = 0`` path; this assertion pins the setter's
+        # acceptance contract so a future tightening to ``[1, 5]`` is
+        # caught here rather than discovered by a confused user.
+        settings.max_snoozes = 0
+        assert settings.max_snoozes == 0
+        settings.max_snoozes = 5
+        assert settings.max_snoozes == 5
+
+    def test_max_snoozes_getter_clamps_corrupt_high_value(self, settings: Settings) -> None:
+        """A hand-edited above-range INI value is clamped to 5."""
+        settings._qs.setValue(_Keys.MAX_SNOOZES, 99)
+        settings._qs.sync()
+        assert settings.max_snoozes == 5
 
 
 class TestPausedLifecycle:

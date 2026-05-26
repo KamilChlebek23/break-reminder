@@ -21,6 +21,8 @@ from PySide6.QtWidgets import QCheckBox, QLineEdit, QPushButton, QSpinBox, QTabW
 
 from break_reminder.storage.settings import (
     DEFAULT_BREAK_INTERVAL_MIN,
+    DEFAULT_MAX_SNOOZES,
+    DEFAULT_SNOOZE_DURATION_MIN,
     DEFAULT_VOICE_PHRASE,
     Settings,
 )
@@ -139,6 +141,51 @@ class TestLoad:
         assert "1" in tooltip
         assert "240" in tooltip
 
+    def test_snooze_duration_spinbox_initial_value_is_default_on_fresh_settings(
+        self, dialog: SettingsDialog
+    ) -> None:
+        """Snooze-duration spinbox shows ``DEFAULT_SNOOZE_DURATION_MIN`` on a fresh INI."""
+        assert dialog._snooze_duration_spinbox.value() == DEFAULT_SNOOZE_DURATION_MIN
+
+    def test_snooze_duration_spinbox_minimum_is_one(self, dialog: SettingsDialog) -> None:
+        """FR-010 snooze-duration lower bound is enforced at the widget level."""
+        # Tripwire: same role as the break-interval lower-bound test —
+        # if loosened, the Settings setter's ValueError path becomes
+        # reachable from the dialog and the no-try/except design breaks.
+        assert dialog._snooze_duration_spinbox.minimum() == 1
+
+    def test_snooze_duration_spinbox_maximum_is_30(self, dialog: SettingsDialog) -> None:
+        """FR-010 snooze-duration upper bound is enforced at the widget level."""
+        assert dialog._snooze_duration_spinbox.maximum() == 30
+
+    def test_max_snoozes_spinbox_initial_value_is_default_on_fresh_settings(
+        self, dialog: SettingsDialog
+    ) -> None:
+        """Max-snoozes spinbox shows ``DEFAULT_MAX_SNOOZES`` on a fresh INI."""
+        assert dialog._max_snoozes_spinbox.value() == DEFAULT_MAX_SNOOZES
+
+    def test_max_snoozes_spinbox_minimum_is_zero(self, dialog: SettingsDialog) -> None:
+        """FR-010 max-snoozes lower bound is 0 — disables snoozing entirely."""
+        # Zero is intentional, not an oversight. A future agent who
+        # "fixes" this to 1 breaks the user-disables-snoozing flow this
+        # slice deliberately enables.
+        assert dialog._max_snoozes_spinbox.minimum() == 0
+
+    def test_max_snoozes_spinbox_maximum_is_5(self, dialog: SettingsDialog) -> None:
+        """FR-010 max-snoozes upper bound is enforced at the widget level."""
+        assert dialog._max_snoozes_spinbox.maximum() == 5
+
+    def test_max_snoozes_spinbox_zero_state_tooltip_present(self, dialog: SettingsDialog) -> None:
+        """The max-snoozes spinbox carries a tooltip explaining the zero state.
+
+        The string ``"0 = no snoozes"`` is the load-bearing UX hint —
+        without it a user lowering the cap to 0 might expect the snooze
+        button to refuse rather than disappear. Tripwire for accidental
+        tooltip removal during a future refactor.
+        """
+        tooltip = dialog._max_snoozes_spinbox.toolTip()
+        assert "0 = no snoozes" in tooltip
+
 
 # ---------------------------------------------------------------------------
 # Save — OK persists, Cancel discards
@@ -212,6 +259,40 @@ class TestSave:
         # does. Cancel skips the setter, so the INI must still be absent.
         assert not ini_path.exists()
 
+    def test_accept_persists_snooze_duration_via_settings_setter(
+        self, dialog: SettingsDialog, settings: Settings
+    ) -> None:
+        """``accept()`` writes the snooze-duration spinbox via ``Settings.snooze_duration_min``."""
+        dialog._snooze_duration_spinbox.setValue(10)
+
+        dialog.accept()
+
+        assert settings.snooze_duration_min == 10
+
+    def test_accept_persists_max_snoozes_via_settings_setter(
+        self, dialog: SettingsDialog, settings: Settings
+    ) -> None:
+        """``accept()`` writes the max-snoozes spinbox via ``Settings.max_snoozes``."""
+        dialog._max_snoozes_spinbox.setValue(3)
+
+        dialog.accept()
+
+        assert settings.max_snoozes == 3
+
+    def test_accept_persists_max_snoozes_zero(
+        self, dialog: SettingsDialog, settings: Settings
+    ) -> None:
+        """``accept()`` allows persisting ``max_snoozes = 0`` (disable snoozing)."""
+        # Explicit zero coverage at the dialog layer — the same
+        # invariant ``TestSnoozeValidation.test_max_snoozes_setter_accepts_boundary_values``
+        # pins at the persistence layer. Together they guarantee no
+        # regression on the user-disables-snoozing flow.
+        dialog._max_snoozes_spinbox.setValue(0)
+
+        dialog.accept()
+
+        assert settings.max_snoozes == 0
+
 
 # ---------------------------------------------------------------------------
 # Layout — Scheduling + Notifications tabs (S-01 + S-04)
@@ -244,6 +325,19 @@ class TestLayout:
         # Loose check: any QSpinBox child suffices. The TestLoad cases
         # cover the bounds and value semantics explicitly.
         assert dialog.findChild(QSpinBox) is not None
+
+    def test_scheduling_tab_hosts_three_spinboxes(self, dialog: SettingsDialog) -> None:
+        """The Scheduling tab hosts the break-interval + 2 snooze spinboxes (S-01 + S-03).
+
+        Tripwire for the row-count contract. A future slice removing or
+        repurposing one of the three rows must update this test
+        deliberately.
+        """
+        # The dialog hosts spinboxes only on the Scheduling tab — the
+        # Notifications tab uses a checkbox + line edit. ``findChildren``
+        # therefore counts exactly the Scheduling-tab spinboxes.
+        spinboxes = dialog.findChildren(QSpinBox)
+        assert len(spinboxes) == 3
 
 
 # ---------------------------------------------------------------------------

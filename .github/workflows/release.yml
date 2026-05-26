@@ -66,6 +66,20 @@ jobs:
         # `--ignore-vuln <id>` with a comment explaining why.
         run: uv run pip-audit
 
+      - name: Generate license manifest
+        # Produced BEFORE the AGPL gate (next step) so the manifest
+        # always lands on disk even when the gate trips. This also
+        # sidesteps a subtle GitHub Actions / setup-uv interaction
+        # where an ``if: always()`` step on a windows-latest runner
+        # can lose the PATH mutation that setup-uv applied — the
+        # failure mode is "uv: The term 'uv' is not recognized..."
+        # on a step that ran fine when un-gated. By moving manifest
+        # generation up the step list (un-gated), uv-on-PATH is
+        # guaranteed; the downstream Upload step keeps its
+        # ``if: always()`` so the artifact still attaches if the
+        # gate fails.
+        run: uv run pip-licenses --format=markdown --output-file=licenses.md
+
       - name: License check (deny AGPL)
         # AGPL is the only license that would force open-sourcing the
         # whole shipped installer. Everything else in the tree is either
@@ -75,10 +89,6 @@ jobs:
         # safe). LGPL deps (PySide6, pynput) are fine because Python's
         # import system is dynamic linking by definition.
         run: uv run pip-licenses --fail-on="AGPL"
-
-      - name: Generate license manifest
-        if: always() # produce the manifest even if the gate above flagged something
-        run: uv run pip-licenses --format=markdown --output-file=licenses.md
 
       - name: Upload license manifest
         if: always()

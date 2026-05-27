@@ -1,10 +1,10 @@
 ---
 change_id: settings-snooze-config
 title: Snooze duration and max snoozes editable from settings dialog
-status: impl_reviewed
+status: archived
 created: 2026-05-26
-updated: 2026-05-26
-archived_at: null
+updated: 2026-05-27
+archived_at: 2026-05-27T06:41:05Z
 ---
 
 ## Notes

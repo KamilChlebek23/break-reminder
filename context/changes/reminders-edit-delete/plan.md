@@ -510,46 +510,46 @@ The Phase 2.1 step list IS the manual testing surface; see Phase 2 above.
 
 #### Automated
 
-- [x] 1.1 Unit tests pass: `uv run pytest tests/test_reminder_form_dialog.py -v` (includes new `TestReminderFormDialogEditMode`)
-- [x] 1.2 Unit tests pass: `uv run pytest tests/test_settings_dialog.py -v` (includes new `TestRemindersEditButton` + `TestRemindersDeleteButton`)
-- [x] 1.3 Full suite passes: `uv run pytest`
-- [x] 1.4 Type check passes: `uv run pyright`
-- [x] 1.5 Linting passes: `uv run ruff check`
-- [x] 1.6 Format check passes: `uv run ruff format --check`
-- [x] 1.7 Security audit passes: `uv run pip-audit`
-- [x] 1.8 License gate passes: `uv run pip-licenses --fail-on="AGPL"`
+- [x] 1.1 Unit tests pass: `uv run pytest tests/test_reminder_form_dialog.py -v` (includes new `TestReminderFormDialogEditMode`) — a4daa43
+- [x] 1.2 Unit tests pass: `uv run pytest tests/test_settings_dialog.py -v` (includes new `TestRemindersEditButton` + `TestRemindersDeleteButton`) — a4daa43
+- [x] 1.3 Full suite passes: `uv run pytest` — a4daa43
+- [x] 1.4 Type check passes: `uv run pyright` — a4daa43
+- [x] 1.5 Linting passes: `uv run ruff check` — a4daa43
+- [x] 1.6 Format check passes: `uv run ruff format --check` — a4daa43
+- [x] 1.7 Security audit passes: `uv run pip-audit` — a4daa43
+- [x] 1.8 License gate passes: `uv run pip-licenses --fail-on="AGPL"` — a4daa43
 
 #### Manual
 
-- [x] 1.9 Edit/Delete disabled with no selection; enable on row select; disable on clear
-- [x] 1.10 Edit click opens sub-dialog pre-filled (name + datetime as event time + lead spinbox); title "Edit Reminder"
-- [x] 1.11 Edit name only on a future reminder → row updates with same firing time
-- [x] 1.12 Edit datetime to ~30s from now → popup fires at the new instant
-- [x] 1.13 Edit name only on an expired reminder → past-time gate skipped, row's name updates
-- [x] 1.14 Edit datetime backward on an expired reminder → past-time tooltip appears, dialog stays open
-- [x] 1.15 Delete → No / Enter / Esc → no-op (default button is No)
-- [x] 1.16 Delete → Yes → row gone from list + JSON
-- [x] 1.17 Delete a near-firing reminder → popup does NOT fire (scheduler re-armed)
-- [x] 1.18 Add flow still works unchanged
-- [x] 1.19 No regressions in Scheduling / Notifications / Lifecycle tabs
+- [x] 1.9 Edit/Delete disabled with no selection; enable on row select; disable on clear — a4daa43
+- [x] 1.10 Edit click opens sub-dialog pre-filled (name + datetime as event time + lead spinbox); title "Edit Reminder" — a4daa43
+- [x] 1.11 Edit name only on a future reminder → row updates with same firing time — a4daa43
+- [x] 1.12 Edit datetime to ~30s from now → popup fires at the new instant — a4daa43
+- [x] 1.13 Edit name only on an expired reminder → past-time gate skipped, row's name updates — a4daa43
+- [x] 1.14 Edit datetime backward on an expired reminder → past-time tooltip appears, dialog stays open — a4daa43
+- [x] 1.15 Delete → No / Enter / Esc → no-op (default button is No) — a4daa43
+- [x] 1.16 Delete → Yes → row gone from list + JSON — a4daa43
+- [x] 1.17 Delete a near-firing reminder → popup does NOT fire (scheduler re-armed) — a4daa43
+- [x] 1.18 Add flow still works unchanged — a4daa43
+- [x] 1.19 No regressions in Scheduling / Notifications / Lifecycle tabs — a4daa43
 
 ### Phase 2: Manual smoke + bookkeeping
 
 #### Automated
 
-- [ ] 2.1 `git grep -nE 'Custom-reminder Edit / Delete dialog wiring' AGENTS.md` returns no matches
-- [ ] 2.2 `git grep -nE 'Custom-reminder recurrence editor \(FR-014\)' AGENTS.md` returns exactly one match
-- [ ] 2.3 `git grep -nE '^\| S-07 .*proposed' context/foundation/roadmap.md` returns no matches
+- [x] 2.1 `git grep -nE 'Custom-reminder Edit / Delete dialog wiring' AGENTS.md` returns no matches
+- [x] 2.2 `git grep -nE 'Custom-reminder recurrence editor \(FR-014\)' AGENTS.md` returns exactly one match
+- [x] 2.3 `git grep -nE '^\| S-07 .*proposed' context/foundation/roadmap.md` returns no matches
 - [ ] 2.4 `git diff context/changes/reminders-edit-delete/change.md` shows `status: implemented` and updated `updated:` date
 
 #### Manual
 
-- [ ] 2.5 Real Windows: pre-seeded three-reminder state → Edit/Delete enable on selection (Phase 2.1 step 3)
-- [ ] 2.6 Real Windows: Edit name only on a future reminder → row updates (Phase 2.1 step 4)
-- [ ] 2.7 Real Windows: Edit datetime to near-future → popup fires (Phase 2.1 step 5)
-- [ ] 2.8 Real Windows: Edit name only on expired → past-time gate skipped (Phase 2.1 step 6)
-- [ ] 2.9 Real Windows: Edit datetime to past on expired → past-time gate fires (Phase 2.1 step 7)
-- [ ] 2.10 Real Windows: Delete → No / Enter / Esc → no-op (Phase 2.1 steps 8-9)
-- [ ] 2.11 Real Windows: Delete → Yes → row gone, JSON updated (Phase 2.1 step 10)
-- [ ] 2.12 Real Windows: Delete near-firing reminder → no popup (Phase 2.1 step 11)
-- [ ] 2.13 Real Windows: state persists across Settings open/close (Phase 2.1 step 12)
+- [x] 2.5 Real Windows: pre-seeded three-reminder state → Edit/Delete enable on selection (Phase 2.1 step 3)
+- [x] 2.6 Real Windows: Edit name only on a future reminder → row updates (Phase 2.1 step 4)
+- [x] 2.7 Real Windows: Edit datetime to near-future → popup fires (Phase 2.1 step 5)
+- [x] 2.8 Real Windows: Edit name only on expired → past-time gate skipped (Phase 2.1 step 6)
+- [x] 2.9 Real Windows: Edit datetime to past on expired → past-time gate fires (Phase 2.1 step 7)
+- [x] 2.10 Real Windows: Delete → No / Enter / Esc → no-op (Phase 2.1 steps 8-9)
+- [x] 2.11 Real Windows: Delete → Yes → row gone, JSON updated (Phase 2.1 step 10)
+- [x] 2.12 Real Windows: Delete near-firing reminder → no popup (Phase 2.1 step 11)
+- [x] 2.13 Real Windows: state persists across Settings open/close (Phase 2.1 step 12)

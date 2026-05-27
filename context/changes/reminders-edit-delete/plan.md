@@ -537,19 +537,19 @@ The Phase 2.1 step list IS the manual testing surface; see Phase 2 above.
 
 #### Automated
 
-- [x] 2.1 `git grep -nE 'Custom-reminder Edit / Delete dialog wiring' AGENTS.md` returns no matches
-- [x] 2.2 `git grep -nE 'Custom-reminder recurrence editor \(FR-014\)' AGENTS.md` returns exactly one match
-- [x] 2.3 `git grep -nE '^\| S-07 .*proposed' context/foundation/roadmap.md` returns no matches
-- [ ] 2.4 `git diff context/changes/reminders-edit-delete/change.md` shows `status: implemented` and updated `updated:` date
+- [x] 2.1 `git grep -nE 'Custom-reminder Edit / Delete dialog wiring' AGENTS.md` returns no matches — 2d39974
+- [x] 2.2 `git grep -nE 'Custom-reminder recurrence editor \(FR-014\)' AGENTS.md` returns exactly one match — 2d39974
+- [x] 2.3 `git grep -nE '^\| S-07 .*proposed' context/foundation/roadmap.md` returns no matches — 2d39974
+- [x] 2.4 `git diff context/changes/reminders-edit-delete/change.md` shows `status: implemented` and updated `updated:` date — 2d39974
 
 #### Manual
 
-- [x] 2.5 Real Windows: pre-seeded three-reminder state → Edit/Delete enable on selection (Phase 2.1 step 3)
-- [x] 2.6 Real Windows: Edit name only on a future reminder → row updates (Phase 2.1 step 4)
-- [x] 2.7 Real Windows: Edit datetime to near-future → popup fires (Phase 2.1 step 5)
-- [x] 2.8 Real Windows: Edit name only on expired → past-time gate skipped (Phase 2.1 step 6)
-- [x] 2.9 Real Windows: Edit datetime to past on expired → past-time gate fires (Phase 2.1 step 7)
-- [x] 2.10 Real Windows: Delete → No / Enter / Esc → no-op (Phase 2.1 steps 8-9)
-- [x] 2.11 Real Windows: Delete → Yes → row gone, JSON updated (Phase 2.1 step 10)
-- [x] 2.12 Real Windows: Delete near-firing reminder → no popup (Phase 2.1 step 11)
-- [x] 2.13 Real Windows: state persists across Settings open/close (Phase 2.1 step 12)
+- [x] 2.5 Real Windows: pre-seeded three-reminder state → Edit/Delete enable on selection (Phase 2.1 step 3) — 2d39974
+- [x] 2.6 Real Windows: Edit name only on a future reminder → row updates (Phase 2.1 step 4) — 2d39974
+- [x] 2.7 Real Windows: Edit datetime to near-future → popup fires (Phase 2.1 step 5) — 2d39974
+- [x] 2.8 Real Windows: Edit name only on expired → past-time gate skipped (Phase 2.1 step 6) — 2d39974
+- [x] 2.9 Real Windows: Edit datetime to past on expired → past-time gate fires (Phase 2.1 step 7) — 2d39974
+- [x] 2.10 Real Windows: Delete → No / Enter / Esc → no-op (Phase 2.1 steps 8-9) — 2d39974
+- [x] 2.11 Real Windows: Delete → Yes → row gone, JSON updated (Phase 2.1 step 10) — 2d39974
+- [x] 2.12 Real Windows: Delete near-firing reminder → no popup (Phase 2.1 step 11) — 2d39974
+- [x] 2.13 Real Windows: state persists across Settings open/close (Phase 2.1 step 12) — 2d39974

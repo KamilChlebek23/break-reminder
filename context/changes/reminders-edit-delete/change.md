@@ -1,7 +1,7 @@
 ---
 change_id: reminders-edit-delete
 title: Edit and delete custom reminders from the Reminders list
-status: implementing
+status: implemented
 created: 2026-05-27
 updated: 2026-05-27
 roadmap_ref: S-07

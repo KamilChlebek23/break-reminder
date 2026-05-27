@@ -79,7 +79,7 @@ from __future__ import annotations
 import logging
 import sys
 import winreg
-from datetime import UTC, datetime, tzinfo
+from datetime import UTC, datetime, timedelta, tzinfo
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -271,20 +271,44 @@ def _compose_row(reminder: Reminder, now: datetime, *, tz: tzinfo | None = None)
     Pure function — both data sources are explicit parameters so the
     test suite can exercise it without a Qt event loop.
 
+    S-06b branching: when ``reminder.lead_minutes > 0`` and the reminder
+    is still active (``next_firing_after`` returned a tz-aware
+    ``datetime``), the displayed time switches from the firing instant
+    to the **event time** (``fire_at + lead_minutes``) and a
+    ``"(fires N min before)"`` suffix is appended — the user cares
+    primarily about when the event happens; the firing instant is an
+    implementation detail of the lead-time choice. The annotation is
+    **omitted** for expired reminders even when ``lead_minutes > 0``,
+    because "(fires N min before)" reads as a future promise — claiming
+    it for something that has already missed its window is misleading.
+
     Args:
-        reminder: The reminder whose name and next firing populate the
-            row.
+        reminder: The reminder whose name, next firing, and (S-06b)
+            ``lead_minutes`` populate the row.
         now: Reference time forwarded to ``next_firing_after``.
         tz: Optional target timezone forwarded to ``_format_firing``;
             see that helper's docstring for the rationale behind the
             ``None`` default and why tests pass an explicit offset.
 
     Returns:
-        ``"<name>  —  <next firing | (expired)>"`` with two spaces
-        around the em-dash (single space looks crowded; tests pin the
-        exact string).
+        For an expired reminder: ``"<name>  —  (expired)"`` (no lead
+        annotation regardless of ``lead_minutes``).
+        For an active reminder with ``lead_minutes == 0``:
+        ``"<name>  —  <next firing>"`` (unchanged from S-06).
+        For an active reminder with ``lead_minutes > 0``:
+        ``"<name>  —  <event time>  (fires N min before)"`` where the
+        event time = firing time + ``lead_minutes``.
     """
-    return f"{reminder.name}  —  {_format_firing(next_firing_after(reminder, now), tz=tz)}"
+    fire_at = next_firing_after(reminder, now)
+    if fire_at is None:
+        return f"{reminder.name}  —  {_format_firing(None, tz=tz)}"
+    if reminder.lead_minutes > 0:
+        event_at = fire_at + timedelta(minutes=reminder.lead_minutes)
+        return (
+            f"{reminder.name}  —  {_format_firing(event_at, tz=tz)}"
+            f"  (fires {reminder.lead_minutes} min before)"
+        )
+    return f"{reminder.name}  —  {_format_firing(fire_at, tz=tz)}"
 
 
 def _write_autostart_runkey(command: str) -> None:

@@ -199,19 +199,59 @@ class TestClockInjection:
         ``_on_timer`` reads ``self._clock()`` and proceeds to fire.
         Connect a recording slot to ``reminder_due`` so the assertion
         doesn't need ``qtbot``.
+
+        S-06b: the signal now carries ``(name, event_at)``. For a
+        ``lead_minutes=0`` reminder, event_at == fire_at; the test
+        pins both halves of the payload.
         """
         future = clock() + timedelta(minutes=10)
         store.add(Reminder(name="aware", start_at=future))
 
         scheduler.reload()
-        received: list[str] = []
-        scheduler.reminder_due.connect(received.append)
+        received: list[tuple[str, datetime]] = []
+
+        def _capture(name: str, event_at: datetime) -> None:
+            received.append((name, event_at))
+
+        scheduler.reminder_due.connect(_capture)
 
         # Advance clock past the firing instant, then fire the slot.
         clock.advance(601)
         scheduler._on_timer()
 
-        assert received == ["aware"]
+        # With lead_minutes=0, event_at == fire_at == the original start_at.
+        assert received == [("aware", future)]
+
+    def test_on_timer_fires_with_event_at_offset_by_lead_minutes(
+        self, scheduler: ReminderScheduler, store: ReminderStore, clock: Clock
+    ) -> None:
+        """S-06b: ``event_at`` in the signal payload = ``fire_at + lead_minutes``.
+
+        With ``start_at`` 10 min out and ``lead_minutes=15``, the
+        scheduler still arms on ``start_at`` (firing time, Model A)
+        but the emitted ``event_at`` is 15 minutes later — exactly
+        the user's original event time, reconstructed from the
+        round-trip metadata. This is the load-bearing signal contract
+        the popup body depends on.
+        """
+        fire_at = clock() + timedelta(minutes=10)
+        store.add(Reminder(name="with-lead", start_at=fire_at, lead_minutes=15))
+
+        scheduler.reload()
+        received: list[tuple[str, datetime]] = []
+
+        def _capture(name: str, event_at: datetime) -> None:
+            received.append((name, event_at))
+
+        scheduler.reminder_due.connect(_capture)
+
+        clock.advance(601)
+        scheduler._on_timer()
+
+        # event_at = fire_at + 15 min; specifically NOT equal to fire_at.
+        expected_event = fire_at + timedelta(minutes=15)
+        assert received == [("with-lead", expected_event)]
+        assert received[0][1] != fire_at  # tripwire: the lead actually shifts it
 
 
 class TestReloadReentrancy:

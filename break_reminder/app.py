@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import math
 import sys
+from datetime import datetime
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, QUrl
 from PySide6.QtGui import QAction, QDesktopServices, QIcon, QPainter, QPen, QPixmap
@@ -375,13 +376,15 @@ class BreakReminderApp:
             self._voice.speak(self._settings.voice_phrase)
         self._show_break_dialog(snooze_remaining=snooze_remaining)
 
-    def _on_reminder_due(self, name: str) -> None:
+    def _on_reminder_due(self, name: str, event_at: datetime) -> None:
         self._event_log.record(EventType.REMINDER, Outcome.FIRED, name)
         if self._settings.voice_enabled:
             self._voice.speak(name)
         # Reminder dialog is owned by self so it isn't garbage-collected
-        # before the user dismisses it.
-        self._reminder_dialog = ReminderDialog(name=name)
+        # before the user dismisses it. ``event_at`` arrives tz-aware
+        # UTC from the scheduler; the dialog converts to local at
+        # format time (S-06b).
+        self._reminder_dialog = ReminderDialog(name=name, event_at=event_at)
         self._reminder_dialog.show()
 
     def _show_break_dialog(self, *, snooze_remaining: int) -> None:

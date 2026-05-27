@@ -32,6 +32,13 @@ class Reminder:
     start_at: datetime
     rrule_str: str | None = None  # FR-014: optional iCalendar RRULE
     end_at: datetime | None = None  # FR-014: optional series end
+    # S-06b: minutes before the event the popup should fire. ``start_at``
+    # remains the firing instant (Model A); ``lead_minutes`` is recorded
+    # as round-trip metadata so S-07's Edit dialog can reconstruct the
+    # event time as ``start_at + timedelta(minutes=lead_minutes)``.
+    # Default 0 keeps every pre-S-06b ``reminders.json`` entry loading
+    # with identical firing behavior.
+    lead_minutes: int = 0
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
     def to_dict(self) -> dict:
@@ -47,7 +54,9 @@ class Reminder:
 
         Args:
             data: Mapping with ``id``, ``name``, ``start_at`` (ISO 8601),
-                optional ``rrule_str``, optional ``end_at`` (ISO 8601).
+                optional ``rrule_str``, optional ``end_at`` (ISO 8601),
+                optional ``lead_minutes`` (int, defaults to 0 — pre-S-06b
+                files lack the key entirely).
 
         Returns:
             A populated ``Reminder`` instance.
@@ -58,6 +67,7 @@ class Reminder:
             start_at=datetime.fromisoformat(data["start_at"]),
             rrule_str=data.get("rrule_str"),
             end_at=datetime.fromisoformat(data["end_at"]) if data.get("end_at") else None,
+            lead_minutes=data.get("lead_minutes", 0),
         )
 
 

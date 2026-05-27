@@ -1744,6 +1744,69 @@ class TestRemindersHelpers:
         now = datetime(2026, 1, 1, tzinfo=UTC)
         assert _compose_row(reminder, now) == "LongPast  —  (expired)"
 
+    def test_compose_row_with_lead_zero_unchanged(self) -> None:
+        """S-06b: ``lead_minutes == 0`` renders exactly like the pre-S-06b branch.
+
+        Explicitly constructs the reminder with ``lead_minutes=0`` (the
+        default) and asserts the row format matches the
+        no-lead-suffix shape — pinning that the zero-lead case is the
+        S-06 baseline path, not an accidental S-06b branch firing.
+        """
+        reminder = Reminder(
+            name="ZeroLead",
+            start_at=datetime(2099, 6, 3, 22, 0, tzinfo=UTC),
+            lead_minutes=0,
+        )
+        now = datetime(2026, 1, 1, tzinfo=UTC)
+        row = _compose_row(reminder, now, tz=timezone(timedelta(hours=-8)))
+        # Same exact shape as test_compose_row_future_branch.
+        assert row == "ZeroLead  —  Wed 2099-06-03 14:00"
+        # And explicitly NO lead annotation leaked in.
+        assert "fires" not in row
+
+    def test_compose_row_with_lead_nonzero_shows_annotation_and_event_time(
+        self,
+    ) -> None:
+        """S-06b: ``lead_minutes > 0`` shifts the displayed time and appends the suffix.
+
+        With ``start_at = 22:00 UTC`` and ``lead_minutes = 20``, the
+        event time is ``22:20 UTC`` ⇒ ``14:20`` in the -8 zone. The
+        row should:
+
+        1. Render the event time (not the firing time).
+        2. Append ``"(fires 20 min before)"`` separated by two spaces.
+        """
+        reminder = Reminder(
+            name="WithLead",
+            start_at=datetime(2099, 6, 3, 22, 0, tzinfo=UTC),
+            lead_minutes=20,
+        )
+        now = datetime(2026, 1, 1, tzinfo=UTC)
+        row = _compose_row(reminder, now, tz=timezone(timedelta(hours=-8)))
+        assert row == "WithLead  —  Wed 2099-06-03 14:20  (fires 20 min before)"
+
+    def test_compose_row_expired_with_lead_nonzero_omits_annotation(self) -> None:
+        """S-06b: an expired reminder must NOT carry the "fires N min before" suffix.
+
+        Pins the Critical Implementation Detail from the plan: the
+        annotation reads as a future promise, so claiming it for a
+        reminder that has already missed its window would be
+        misleading. Even with ``lead_minutes > 0``, an expired row
+        renders the bare ``"(expired)"`` suffix only.
+        """
+        reminder = Reminder(
+            name="LongPastWithLead",
+            start_at=datetime(2000, 1, 1, 10, 0, tzinfo=UTC),
+            lead_minutes=20,
+        )
+        now = datetime(2026, 1, 1, tzinfo=UTC)
+        row = _compose_row(reminder, now)
+        assert row == "LongPastWithLead  —  (expired)"
+        # Explicit tripwire so a regression that adds the annotation to
+        # the expired branch fails loudly.
+        assert "fires" not in row
+        assert "20 min" not in row
+
 
 # ---------------------------------------------------------------------------
 # Reminders tab — dialog construction (S-05 / FR-012)

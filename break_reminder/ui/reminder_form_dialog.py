@@ -1,29 +1,40 @@
-"""Add Reminder form dialog (FR-011 / S-06).
+"""Add Reminder form dialog (FR-011 / S-06 / S-06b).
 
 Modal sub-dialog launched from the Reminders tab's Add button. Collects a
-name + future date/time, validates both, persists a one-shot ``Reminder``
-via the injected ``ReminderStore``, and arms the running session via the
-injected ``ReminderScheduler``. Emits ``reminder_added`` on success so
-``SettingsDialog`` can rebuild the Reminders tab in place.
+name, future date/time, and a 0-60 minute lead time, validates all three,
+persists a one-shot ``Reminder`` via the injected ``ReminderStore``, and
+arms the running session via the injected ``ReminderScheduler``. Emits
+``reminder_added`` on success so ``SettingsDialog`` can rebuild the
+Reminders tab in place.
+
+S-06b note: when ``lead_minutes > 0``, the datetime widget is the
+**event time** and the saved ``start_at`` is ``event_at - lead_minutes``.
+When ``lead_minutes == 0`` (the default), the form behaves identically
+to S-06 (datetime widget IS the firing time). Storage Model A: lead is
+round-trip metadata on ``Reminder`` and the scheduler still arms on
+``start_at`` — no scheduler change was required.
 
 Design notes for future Stream B slices:
 
 - The form is **generic by name** so S-07's Edit dialog can reuse the
   same class with a pre-populated ``Reminder`` argument. The module is
   ``reminder_form_dialog`` (not ``add_reminder_dialog``) precisely so
-  that reuse doesn't require a file rename or a sibling clone.
+  that reuse doesn't require a file rename or a sibling clone. S-07
+  can reconstruct ``event_at`` from a loaded ``Reminder`` via
+  ``start_at + timedelta(minutes=lead_minutes)``.
 - The dialog reads ``self._clock()`` exactly once at construction to
   seed the date/time field's default value. The clock returns
   tz-aware UTC; the widget displays naive local. See ``__init__``'s
   default-seeding flow for the explicit UTC → local → +1h → round-up
   → strip-tzinfo conversion.
 - ``accept()`` order is load-bearing: validate name → validate datetime
-  → construct Reminder → store.add (with ``OSError`` gate) →
-  scheduler.reload → emit ``reminder_added`` → super().accept(). The
-  emit-before-super-accept ordering matters because connected slots
-  on ``reminder_added`` need to see the dialog as still-open (``result``
-  still ``Rejected``) — running them after ``exec()`` has returned is
-  too late since the dialog may already be slated for destruction.
+  (with lead-aware tooltip wording) → construct Reminder → store.add
+  (with ``OSError`` gate) → scheduler.reload → emit ``reminder_added``
+  → super().accept(). The emit-before-super-accept ordering matters
+  because connected slots on ``reminder_added`` need to see the dialog
+  as still-open (``result`` still ``Rejected``) — running them after
+  ``exec()`` has returned is too late since the dialog may already be
+  slated for destruction.
 - Validation uses the same ``QToolTip.showText`` anchored-to-field
   pattern the ``SettingsDialog`` voice-phrase gate uses
   (``ui/settings_dialog.py`` ``accept()``). Do **not** introduce
@@ -45,6 +56,7 @@ from PySide6.QtWidgets import (
     QDialogButtonBox,
     QFormLayout,
     QLineEdit,
+    QSpinBox,
     QToolTip,
     QVBoxLayout,
     QWidget,
@@ -84,11 +96,30 @@ _DATETIME_DISPLAY_FORMAT = "ddd yyyy-MM-dd HH:mm"
 # so the surface and the spec stay aligned.
 _NAME_PLACEHOLDER = "e.g., Visit to dentist"
 
+# S-06b lead-time spinbox bounds. 0-60 minutes, single-step 1, default
+# 0. Suffix " min" displays inline so the unit is obvious without a
+# secondary label. The 60-minute cap is deliberately conservative —
+# "remind me 2h before my flight" is a separate future enhancement
+# (see plan-brief.md § Scope, Out of scope).
+_LEAD_MIN_VALUE = 0
+_LEAD_MAX_VALUE = 60
+_LEAD_DEFAULT = 0
+_LEAD_SUFFIX = " min"
+
 # Validation messages. Anchored on the failing field via
 # ``QToolTip.showText`` and paired with an early ``return`` so the
 # dialog stays open and nothing persists.
 _NAME_EMPTY_MESSAGE = "Name cannot be empty"
-_PAST_TIME_MESSAGE = "Time must be in the future"
+# S-06b: with the spinbox always present, the datetime widget
+# consistently means "event time" (lead=0 is the degenerate case where
+# event time IS the firing time). The wording switches from "Time" to
+# "Event" to match.
+_PAST_TIME_MESSAGE = "Event must be in the future"
+# S-06b: when ``lead_minutes > 0``, the past-time tooltip explains
+# how-much-in-the-future is needed so the user can either push the
+# event later or reduce the lead. ``{lead}`` is the current spinbox
+# value at the time of the failed save.
+_PAST_TIME_WITH_LEAD_FORMAT = "Event must be at least {lead} minutes in the future"
 # ``{error}`` is filled with ``OSError.strerror`` (or ``str(error)``
 # when ``strerror`` is empty) so the user sees the OS-level reason for
 # the save failure (permission denied, disk full, etc.).
@@ -215,9 +246,19 @@ class ReminderFormDialog(QDialog):
         self._datetime_field.setDisplayFormat(_DATETIME_DISPLAY_FORMAT)
         self._datetime_field.setDateTime(self._compute_default_datetime())
 
+        # S-06b lead-time spinbox. When ``value() > 0``, ``accept()``
+        # treats the datetime widget as the event time and saves
+        # ``start_at = event_at - timedelta(minutes=value())``.
+        self._lead_minutes_field = QSpinBox(self)
+        self._lead_minutes_field.setRange(_LEAD_MIN_VALUE, _LEAD_MAX_VALUE)
+        self._lead_minutes_field.setSingleStep(1)
+        self._lead_minutes_field.setSuffix(_LEAD_SUFFIX)
+        self._lead_minutes_field.setValue(_LEAD_DEFAULT)
+
         form = QFormLayout()
         form.addRow("Name:", self._name_field)
         form.addRow("Date/time:", self._datetime_field)
+        form.addRow("Notify (minutes before event):", self._lead_minutes_field)
 
         self._buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
@@ -275,13 +316,20 @@ class ReminderFormDialog(QDialog):
 
         1. **Validate name.** Stripped name must be non-empty; first-fail
            tooltip + early return mirrors the voice-phrase gate.
-        2. **Validate datetime.** Local wall-clock the user picked,
-           converted to tz-aware UTC, must be strictly greater than the
-           current UTC. Second-fail tooltip if name was valid; early
-           return.
+        2. **Validate datetime.** The datetime widget is the **event
+           time**; the firing time is ``event_at - lead_minutes``. We
+           convert the user's naive-local wall clock to tz-aware UTC,
+           subtract the lead, and require ``start_at > clock()``. The
+           tooltip wording flips based on lead: zero-lead reads
+           "Event must be in the future", non-zero-lead reads
+           "Event must be at least N minutes in the future" (so the
+           user can decide whether to push the event later or trim the
+           lead).
         3. **Construct Reminder.** One-shot encoding: ``rrule_str=None``,
            ``end_at=None``, ``id`` auto-generated. ``start_at`` is the
-           tz-aware UTC instant.
+           tz-aware UTC firing instant; ``lead_minutes`` is recorded as
+           round-trip metadata so S-07's Edit dialog can reconstruct
+           the event time as ``start_at + timedelta(lead_minutes)``.
         4. **Persist.** ``store.add()`` is atomic; the only error we
            guard is ``OSError`` (permission denied / disk full). On
            failure: tooltip anchored to OK button, early return, no
@@ -316,13 +364,24 @@ class ReminderFormDialog(QDialog):
         # ``.replace`` makes the previously-naive value aware in the
         # user's local zone; ``.astimezone(UTC)`` then converts.
         local_tz = datetime.now().astimezone().tzinfo
-        fire_at_utc = naive_local.replace(tzinfo=local_tz).astimezone(UTC)
-        if fire_at_utc <= self._clock():
-            self._show_tooltip(self._datetime_field, _PAST_TIME_MESSAGE)
+        event_at_utc = naive_local.replace(tzinfo=local_tz).astimezone(UTC)
+        lead_minutes = self._lead_minutes_field.value()
+        start_at_utc = event_at_utc - timedelta(minutes=lead_minutes)
+        if start_at_utc <= self._clock():
+            message = (
+                _PAST_TIME_WITH_LEAD_FORMAT.format(lead=lead_minutes)
+                if lead_minutes > 0
+                else _PAST_TIME_MESSAGE
+            )
+            self._show_tooltip(self._datetime_field, message)
             return
 
         # 3. Construct one-shot reminder
-        reminder = Reminder(name=stripped_name, start_at=fire_at_utc)
+        reminder = Reminder(
+            name=stripped_name,
+            start_at=start_at_utc,
+            lead_minutes=lead_minutes,
+        )
 
         # 4. Persist (atomic; only OSError needs guarding)
         try:

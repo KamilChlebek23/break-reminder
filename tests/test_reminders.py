@@ -253,3 +253,58 @@ class TestReminderSerialization:
         assert isinstance(d["start_at"], str)
         datetime.fromisoformat(d["start_at"])  # raises if not ISO
         assert d["end_at"] is None
+
+
+class TestReminderLeadMinutes:
+    """``Reminder.lead_minutes`` field (S-06b) round-trip behavior.
+
+    The field is round-trip metadata under Storage Model A — ``start_at``
+    keeps meaning "firing time", and ``lead_minutes`` records how many
+    minutes before the event the popup should fire so S-07's Edit
+    dialog can reconstruct the event time as
+    ``start_at + timedelta(minutes=lead_minutes)``. The three tests
+    below pin the default, the non-zero round-trip, and the
+    backward-compat read for pre-S-06b ``reminders.json`` files.
+    """
+
+    def test_default_lead_minutes_is_zero(self) -> None:
+        """A ``Reminder`` constructed without ``lead_minutes`` defaults to 0."""
+        r = _make_reminder("default-lead")
+        assert r.lead_minutes == 0
+
+    def test_to_dict_roundtrip_preserves_lead_minutes(self) -> None:
+        """A non-zero ``lead_minutes`` survives ``to_dict`` → ``from_dict``.
+
+        Uses an explicit value (15) rather than relying on the dataclass
+        default so the round-trip path is observably exercised — a
+        regression that silently dropped the field would produce 0 on
+        the recovered side and this assertion would fail.
+        """
+        r = _make_reminder("with-lead", lead_minutes=15)
+        d = r.to_dict()
+        assert d["lead_minutes"] == 15  # serialized verbatim
+        recovered = Reminder.from_dict(d)
+        assert recovered.lead_minutes == 15
+
+    def test_from_dict_missing_key_defaults_to_zero(self) -> None:
+        """A dict without ``lead_minutes`` (pre-S-06b file) loads as 0.
+
+        Tripwire for backward compatibility: existing users' on-disk
+        ``reminders.json`` entries were written by S-06 without the
+        ``lead_minutes`` key. ``from_dict`` must accept those dicts
+        and produce a ``Reminder`` with ``lead_minutes == 0`` (same
+        firing behavior as before this slice).
+        """
+        legacy_dict = {
+            "id": "00000000-0000-4000-8000-000000000000",
+            "name": "legacy",
+            "start_at": datetime(2026, 6, 1, 9, 0, tzinfo=UTC).isoformat(),
+            "rrule_str": None,
+            "end_at": None,
+            # NB: no ``lead_minutes`` key — pre-S-06b file shape.
+        }
+        recovered = Reminder.from_dict(legacy_dict)
+        assert recovered.lead_minutes == 0
+        # Sanity: the rest of the round-trip still works.
+        assert recovered.name == "legacy"
+        assert recovered.start_at == datetime(2026, 6, 1, 9, 0, tzinfo=UTC)

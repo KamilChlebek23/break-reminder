@@ -221,7 +221,13 @@ class _ReminderFiring:
 class ReminderScheduler(QObject):
     """RRULE-driven custom-reminder firing."""
 
-    reminder_due = Signal(str)  # reminder name
+    # (reminder name, event_at as tz-aware UTC datetime). S-06b extended
+    # this from ``Signal(str)`` so the popup body can display the event
+    # time. event_at = next_firing + lead_minutes — i.e., the user's
+    # original event time, recovered from the saved firing instant +
+    # the round-trip lead-time metadata on ``Reminder``. For one-shots
+    # with lead=0, event_at == fire_at == start_at.
+    reminder_due = Signal(str, datetime)
 
     def __init__(
         self,
@@ -291,7 +297,16 @@ class ReminderScheduler(QObject):
         reminder = next((r for r in self._store.list_all() if r.id == reminder_id), None)
         if reminder is None:
             return
-        self.reminder_due.emit(reminder.name)
+        # event_at = next firing + lead. Using ``self._next.fire_at``
+        # (rather than ``reminder.start_at``) is forward-compatible with
+        # S-08: when recurrence ships, ``next_firing_after`` returns the
+        # next occurrence, not the series ``start_at``, so event_at
+        # tracks per-occurrence correctly.
+        assert self._next is not None, (
+            "_fire is only reachable via _on_timer which guards on self._next"
+        )
+        event_at = self._next.fire_at + timedelta(minutes=reminder.lead_minutes)
+        self.reminder_due.emit(reminder.name, event_at)
 
     def _compute_next(self) -> _ReminderFiring | None:
         now = self._clock()

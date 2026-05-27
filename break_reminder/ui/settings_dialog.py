@@ -803,12 +803,20 @@ class SettingsDialog(QDialog):
         The sub-dialog handles its own validation, persistence
         (``ReminderStore.add``), and scheduler arming
         (``ReminderScheduler.reload``) — this slot is pure wiring.
+
+        ``WA_DeleteOnClose`` ensures the sub-dialog is scheduled for
+        destruction the moment it closes (rather than lingering as a
+        hidden child of ``self`` until the parent ``SettingsDialog``
+        itself closes). Without this, repeated Add → Cancel cycles in
+        a single Settings session leave ghost ``ReminderFormDialog``
+        instances parented here (retrospective impl-review F6).
         """
         sub_dialog = ReminderFormDialog(
             store=self._reminder_store,
             scheduler=self._reminder_scheduler,
             parent=self,
         )
+        sub_dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         sub_dialog.reminder_added.connect(self._refresh_reminders_tab)
         sub_dialog.exec()
 
@@ -843,11 +851,18 @@ class SettingsDialog(QDialog):
                 as a connected slot.
         """
         del _reminder  # signal payload absorbed; rebuild reads the store fresh
-        if self._reminders_tab is None:
-            # Defensive: should never happen because the constructor
-            # builds the tab. Silently no-op rather than raising so a
-            # rogue signal can't crash the running dialog.
-            return
+        # Narrow the ``QWidget | None`` annotation. The constructor
+        # always calls ``_build_reminders_tab()`` (which assigns
+        # ``self._reminders_tab = tab`` as its first action) before
+        # returning, so this assert is unreachable in practice — but
+        # asserting loudly is preferable to silently no-op'ing the
+        # rebuild and leaving a stale tab on screen (retrospective
+        # impl-review F7; mirrors the ``_fire``-side narrowing pattern
+        # in ``scheduler.py``).
+        assert self._reminders_tab is not None, (
+            "_refresh_reminders_tab called before _build_reminders_tab; "
+            "the constructor always builds the tab so this should be unreachable"
+        )
         idx = self._tabs.indexOf(self._reminders_tab)
         old_tab = self._reminders_tab
         self._tabs.removeTab(idx)

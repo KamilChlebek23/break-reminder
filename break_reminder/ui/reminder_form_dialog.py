@@ -47,7 +47,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from PySide6.QtCore import QDate, QDateTime, Qt, QTime, Signal
 from PySide6.QtWidgets import (
@@ -377,13 +377,12 @@ class ReminderFormDialog(QDialog):
 
         # 2. Datetime validation (compare in UTC; widget gives naive local)
         # ``.toPython()`` returns a Python ``datetime`` at runtime but
-        # the PySide6 stubs type it as ``object`` — narrow explicitly.
-        naive_local_raw = self._datetime_field.dateTime().toPython()
-        assert isinstance(naive_local_raw, datetime), (
-            "QDateTimeEdit.dateTime().toPython() must return a datetime "
-            "(PySide6 stub typing is broader than the runtime contract)"
-        )
-        naive_local = naive_local_raw
+        # the PySide6 stubs type it as ``object``. Use ``typing.cast``
+        # for static narrowing — the runtime contract is documented by
+        # PySide6 and an ``assert isinstance`` here would be stripped
+        # under ``python -O`` while adding zero value at runtime
+        # (retrospective impl-review F5).
+        naive_local = cast(datetime, self._datetime_field.dateTime().toPython())
         # ``datetime.now().astimezone().tzinfo`` captures the system
         # local zone as a ``tzinfo`` object. Attaching it via
         # ``.replace`` makes the previously-naive value aware in the

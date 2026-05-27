@@ -337,6 +337,45 @@ class TestReminderFormDialogValidation:
         assert store.list_all() == []
         assert dialog.result() == int(QDialog.DialogCode.Rejected)
 
+    def test_name_validation_wins_over_datetime_validation(
+        self,
+        dialog: ReminderFormDialog,
+        store: ReminderStore,
+        scheduler_stub: StubScheduler,
+        clock: Clock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Both fields invalid → ONLY the name tooltip fires (first-failing-field-wins).
+
+        Retrospective impl-review F4: pins the validation ordering
+        contract documented in ``ReminderFormDialog.accept`` (name first,
+        datetime second; mirrors the voice-phrase gate). If a future
+        refactor flipped the order, the datetime tooltip would surface
+        first and the user would see the wrong remediation hint. Tooltip
+        recorder verifies exactly one ``showText`` call with the name
+        message; a regression flipping the order would either record the
+        datetime message or record both.
+        """
+        calls = _patch_show_text(monkeypatch)
+        # Both invalid: name is empty (default) AND datetime is in the past.
+        local_past = (clock().astimezone() - timedelta(minutes=30)).replace(tzinfo=None)
+        dialog._datetime_field.setDateTime(_qdatetime_from_naive_local(local_past))
+        # Sanity: name is empty, so name should fail first.
+        assert dialog._name_field.text() == ""
+
+        dialog.accept()
+
+        assert store.list_all() == []
+        assert scheduler_stub.reload_calls == 0
+        assert dialog.result() == int(QDialog.DialogCode.Rejected)
+        # Exactly one tooltip surfaced and it's the NAME message (not the
+        # past-time message). The early ``return`` after the name gate
+        # is what enforces "first failing field wins".
+        assert len(calls) == 1
+        args, _kwargs = calls[0]
+        assert args[1] == _NAME_EMPTY_MESSAGE
+        assert args[1] != _PAST_TIME_MESSAGE
+
 
 # ---------------------------------------------------------------------------
 # Save path
@@ -376,6 +415,33 @@ class TestReminderFormDialogSave:
         # One-shot encoding: no RRULE and no end_at.
         assert items[0].rrule_str is None
         assert items[0].end_at is None
+
+    def test_successful_save_strips_name_whitespace(
+        self,
+        dialog: ReminderFormDialog,
+        store: ReminderStore,
+        clock: Clock,
+    ) -> None:
+        """Surrounding whitespace on a non-empty name is trimmed before persistence.
+
+        Retrospective impl-review F3: production calls ``.strip()`` in
+        ``accept()`` (``reminder_form_dialog.py``), and
+        ``test_whitespace_only_name_blocks_save`` covers the orthogonal
+        "all-whitespace blocks save" case. But no test pinned the
+        strip-then-keep behaviour on an otherwise valid name. A future
+        regression that dropped the ``.strip()`` (leading to entries
+        like ``"  Spaced name  "`` in ``reminders.json``) would not be
+        caught without this assertion.
+        """
+        dialog._name_field.setText("  Spaced name  ")
+        local_future = (clock().astimezone() + timedelta(minutes=30)).replace(tzinfo=None)
+        dialog._datetime_field.setDateTime(_qdatetime_from_naive_local(local_future))
+
+        dialog.accept()
+
+        items = store.list_all()
+        assert len(items) == 1
+        assert items[0].name == "Spaced name"
 
     def test_successful_save_calls_scheduler_reload(
         self,
@@ -541,6 +607,86 @@ class TestReminderFormDialogCancel:
         assert store.list_all() == []
         assert scheduler_stub.reload_calls == 0
         assert received == []
+        assert dialog.result() == int(QDialog.DialogCode.Rejected)
+
+
+# ---------------------------------------------------------------------------
+# Atomic-save tripwire (F2 — pre-seeded store invariance)
+# ---------------------------------------------------------------------------
+
+
+class TestReminderFormDialogAtomicSaveTripwire:
+    """Validation failure must leave a pre-existing store byte-identical.
+
+    Retrospective impl-review F2: the existing validation tests assert
+    ``store.list_all() == []`` against an empty pre-state — they prove
+    "validation failure doesn't persist a new reminder" but not
+    "validation failure doesn't corrupt prior persisted state". A
+    regression that, e.g., re-wrote ``reminders.json`` with empty
+    content on the early-return path would slip past every other test.
+    Mirrors the S-04 ``TestNotificationsTabValidation`` tripwire shape
+    (pre-seed, attempt save, snapshot the store's list_all output, and
+    assert byte-identical equality).
+    """
+
+    def _preseed(self, store: ReminderStore, clock: Clock) -> Reminder:
+        """Persist one reference reminder so the tripwire has a pre-state to defend."""
+        seeded = Reminder(
+            name="pre-existing",
+            start_at=clock() + timedelta(hours=6),
+        )
+        store.add(seeded)
+        return seeded
+
+    def test_empty_name_failure_preserves_prior_store_state(
+        self,
+        dialog: ReminderFormDialog,
+        store: ReminderStore,
+        scheduler_stub: StubScheduler,
+        clock: Clock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Empty-name validation failure leaves a pre-seeded store byte-identical."""
+        _patch_show_text(monkeypatch)
+        seeded = self._preseed(store, clock)
+        before = store.list_all()
+        # Sanity: pre-seed actually landed.
+        assert len(before) == 1 and before[0].id == seeded.id
+
+        # Attempt save with empty name (default) and a valid future datetime.
+        local_future = (clock().astimezone() + timedelta(hours=2)).replace(tzinfo=None)
+        dialog._datetime_field.setDateTime(_qdatetime_from_naive_local(local_future))
+
+        dialog.accept()
+
+        after = store.list_all()
+        assert after == before  # byte-identical Reminder list (dataclass equality)
+        assert scheduler_stub.reload_calls == 0
+        assert dialog.result() == int(QDialog.DialogCode.Rejected)
+
+    def test_past_time_failure_preserves_prior_store_state(
+        self,
+        dialog: ReminderFormDialog,
+        store: ReminderStore,
+        scheduler_stub: StubScheduler,
+        clock: Clock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Past-time validation failure leaves a pre-seeded store byte-identical."""
+        _patch_show_text(monkeypatch)
+        seeded = self._preseed(store, clock)
+        before = store.list_all()
+        assert len(before) == 1 and before[0].id == seeded.id
+
+        dialog._name_field.setText("past-attempt")
+        local_past = (clock().astimezone() - timedelta(minutes=10)).replace(tzinfo=None)
+        dialog._datetime_field.setDateTime(_qdatetime_from_naive_local(local_past))
+
+        dialog.accept()
+
+        after = store.list_all()
+        assert after == before
+        assert scheduler_stub.reload_calls == 0
         assert dialog.result() == int(QDialog.DialogCode.Rejected)
 
 

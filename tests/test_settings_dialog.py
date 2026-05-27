@@ -2252,6 +2252,9 @@ class TestRemindersAddButton:
                 # this test — we don't fire the signal.
                 self.reminder_added = _StubSignal()
 
+            def setAttribute(self, *_args: object, **_kwargs: object) -> None:
+                """No-op for the click handler's ``WA_DeleteOnClose`` call."""
+
             def exec(self) -> int:
                 return int(QDialog.DialogCode.Rejected)
 
@@ -2315,6 +2318,17 @@ class TestRemindersAddButton:
                 store_kwarg = kwargs["store"]
                 assert isinstance(store_kwarg, ReminderStore)
                 self._store: ReminderStore = store_kwarg
+
+            def setAttribute(self, *_args: object, **_kwargs: object) -> None:
+                """No-op override shadowing ``QObject.setAttribute`` (no such method on QObject).
+
+                The production ``ReminderFormDialog`` extends ``QDialog``
+                (-> ``QWidget``), which DOES expose ``setAttribute`` for
+                widget attributes like ``WA_DeleteOnClose``. This stub
+                extends only ``QObject`` to keep the fixture light, so
+                we add the no-op explicitly to absorb the call the click
+                handler now issues.
+                """
 
             def exec(self) -> int:
                 new_reminder = Reminder(

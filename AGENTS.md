@@ -181,8 +181,7 @@ These are wired as `Settings` keys with defaults; flipping the default doesn't r
 
 The bootstrap stops at runnable skeletons. The following are stubbed and clearly marked with `TODO(FR-xxx)`:
 
-- Custom-reminder editor surfaces inside the settings window (FR-011 / FR-012). FR-005 / FR-006 shipped in v0.2.0 (`ui/settings_dialog.py`); the reminders tab arrives in S-05..S-08 (see `context/foundation/roadmap.md`).
-- Custom-reminder editor dialog (FR-011 / FR-012 CRUD).
+- Custom-reminder editor dialog — Add / Edit / Delete wiring (FR-011 / FR-012 CRUD). The read-only Reminders tab inside the settings window shipped in S-05; the click handlers behind `Add…` / `Edit…` / `Delete` are wired but no-op until S-06 / S-07.
 - Focus Assist + system-mute query (US-01 acceptance).
 - Real tray-icon + window-icon resources (currently using `QStyle` defaults).
 - Snooze countdown UI affordance (the snooze action works; the countdown display in the popup is a placeholder).

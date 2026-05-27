@@ -433,32 +433,32 @@ Move the slice from "implemented" to "shipped + traceable": confirm the dialog b
 
 #### Automated
 
-- [x] 1.1 Unit tests pass: `uv run pytest tests/test_settings_dialog.py -v` (includes new `TestRemindersTab` and `TestRemindersHelpers` classes)
-- [x] 1.2 Full suite passes: `uv run pytest`
-- [x] 1.3 Type check passes: `uv run pyright`
-- [x] 1.4 Linting passes: `uv run ruff check`
-- [x] 1.5 Format check passes: `uv run ruff format --check`
-- [x] 1.6 Security audit passes: `uv run pip-audit`
-- [x] 1.7 License gate passes: `uv run pip-licenses --fail-on="AGPL"`
+- [x] 1.1 Unit tests pass: `uv run pytest tests/test_settings_dialog.py -v` (includes new `TestRemindersTab` and `TestRemindersHelpers` classes) — 5e0ab06
+- [x] 1.2 Full suite passes: `uv run pytest` — 5e0ab06
+- [x] 1.3 Type check passes: `uv run pyright` — 5e0ab06
+- [x] 1.4 Linting passes: `uv run ruff check` — 5e0ab06
+- [x] 1.5 Format check passes: `uv run ruff format --check` — 5e0ab06
+- [x] 1.6 Security audit passes: `uv run pip-audit` — 5e0ab06
+- [x] 1.7 License gate passes: `uv run pip-licenses --fail-on="AGPL"` — 5e0ab06
 
 #### Manual
 
-- [x] 1.8 Open Settings → Reminders with empty `reminders.json`: placeholder visible; three buttons visible + disabled; tooltip "Coming in a future update." on hover
-- [x] 1.9 Populated `reminders.json` with three entries (future one-shot, past one-shot, weekly RRULE): all three rows render correctly; past one-shot shows `"(expired)"`; order is closest-future first, expired last
-- [x] 1.10 Click a row: Edit/Delete buttons remain visibly disabled
-- [x] 1.11 Switch tabs and back: rendered rows are visually unchanged (same order, same text, no flicker)
-- [x] 1.12 Scheduling / Notifications / Lifecycle tabs continue to behave correctly (spinboxes, voice toggle, autostart checkbox; OK saves; Cancel discards)
+- [x] 1.8 Open Settings → Reminders with empty `reminders.json`: placeholder visible; three buttons visible + disabled; tooltip "Coming in a future update." on hover — 5e0ab06
+- [x] 1.9 Populated `reminders.json` with three entries (future one-shot, past one-shot, weekly RRULE): all three rows render correctly; past one-shot shows `"(expired)"`; order is closest-future first, expired last — 5e0ab06
+- [x] 1.10 Click a row: Edit/Delete buttons remain visibly disabled — 5e0ab06
+- [x] 1.11 Switch tabs and back: rendered rows are visually unchanged (same order, same text, no flicker) — 5e0ab06
+- [x] 1.12 Scheduling / Notifications / Lifecycle tabs continue to behave correctly (spinboxes, voice toggle, autostart checkbox; OK saves; Cancel discards) — 5e0ab06
 
 ### Phase 2: Manual smoke + bookkeeping
 
 #### Automated
 
-- [ ] 2.1 `git grep -nE 'Custom-reminder editor surfaces inside the settings window' AGENTS.md` returns no matches
-- [ ] 2.2 `git grep -nE 'S-05.*proposed' context/foundation/roadmap.md` returns no matches
-- [ ] 2.3 `git diff context/changes/reminders-list-view/change.md` shows `status: implemented` and updated `updated:` date
+- [x] 2.1 `git grep -nE 'Custom-reminder editor surfaces inside the settings window' AGENTS.md` returns no matches
+- [x] 2.2 `git grep -nE '^\| S-05 .*proposed' context/foundation/roadmap.md` returns no matches (tightened from `S-05.*proposed` during Phase 2 — the original was over-broad and matched S-06's "S-05" Prerequisites mention)
+- [x] 2.3 `git diff context/changes/reminders-list-view/change.md` shows `status: implemented` and updated `updated:` date
 
 #### Manual
 
-- [ ] 2.4 Real Windows: empty `reminders.json` shows placeholder (Phase 2.1 step 3)
-- [ ] 2.5 Real Windows: three seeded entries render in expected order with `(expired)` handling (Phase 2.1 step 5)
-- [ ] 2.6 No regression in Scheduling / Notifications / Lifecycle tabs
+- [x] 2.4 Real Windows: empty `reminders.json` shows placeholder (Phase 2.1 step 3)
+- [x] 2.5 Real Windows: three seeded entries render in expected order with `(expired)` handling (Phase 2.1 step 5)
+- [x] 2.6 No regression in Scheduling / Notifications / Lifecycle tabs

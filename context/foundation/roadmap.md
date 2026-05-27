@@ -33,7 +33,7 @@ BreakReminder is a Windows 11 tray-resident utility for focus-minded solo progra
 | S-02 | settings-autostart-toggle | enable autostart-on-Windows-login from settings | S-01 | FR-003, FR-005 | done |
 | S-03 | settings-snooze-config | edit snooze duration and max snoozes from settings | S-01 | FR-005, FR-010 | done |
 | S-04 | settings-voice-toggle | enable voice notification and edit the voice phrase from settings | S-01 | FR-005, FR-007 | done |
-| S-05 | reminders-list-view | see existing custom reminders in the settings dialog | S-01 | FR-005, FR-012 | proposed |
+| S-05 | reminders-list-view | see existing custom reminders in the settings dialog | S-01 | FR-005, FR-012 | done |
 | S-06 | reminders-add-form | add a one-shot custom reminder with a name and a date/time | S-05 | FR-011, FR-013 | proposed |
 | S-07 | reminders-edit-delete | edit and delete custom reminders in the list | S-06 | FR-012 | proposed |
 | S-08 | reminders-recurrence-editor | configure a custom reminder to recur daily / weekly / monthly | S-06 | FR-014 | proposed |
@@ -140,9 +140,10 @@ The PRD must-have FRs and user stories below are **already shipped in v0.1.0** a
 - **Parallel with:** S-02, S-03, S-04
 - **Blockers:** —
 - **Unknowns:**
-  - Should the list show next-firing time or just the recurrence rule string? Next-firing is more useful but requires evaluating RRULEs in the list model — a small extra cost. — Owner: user. Block: no.
+  - Should the list show next-firing time or just the recurrence rule string? Next-firing is more useful but requires evaluating RRULEs in the list model — a small extra cost. — Owner: user. Block: no. (dissolved by S-05 on 2026-05-27)
 - **Risk:** low. Read-only list bound to `storage/reminders.py`'s existing CRUD layer. No new data flow; the reminders.json file is already opened on app start.
-- **Status:** proposed
+- **Scope addendum shipped**: dialog gained a 520-px minimum width to keep Reminders rows from horizontally scrolling on a fresh open (the other three tabs sized down to ~360 px and were unaffected).
+- **Status:** done
 
 ### S-06: reminders-add-form
 
@@ -188,7 +189,7 @@ The PRD must-have FRs and user stories below are **already shipped in v0.1.0** a
 | S-02 | `settings-autostart-toggle` | Wire FR-003 autostart toggle to per-user Run registry key | yes | Planned + shipped 2026-05-26 |
 | S-03 | `settings-snooze-config` | Add snooze duration + max snoozes to settings dialog | yes | Planned + shipped 2026-05-26 |
 | S-04 | `settings-voice-toggle` | Add voice on/off + phrase editor to settings dialog | yes | Planned + shipped 2026-05-25 |
-| S-05 | `reminders-list-view` | Reminders tab with read-only list bound to reminders.json | no | Run after S-01 |
+| S-05 | `reminders-list-view` | Reminders tab with read-only list bound to reminders.json | yes | Planned + shipped 2026-05-27 |
 | S-06 | `reminders-add-form` | Add a one-shot custom reminder via sub-dialog | no | Run after S-05 |
 | S-07 | `reminders-edit-delete` | Edit and delete entries in the reminders list | no | Run after S-06 |
 | S-08 | `reminders-recurrence-editor` | Daily / weekly / monthly recurrence in the add/edit dialog | no | Run after S-06 |
@@ -200,7 +201,7 @@ The PRD must-have FRs and user stories below are **already shipped in v0.1.0** a
 3. **Voice notification content.** Lifted from PRD §Open Questions #3. S-04 dissolves this. — Owner: user. Block: S-04. (dissolved by S-04 on 2026-05-25)
 4. **AI/ML smart break-time prediction in v2.** Lifted from PRD §Open Questions #4. Out of v1 scope. — Owner: user. Block: no.
 5. **Settings-dialog layout: tabbed or single-pane?** Surfaced during S-01 unknowns. Pre-emptively answering this saves rework on S-02..S-05 (each adds a new section). — Owner: user. Block: S-01.
-6. **Reminders-list display: rule string or next-firing?** Surfaced during S-05 unknowns. — Owner: user. Block: S-05.
+6. **Reminders-list display: rule string or next-firing?** Surfaced during S-05 unknowns. — Owner: user. Block: S-05. (dissolved by S-05 on 2026-05-27)
 
 ## Parked
 

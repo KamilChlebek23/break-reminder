@@ -1,4 +1,4 @@
-r"""Settings dialog (FR-003 / FR-005 / FR-006 / FR-007 / FR-010).
+r"""Settings dialog (FR-003 / FR-005 / FR-006 / FR-007 / FR-010 / FR-012).
 
 A modal ``QDialog`` that lets the user view and edit BreakReminder's
 preferences inside a real settings window. Replaces the v0.1.0
@@ -21,6 +21,22 @@ Layout uses a ``QTabWidget`` from day one. The current tabs:
   On winreg failure the dialog surfaces a transient ``QToolTip`` on the
   checkbox and blocks the entire save (atomic save — see S-03 impl-review
   F2 invariant, now extended across all four persisted fields).
+- **Reminders** (S-05) — read-only list of custom reminders pulled from
+  ``ReminderStore.list_all()`` exactly once at construction. Each row
+  reads ``"<name>  —  <next firing | (expired)>"``, sorted chronologically
+  (soonest first; expired sink to bottom; tiebreak by name). Empty store
+  swaps the list for a centered placeholder label. ``Add…`` / ``Edit…`` /
+  ``Delete`` buttons live in a row below the list, all disabled with a
+  tooltip; Edit/Delete additionally have a ``currentRowChanged`` slot
+  scaffolded but no-op until S-07 ships the click handlers. The slice is
+  a pure read-side consumer — no ``accept()`` participation.
+
+The ``Reminders`` tab is the only reason this module imports
+``next_firing_after`` from ``break_reminder.scheduler`` — display logic
+needs the same RRULE-aware "when is this next due?" function the
+``ReminderScheduler`` already uses. Reusing the pure helper avoids
+re-implementing recurrence math in ``ui/`` and keeps the engine the
+single source of truth for FR-014 semantics.
 
 Validation is split across two layers, intentionally:
 
@@ -59,14 +75,19 @@ from __future__ import annotations
 import logging
 import sys
 import winreg
+from datetime import UTC, datetime, tzinfo
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
     QHBoxLayout,
+    QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QPushButton,
     QSpinBox,
     QTabWidget,
@@ -76,6 +97,8 @@ from PySide6.QtWidgets import (
 )
 
 from break_reminder.notifications.voice import VoiceNotifier
+from break_reminder.scheduler import next_firing_after
+from break_reminder.storage.reminders import Reminder, ReminderStore
 from break_reminder.storage.settings import (
     BREAK_INTERVAL_MAX_MINUTES,
     BREAK_INTERVAL_MIN_MINUTES,
@@ -87,6 +110,21 @@ from break_reminder.storage.settings import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Dialog-wide minimum width (pixels). Without this floor the dialog
+# sizes itself to the union of the Scheduling / Notifications /
+# Lifecycle tabs' ``sizeHint`` — all three are dominated by compact
+# widgets (spinboxes, line edits, checkboxes) and settle at roughly
+# 360 px. That width is too narrow for the Reminders tab: a typical
+# row like ``"Future one-shot  —  Wed 2026-12-01 11:00"`` is ~42
+# characters and the ``QListWidget`` would horizontally scroll on a
+# fresh open. 520 px comfortably fits names up to ~55 characters plus
+# the ``%a %Y-%m-%d %H:%M`` suffix at the default Segoe UI 9pt size,
+# and is a familiar width for a Windows settings dialog (the OS
+# Settings flyouts and most Properties dialogs sit in the 480–560 px
+# band). The user can still grow the dialog larger; this is a floor,
+# not a fixed size.
+_DIALOG_MINIMUM_WIDTH = 520
 
 # UI-facing message for the FR-006 range. The bounds themselves come from
 # ``storage.settings`` (single source of truth); this string composes them
@@ -139,6 +177,109 @@ _AUTOSTART_FAILURE_MESSAGE = (
     "Could not update Windows autostart — your machine may block writes to the "
     "per-user startup registry. Contact IT if this persists."
 )
+
+# FR-012 / S-05 Reminders tab strings + format.
+#
+# ``_FIRING_FORMAT`` is locale-aware via ``%a`` (the day-name honors the
+# user's current locale — Polish system shows "śr 2026-06-03 14:00", US
+# shows "Wed 2026-06-03 14:00"). This is intentional: the rest of the OS
+# chrome around the dialog (calendar widgets, file timestamps) follows
+# the same convention.
+#
+# ``_REMINDERS_EMPTY_MESSAGE`` is intentionally pre-accurate for the
+# post-S-06 world ("click Add to create one") so the wording doesn't
+# need to change when the Add handler ships.
+#
+# ``_REMINDERS_BUTTONS_DISABLED_TOOLTIP`` lives on a tooltip-bearing
+# wrapper ``QWidget`` around each disabled ``QPushButton`` — Qt 6 does
+# not deliver hover events to disabled widgets, so a tooltip set on the
+# button itself never shows. See ``_build_reminders_button_row`` for
+# the wrapper-pattern enforcement.
+_EXPIRED_LABEL = "(expired)"
+_FIRING_FORMAT = "%a %Y-%m-%d %H:%M"
+_REMINDERS_EMPTY_MESSAGE = "No reminders yet — click Add to create one."
+_REMINDERS_BUTTONS_DISABLED_TOOLTIP = "Coming in a future update."
+
+
+def _format_firing(fire_at: datetime | None, *, tz: tzinfo | None = None) -> str:
+    """Render a next-firing datetime for the Reminders list.
+
+    Args:
+        fire_at: The next firing as a tz-aware ``datetime``, or ``None``
+            when the reminder's series is exhausted (one-shot already
+            past, or recurring series past its ``end_at``).
+        tz: Optional target timezone for the conversion. Defaults to
+            ``None``, which ``datetime.astimezone()`` interprets as the
+            system local zone — production behaviour. Tests pass an
+            explicit ``timezone(timedelta(hours=-8))`` so the conversion
+            is observable on any CI runner regardless of its system
+            zone; without this injection, ``<utc>.astimezone() == <utc>``
+            on a UTC runner and the test passes even if the
+            implementation skipped the conversion entirely.
+
+    Returns:
+        ``"(expired)"`` for a ``None`` input. Otherwise the input
+        converted to ``tz`` and formatted as ``"%a %Y-%m-%d %H:%M"``
+        (e.g. ``"Wed 2026-06-03 14:00"``).
+    """
+    if fire_at is None:
+        return _EXPIRED_LABEL
+    return fire_at.astimezone(tz).strftime(_FIRING_FORMAT)
+
+
+def _sort_key(reminder: Reminder, now: datetime) -> tuple:
+    """Per-row sort key for the Reminders list (S-05).
+
+    Future firings sort before expired ones (tuple element 0 is ``0`` vs
+    ``1``); within the future bucket, ascending by firing time; alphabetical
+    case-insensitive name as final tiebreak in both buckets.
+
+    The tuple shape differs between buckets (3-element for future,
+    2-element for expired) on purpose. Python's tuple comparison is
+    by-element with short-circuit on the first; the two shapes never
+    need to compare past element 0 because the ``0`` group always sorts
+    before the ``1`` group. Trying to unify the shapes with a sentinel
+    ``datetime.max`` for expired would ``TypeError`` because
+    ``datetime.max`` is naive and ``next_firing_after`` returns
+    tz-aware values.
+
+    Args:
+        reminder: The reminder to compute the key for.
+        now: Reference time the scheduler uses to decide what counts
+            as "next" — same ``datetime.now(UTC)`` snapshot the caller
+            passes to ``_compose_row`` so two reminders sharing a
+            firing-second never race the sort.
+
+    Returns:
+        A tuple suitable for ``sorted(..., key=...)`` that encodes the
+        future-then-expired-then-alphabetical ordering.
+    """
+    fire_at = next_firing_after(reminder, now)
+    if fire_at is None:
+        return (1, reminder.name.lower())
+    return (0, fire_at, reminder.name.lower())
+
+
+def _compose_row(reminder: Reminder, now: datetime, *, tz: tzinfo | None = None) -> str:
+    """Build the display string for one Reminders-list row.
+
+    Pure function — both data sources are explicit parameters so the
+    test suite can exercise it without a Qt event loop.
+
+    Args:
+        reminder: The reminder whose name and next firing populate the
+            row.
+        now: Reference time forwarded to ``next_firing_after``.
+        tz: Optional target timezone forwarded to ``_format_firing``;
+            see that helper's docstring for the rationale behind the
+            ``None`` default and why tests pass an explicit offset.
+
+    Returns:
+        ``"<name>  —  <next firing | (expired)>"`` with two spaces
+        around the em-dash (single space looks crowded; tests pin the
+        exact string).
+    """
+    return f"{reminder.name}  —  {_format_firing(next_firing_after(reminder, now), tz=tz)}"
 
 
 def _write_autostart_runkey(command: str) -> None:
@@ -201,14 +342,14 @@ def _delete_autostart_runkey() -> None:
 
 
 class SettingsDialog(QDialog):
-    """Modal settings window (FR-003 / FR-005 / FR-006 / FR-007 / FR-010).
+    """Modal settings window (FR-003 / FR-005 / FR-006 / FR-007 / FR-010 / FR-012).
 
     The dialog reads the current break interval, snooze, voice, and
     autostart settings from the injected ``Settings`` instance at
-    construction time, lets the user edit them across three tabs
-    ("Scheduling", "Notifications", "Lifecycle"), and on **OK** persists
-    the new values through ``Settings``. **Cancel** discards and closes
-    without writing.
+    construction time, lets the user edit them across four tabs
+    ("Scheduling", "Notifications", "Lifecycle", "Reminders"), and on
+    **OK** persists the new values through ``Settings``. **Cancel**
+    discards and closes without writing.
 
     The "Notifications" tab also exposes a "Test voice" button that
     speaks the line edit's current (unsaved) text via the injected
@@ -219,17 +360,26 @@ class SettingsDialog(QDialog):
     OK writes the per-user Run-key entry, unticking + OK deletes it.
     Failures surface as a transient tooltip on the checkbox and block
     the entire save.
+
+    The "Reminders" tab (S-05) is read-only — it renders the contents
+    of the injected ``ReminderStore`` as a sorted list (next-firing
+    first, expired last, tiebreak by name) and exposes ``Add…`` /
+    ``Edit…`` / ``Delete`` buttons that are currently visible but
+    disabled. The tab does not participate in ``accept()``; the
+    ``OK`` button still saves the other three tabs' values.
     """
 
     SCHEDULING_TAB_LABEL = "Scheduling"
     NOTIFICATIONS_TAB_LABEL = "Notifications"
     LIFECYCLE_TAB_LABEL = "Lifecycle"
+    REMINDERS_TAB_LABEL = "Reminders"
 
     def __init__(
         self,
         *,
         settings: Settings,
         voice: VoiceNotifier,
+        reminder_store: ReminderStore,
         parent: QWidget | None = None,
     ) -> None:
         """Build the dialog and pre-populate widgets from ``settings``.
@@ -244,6 +394,12 @@ class SettingsDialog(QDialog):
                 stub — defaulting to a fresh ``VoiceNotifier()`` would
                 spin up a real ``pyttsx3`` worker pool every time the
                 test suite constructs the dialog.
+            reminder_store: ``ReminderStore`` the Reminders tab reads
+                exactly once at construction via ``list_all()``.
+                Required (no default) for the same reason ``voice`` is
+                — tests must inject a tmp-path-bound store so the suite
+                doesn't touch ``%APPDATA%``. The dialog never writes
+                to this store; the Reminders tab is read-only in S-05.
             parent: Optional Qt parent. Defaults to ``None`` so the
                 dialog gets its own top-level taskbar entry, matching
                 the convention used by ``BreakDialog`` and
@@ -252,9 +408,23 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self._settings = settings
         self._voice = voice
+        self._reminder_store = reminder_store
         self._user_typed_text: str | None = None
 
+        # Populated by ``_build_reminders_tab`` — exactly one is
+        # non-``None`` depending on whether the store has any reminders.
+        # Stored on self so tests can address them without walking the
+        # tab widget tree.
+        self._reminders_list: QListWidget | None = None
+        self._reminders_placeholder: QLabel | None = None
+
         self.setWindowTitle("Settings")
+        # See ``_DIALOG_MINIMUM_WIDTH`` for the rationale — the Reminders
+        # tab's list rows are wider than the other three tabs' widgets,
+        # so the dialog needs a floor that fits the longest plausible
+        # ``"<name>  —  <next firing>"`` string without horizontal
+        # scrolling on the ``QListWidget``.
+        self.setMinimumWidth(_DIALOG_MINIMUM_WIDTH)
 
         self._tabs = QTabWidget(self)
         self._tabs.addTab(self._build_scheduling_tab(), self.SCHEDULING_TAB_LABEL)
@@ -269,6 +439,11 @@ class SettingsDialog(QDialog):
         # before anchoring the tooltip on ``_autostart_checkbox``.
         self._lifecycle_tab = self._build_lifecycle_tab()
         self._tabs.addTab(self._lifecycle_tab, self.LIFECYCLE_TAB_LABEL)
+        # Reminders tab (S-05) — NOT stored on self because the tab has
+        # no ``accept()`` participation. Follows the same rule as
+        # ``_scheduling_tab``: only stored when the validation gate needs
+        # to switch to it. See ``settings-autostart-toggle`` impl-review F2.
+        self._tabs.addTab(self._build_reminders_tab(), self.REMINDERS_TAB_LABEL)
 
         self._buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
@@ -411,6 +586,138 @@ class SettingsDialog(QDialog):
         form.addRow(self._autostart_checkbox)
 
         return tab
+
+    def _build_reminders_tab(self) -> QWidget:
+        """Construct the "Reminders" tab (FR-012 / S-05 read-only list).
+
+        Reads ``self._reminder_store.list_all()`` exactly **once** and
+        captures a single ``datetime.now(UTC)`` snapshot that's threaded
+        through every ``_sort_key`` / ``_compose_row`` call so two
+        reminders sharing a firing-second can't race the sort.
+
+        Branches on the store contents:
+
+        - Empty (``list_all() == []``) → swap the list for a centered
+          placeholder ``QLabel`` with ``_REMINDERS_EMPTY_MESSAGE``.
+          ``self._reminders_list`` stays ``None``;
+          ``self._reminders_placeholder`` is the label.
+        - Non-empty → build a ``QListWidget`` populated with one
+          ``QListWidgetItem`` per reminder, text from ``_compose_row``,
+          sorted via ``_sort_key``. ``self._reminders_list`` is the
+          widget; ``self._reminders_placeholder`` stays ``None``.
+          ``QListWidget.currentRowChanged`` is connected to
+          ``_on_reminders_selection_changed`` so S-07 can flip the
+          slot body without re-wiring the signal.
+
+        In both branches the disabled ``Add…`` / ``Edit…`` / ``Delete``
+        button row (see ``_build_reminders_button_row``) is appended at
+        the bottom.
+
+        Returns:
+            A ``QWidget`` ready to be added to ``self._tabs``. The
+            outer layout is a ``QVBoxLayout`` with two slots: the
+            list-or-placeholder on top, the button row on the bottom.
+        """
+        tab = QWidget(self._tabs)
+
+        # Single shared "now" so every reminder gets compared against
+        # the same instant — avoids the rare race where two reminders
+        # sharing a firing-second sort differently between consecutive
+        # ``_sort_key`` calls because the clock advanced mid-loop.
+        now = datetime.now(UTC)
+        reminders = self._reminder_store.list_all()
+
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(8)
+
+        if not reminders:
+            self._reminders_placeholder = QLabel(_REMINDERS_EMPTY_MESSAGE, tab)
+            self._reminders_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self._reminders_placeholder.setWordWrap(True)
+            layout.addWidget(self._reminders_placeholder, 1)
+        else:
+            self._reminders_list = QListWidget(tab)
+            for reminder in sorted(reminders, key=lambda r: _sort_key(r, now)):
+                QListWidgetItem(_compose_row(reminder, now), self._reminders_list)
+            self._reminders_list.currentRowChanged.connect(self._on_reminders_selection_changed)
+            layout.addWidget(self._reminders_list, 1)
+
+        layout.addWidget(self._build_reminders_button_row())
+
+        return tab
+
+    def _build_reminders_button_row(self) -> QWidget:
+        """Construct the disabled ``Add… / Edit… / Delete`` row (S-05).
+
+        Each ``QPushButton`` is ``setEnabled(False)`` and lives inside a
+        zero-margin ``QHBoxLayout`` wrapped by a parent ``QWidget`` that
+        owns the "coming in a future update" tooltip. The wrapper is the
+        workaround for Qt 6's "disabled widgets do not receive mouse
+        events" rule — setting the tooltip directly on the disabled
+        ``QPushButton`` would set the property (so a unit test could read
+        it back) but the tooltip would never appear on hover. The
+        wrapper stays enabled, receives the hover event, and shows the
+        tooltip; the inner button stays visually and functionally
+        disabled. Tests assert
+        ``button.parentWidget().toolTip() == _REMINDERS_BUTTONS_DISABLED_TOOLTIP``,
+        NOT ``button.toolTip()``.
+
+        Returns:
+            A ``QWidget`` row containing the three wrapper-button pairs,
+            laid out horizontally with a stretchy spacer on the left so
+            the buttons hug the right edge of the tab (matches the
+            ``QDialogButtonBox`` convention the rest of the dialog
+            uses).
+        """
+        row = QWidget()
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.addStretch(1)
+
+        self._reminders_add_button = QPushButton("Add…")
+        self._reminders_add_button.setEnabled(False)
+        self._reminders_edit_button = QPushButton("Edit…")
+        self._reminders_edit_button.setEnabled(False)
+        self._reminders_delete_button = QPushButton("Delete")
+        self._reminders_delete_button.setEnabled(False)
+
+        for button in (
+            self._reminders_add_button,
+            self._reminders_edit_button,
+            self._reminders_delete_button,
+        ):
+            wrapper = QWidget(row)
+            wrapper.setToolTip(_REMINDERS_BUTTONS_DISABLED_TOOLTIP)
+            wrapper_layout = QHBoxLayout(wrapper)
+            wrapper_layout.setContentsMargins(0, 0, 0, 0)
+            wrapper_layout.addWidget(button)
+            row_layout.addWidget(wrapper)
+
+        return row
+
+    def _on_reminders_selection_changed(self, current_row: int) -> None:
+        """Slot wired to ``QListWidget.currentRowChanged`` (S-05 scaffold).
+
+        Body is ``pass`` in this slice — the click handlers don't exist
+        yet, so there's nothing to enable. S-07 will replace the body
+        with::
+
+            self._reminders_edit_button.setEnabled(current_row >= 0)
+            self._reminders_delete_button.setEnabled(current_row >= 0)
+
+        The connection itself is wired here today so a future refactor
+        can't silently break the select-to-enable contract before S-07
+        fills the body in — a unit test pins that the signal is
+        connected to this method.
+
+        Args:
+            current_row: The newly-selected row index, or ``-1`` when
+                the selection is cleared. Unused in S-05; S-07 will
+                gate the Edit/Delete enabled state on
+                ``current_row >= 0``.
+        """
+        del current_row  # S-05 placeholder; S-07 uses this to gate enable state.
 
     def _on_test_voice_clicked(self) -> None:
         """Speak the phrase line edit's current (unsaved) text.

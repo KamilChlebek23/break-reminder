@@ -314,17 +314,24 @@ class BreakReminderApp:
         """Open the settings window (FR-005).
 
         Constructs a fresh ``SettingsDialog`` against the app's existing
-        ``Settings`` and ``VoiceNotifier`` instances and runs it modally.
-        No long-lived member is kept — the dialog is GC'd as soon as
-        ``exec()`` returns, so every open is a fresh load with no stale
-        state.
+        ``Settings``, ``VoiceNotifier``, and ``ReminderStore`` instances
+        and runs it modally. No long-lived member is kept — the dialog
+        is GC'd as soon as ``exec()`` returns, so every open is a fresh
+        load with no stale state. The Reminders tab's "load once at
+        construction" invariant depends on this lifetime; if the dialog
+        were ever held across opens, the list would silently go stale.
 
-        The "Scheduling" tab carries the FR-006 break-interval editor;
-        the "Notifications" tab carries the FR-007 voice toggle, phrase
-        editor, and Test button. Custom-reminder CRUD (FR-011 / FR-012)
-        lands in S-05..S-08 as additional tabs in this same dialog.
+        Four tabs ship today: "Scheduling" (FR-006 break interval +
+        FR-010 snooze), "Notifications" (FR-007 voice toggle, phrase,
+        Test), "Lifecycle" (FR-003 Windows autostart), and "Reminders"
+        (FR-012 read-only custom-reminders list — S-06/S-07/S-08 will
+        light the Add/Edit/Delete buttons up).
         """
-        SettingsDialog(settings=self._settings, voice=self._voice).exec()
+        SettingsDialog(
+            settings=self._settings,
+            voice=self._voice,
+            reminder_store=self._reminder_store,
+        ).exec()
 
     def _on_check_for_updates(self) -> None:
         """Show the installed version, then optionally open GitHub Releases.

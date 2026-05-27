@@ -1,11 +1,12 @@
-"""Tests for ``SettingsDialog`` — the FR-005 / FR-006 / FR-007 settings window.
+"""Tests for ``SettingsDialog`` — the FR-005 / FR-006 / FR-007 / FR-012 settings window.
 
 Covers the load / save / cancel contract in isolation, without showing
 the dialog (no ``exec()``, no event loop pumping). Each test gets a
-``tmp_path``-bound ``Settings`` instance and a ``StubVoiceNotifier`` so
-the suite never touches the real ``%APPDATA%`` location and never
-spins up a ``pyttsx3`` worker pool, mirroring the pattern in
-``tests/test_settings.py`` and ``tests/test_app.py``.
+``tmp_path``-bound ``Settings`` instance, a ``StubVoiceNotifier``, and
+a tmp-path-bound ``ReminderStore`` so the suite never touches the real
+``%APPDATA%`` location and never spins up a ``pyttsx3`` worker pool,
+mirroring the pattern in ``tests/test_settings.py`` and
+``tests/test_app.py``.
 
 Layout invariants are also asserted as tripwires — if a future slice
 silently flattens the ``QTabWidget`` or re-labels a tab, the affected
@@ -15,11 +16,19 @@ tests fail loudly instead of letting the layout drift unnoticed.
 from __future__ import annotations
 
 import sys
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
-from PySide6.QtWidgets import QCheckBox, QLineEdit, QPushButton, QSpinBox, QTabWidget
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QLineEdit,
+    QPushButton,
+    QSpinBox,
+    QTabWidget,
+)
 
+from break_reminder.storage.reminders import Reminder, ReminderStore
 from break_reminder.storage.settings import (
     DEFAULT_BREAK_INTERVAL_MIN,
     DEFAULT_MAX_SNOOZES,
@@ -28,7 +37,17 @@ from break_reminder.storage.settings import (
     Settings,
 )
 from break_reminder.ui import settings_dialog as settings_dialog_module
-from break_reminder.ui.settings_dialog import SettingsDialog
+from break_reminder.ui.settings_dialog import (
+    _DIALOG_MINIMUM_WIDTH,
+    _EXPIRED_LABEL,
+    _FIRING_FORMAT,
+    _REMINDERS_BUTTONS_DISABLED_TOOLTIP,
+    _REMINDERS_EMPTY_MESSAGE,
+    SettingsDialog,
+    _compose_row,
+    _format_firing,
+    _sort_key,
+)
 
 
 class StubVoiceNotifier:
@@ -73,14 +92,41 @@ def voice() -> StubVoiceNotifier:
 
 
 @pytest.fixture
-def dialog(qtbot, settings: Settings, voice: StubVoiceNotifier) -> SettingsDialog:
-    """A ``SettingsDialog`` wired against the per-test ``settings`` and ``voice`` fixtures.
+def reminders_path(tmp_path: Path) -> Path:
+    """Path to a per-test ``reminders.json`` file under ``tmp_path``."""
+    return tmp_path / "reminders.json"
+
+
+@pytest.fixture
+def reminder_store(reminders_path: Path) -> ReminderStore:
+    """A ``ReminderStore`` bound to the per-test ``reminders_path`` fixture.
+
+    Defaults to an empty store (the JSON file is not created until the
+    first ``add()`` call). Tests that need pre-populated content call
+    ``reminder_store.add(...)`` before constructing the dialog so the
+    dialog's "load once at construction" path picks up the seeded rows.
+    """
+    return ReminderStore(path=reminders_path)
+
+
+@pytest.fixture
+def dialog(
+    qtbot,
+    settings: Settings,
+    voice: StubVoiceNotifier,
+    reminder_store: ReminderStore,
+) -> SettingsDialog:
+    """A ``SettingsDialog`` wired against the per-test fixtures.
 
     Registered with ``qtbot.addWidget`` so the dialog is destroyed at
     test teardown regardless of test outcome — matches the convention
     in ``tests/test_break_dialog.py``.
     """
-    d = SettingsDialog(settings=settings, voice=voice)  # type: ignore[arg-type]
+    d = SettingsDialog(
+        settings=settings,
+        voice=voice,  # type: ignore[arg-type]
+        reminder_store=reminder_store,
+    )
     qtbot.addWidget(d)
     return d
 
@@ -99,7 +145,9 @@ class TestLoad:
         """Spinbox shows ``DEFAULT_BREAK_INTERVAL_MIN`` on a fresh INI."""
         assert dialog._break_interval_spinbox.value() == DEFAULT_BREAK_INTERVAL_MIN
 
-    def test_spinbox_initial_value_reflects_pre_set_value(self, qtbot, ini_path: Path) -> None:
+    def test_spinbox_initial_value_reflects_pre_set_value(
+        self, qtbot, ini_path: Path, reminder_store: ReminderStore
+    ) -> None:
         """Spinbox shows whatever ``Settings.break_interval_min`` already holds."""
         pre_set = Settings(ini_path=ini_path)
         pre_set.break_interval_min = 45
@@ -108,6 +156,7 @@ class TestLoad:
         d = SettingsDialog(
             settings=Settings(ini_path=ini_path),
             voice=StubVoiceNotifier(),  # type: ignore[arg-type]
+            reminder_store=reminder_store,
         )
         qtbot.addWidget(d)
 
@@ -207,12 +256,15 @@ class TestSave:
 
         assert settings.break_interval_min == 30
 
-    def test_accept_persists_across_settings_instances(self, qtbot, ini_path: Path) -> None:
+    def test_accept_persists_across_settings_instances(
+        self, qtbot, ini_path: Path, reminder_store: ReminderStore
+    ) -> None:
         """A persisted value is observable from a freshly constructed ``Settings``."""
         first_settings = Settings(ini_path=ini_path)
         d = SettingsDialog(
             settings=first_settings,
             voice=StubVoiceNotifier(),  # type: ignore[arg-type]
+            reminder_store=reminder_store,
         )
         qtbot.addWidget(d)
         d._break_interval_spinbox.setValue(90)
@@ -224,7 +276,12 @@ class TestSave:
         assert second_settings.break_interval_min == 90
 
     def test_reject_does_not_persist(
-        self, qtbot, dialog: SettingsDialog, settings: Settings, ini_path: Path
+        self,
+        qtbot,
+        dialog: SettingsDialog,
+        settings: Settings,
+        ini_path: Path,
+        reminder_store: ReminderStore,
     ) -> None:
         """``reject()`` after editing leaves ``Settings.break_interval_min`` unchanged."""
         # Pre-set to a known value so we can observe the absence of writes.
@@ -234,6 +291,7 @@ class TestSave:
         d = SettingsDialog(
             settings=settings,
             voice=StubVoiceNotifier(),  # type: ignore[arg-type]
+            reminder_store=reminder_store,
         )
         qtbot.addWidget(d)
         d._break_interval_spinbox.setValue(15)
@@ -242,7 +300,9 @@ class TestSave:
 
         assert settings.break_interval_min == 75
 
-    def test_reject_does_not_write_to_ini(self, qtbot, ini_path: Path) -> None:
+    def test_reject_does_not_write_to_ini(
+        self, qtbot, ini_path: Path, reminder_store: ReminderStore
+    ) -> None:
         """``reject()`` on a never-saved dialog does not materialize the INI."""
         # Fresh INI path: the file should not exist, and Cancel must not
         # cause it to exist either.
@@ -250,6 +310,7 @@ class TestSave:
         d = SettingsDialog(
             settings=s,
             voice=StubVoiceNotifier(),  # type: ignore[arg-type]
+            reminder_store=reminder_store,
         )
         qtbot.addWidget(d)
         d._break_interval_spinbox.setValue(120)
@@ -493,7 +554,11 @@ class TestNotificationsTabLoad:
         assert dialog._voice_enabled_checkbox.isChecked() is False
 
     def test_checkbox_reflects_pre_set_voice_enabled(
-        self, qtbot, ini_path: Path, voice: StubVoiceNotifier
+        self,
+        qtbot,
+        ini_path: Path,
+        voice: StubVoiceNotifier,
+        reminder_store: ReminderStore,
     ) -> None:
         """The checkbox shows whatever ``Settings.voice_enabled`` already holds."""
         pre_set = Settings(ini_path=ini_path)
@@ -504,6 +569,7 @@ class TestNotificationsTabLoad:
         d = SettingsDialog(
             settings=Settings(ini_path=ini_path),
             voice=voice,  # type: ignore[arg-type]
+            reminder_store=reminder_store,
         )
         qtbot.addWidget(d)
 
@@ -514,7 +580,11 @@ class TestNotificationsTabLoad:
         assert dialog._voice_phrase_edit.text() == DEFAULT_VOICE_PHRASE
 
     def test_phrase_field_reflects_pre_set_voice_phrase(
-        self, qtbot, ini_path: Path, voice: StubVoiceNotifier
+        self,
+        qtbot,
+        ini_path: Path,
+        voice: StubVoiceNotifier,
+        reminder_store: ReminderStore,
     ) -> None:
         """The phrase field shows whatever ``Settings.voice_phrase`` already holds."""
         pre_set = Settings(ini_path=ini_path)
@@ -525,6 +595,7 @@ class TestNotificationsTabLoad:
         d = SettingsDialog(
             settings=Settings(ini_path=ini_path),
             voice=voice,  # type: ignore[arg-type]
+            reminder_store=reminder_store,
         )
         qtbot.addWidget(d)
 
@@ -585,13 +656,18 @@ class TestNotificationsTabSave:
         assert settings.voice_phrase == "Stand up and stretch"
 
     def test_accept_persists_voice_across_settings_instances(
-        self, qtbot, ini_path: Path, voice: StubVoiceNotifier
+        self,
+        qtbot,
+        ini_path: Path,
+        voice: StubVoiceNotifier,
+        reminder_store: ReminderStore,
     ) -> None:
         """Voice settings are observable from a freshly constructed ``Settings``."""
         first_settings = Settings(ini_path=ini_path)
         d = SettingsDialog(
             settings=first_settings,
             voice=voice,  # type: ignore[arg-type]
+            reminder_store=reminder_store,
         )
         qtbot.addWidget(d)
         d._voice_enabled_checkbox.setChecked(True)
@@ -605,7 +681,11 @@ class TestNotificationsTabSave:
         assert second_settings.voice_phrase == "Time for a stretch"
 
     def test_reject_does_not_persist_voice(
-        self, qtbot, settings: Settings, voice: StubVoiceNotifier
+        self,
+        qtbot,
+        settings: Settings,
+        voice: StubVoiceNotifier,
+        reminder_store: ReminderStore,
     ) -> None:
         """``reject()`` after editing voice fields leaves ``Settings`` untouched."""
         # Pre-set known values so absence-of-write is observable.
@@ -613,7 +693,11 @@ class TestNotificationsTabSave:
         settings.voice_phrase = "original phrase"
         settings._qs.sync()
 
-        d = SettingsDialog(settings=settings, voice=voice)  # type: ignore[arg-type]
+        d = SettingsDialog(
+            settings=settings,
+            voice=voice,  # type: ignore[arg-type]
+            reminder_store=reminder_store,
+        )
         qtbot.addWidget(d)
         d._voice_enabled_checkbox.setChecked(False)
         d._voice_phrase_edit.setText("rejected phrase")
@@ -899,11 +983,11 @@ class TestNotificationsTabTestButton:
 class TestNotificationsTabLayout:
     """Layout invariants for the Notifications tab (S-04)."""
 
-    def test_dialog_has_three_tabs(self, dialog: SettingsDialog) -> None:
-        """S-02 + S-04 ship two tabs alongside Scheduling — total three."""
+    def test_dialog_has_four_tabs(self, dialog: SettingsDialog) -> None:
+        """S-02 + S-04 + S-05 ship three tabs alongside Scheduling — total four."""
         tabs = dialog.findChild(QTabWidget)
         assert tabs is not None
-        assert tabs.count() == 3
+        assert tabs.count() == 4
 
     def test_second_tab_label_is_notifications(self, dialog: SettingsDialog) -> None:
         """The Notifications tab label is exactly ``"Notifications"``."""
@@ -981,7 +1065,11 @@ class TestLifecycleTabLoad:
         assert dialog._autostart_checkbox.isChecked() is False
 
     def test_autostart_checkbox_checked_when_setting_true(
-        self, qtbot, ini_path: Path, voice: StubVoiceNotifier
+        self,
+        qtbot,
+        ini_path: Path,
+        voice: StubVoiceNotifier,
+        reminder_store: ReminderStore,
     ) -> None:
         """The checkbox shows whatever ``Settings.autostart`` already holds."""
         pre_set = Settings(ini_path=ini_path)
@@ -992,6 +1080,7 @@ class TestLifecycleTabLoad:
         d = SettingsDialog(
             settings=Settings(ini_path=ini_path),
             voice=voice,  # type: ignore[arg-type]
+            reminder_store=reminder_store,
         )
         qtbot.addWidget(d)
 
@@ -1059,6 +1148,7 @@ class TestAutostartTabSave:
         qtbot,
         ini_path: Path,
         voice: StubVoiceNotifier,
+        reminder_store: ReminderStore,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Untick + OK → ``_delete_autostart_runkey`` called once; INI flips to False."""
@@ -1069,7 +1159,11 @@ class TestAutostartTabSave:
         del pre_set
 
         s = Settings(ini_path=ini_path)
-        d = SettingsDialog(settings=s, voice=voice)  # type: ignore[arg-type]
+        d = SettingsDialog(
+            settings=s,
+            voice=voice,  # type: ignore[arg-type]
+            reminder_store=reminder_store,
+        )
         qtbot.addWidget(d)
 
         write_calls, delete_calls = _patch_runkey_helpers(monkeypatch)
@@ -1086,6 +1180,7 @@ class TestAutostartTabSave:
         qtbot,
         ini_path: Path,
         voice: StubVoiceNotifier,
+        reminder_store: ReminderStore,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Opening with autostart=True and OK without changing the box still re-issues the write.
@@ -1103,7 +1198,11 @@ class TestAutostartTabSave:
         del pre_set
 
         s = Settings(ini_path=ini_path)
-        d = SettingsDialog(settings=s, voice=voice)  # type: ignore[arg-type]
+        d = SettingsDialog(
+            settings=s,
+            voice=voice,  # type: ignore[arg-type]
+            reminder_store=reminder_store,
+        )
         qtbot.addWidget(d)
         # Sanity: the dialog loaded the True state.
         assert d._autostart_checkbox.isChecked() is True
@@ -1472,3 +1571,437 @@ class TestRunkeyHelpers:
 
         with pytest.raises(PermissionError):
             settings_dialog_module._delete_autostart_runkey()
+
+
+# ---------------------------------------------------------------------------
+# Reminders tab — pure module-level helpers (S-05 / FR-012)
+# ---------------------------------------------------------------------------
+
+
+class TestRemindersHelpers:
+    """Unit tests for ``_format_firing`` / ``_sort_key`` / ``_compose_row``.
+
+    These are pure functions; no ``qtbot`` involvement. They live at
+    module scope precisely so they're testable without a Qt event loop —
+    if a future refactor inlines them into a method, this class breaks
+    loudly and the regression is obvious.
+    """
+
+    def test_format_firing_returns_expired_label_for_none(self) -> None:
+        """``None`` input → the ``(expired)`` sentinel string."""
+        assert _format_firing(None) == _EXPIRED_LABEL
+
+    def test_format_firing_with_tz_renders_in_target_zone(self) -> None:
+        """``tz`` argument shifts the rendered instant to the target zone.
+
+        This is the regression-catching test described in Phase 1 §5: on
+        a UTC runner, ``<utc>.astimezone() == <utc>`` and the
+        system-local-default branch would pass even if the
+        implementation skipped the ``.astimezone()`` call. The explicit
+        ``tz=timezone(timedelta(hours=-8))`` makes the conversion
+        observable regardless of the runner's system zone.
+        """
+        instant = datetime(2026, 6, 3, 22, 0, tzinfo=UTC)
+        result = _format_firing(instant, tz=timezone(timedelta(hours=-8)))
+        assert result == "Wed 2026-06-03 14:00"
+
+    def test_format_firing_default_tz_matches_system_local(self) -> None:
+        """``tz=None`` (default) matches ``.astimezone()`` with no argument.
+
+        Pins the system-local default behaviour without depending on
+        what the runner's actual zone is — both sides go through the
+        same conversion path, so the assertion holds on any host.
+        """
+        instant = datetime(2026, 6, 3, 22, 0, tzinfo=UTC)
+        expected = instant.astimezone().strftime(_FIRING_FORMAT)
+        assert _format_firing(instant) == expected
+
+    def test_sort_key_future_returns_three_element_tuple(self) -> None:
+        """A future-firing reminder returns ``(0, fire_at, name_lower)``."""
+        reminder = Reminder(
+            name="StretchTime",
+            start_at=datetime(2099, 1, 1, 10, 0, tzinfo=UTC),
+        )
+        now = datetime(2026, 1, 1, tzinfo=UTC)
+        key = _sort_key(reminder, now)
+        assert key[0] == 0
+        assert key[1] == datetime(2099, 1, 1, 10, 0, tzinfo=UTC)
+        assert key[2] == "stretchtime"
+        assert len(key) == 3
+
+    def test_sort_key_expired_returns_two_element_tuple(self) -> None:
+        """An expired reminder returns ``(1, name_lower)`` — no datetime element."""
+        reminder = Reminder(
+            name="LongPast",
+            start_at=datetime(2000, 1, 1, 10, 0, tzinfo=UTC),
+            # No RRULE → one-shot already past → next_firing_after → None.
+        )
+        now = datetime(2026, 1, 1, tzinfo=UTC)
+        key = _sort_key(reminder, now)
+        assert key == (1, "longpast")
+
+    def test_sort_key_future_before_expired(self) -> None:
+        """Future tuples sort before expired tuples — tuple element 0 is the bucket key.
+
+        Tripwire for the "do not unify with ``datetime.max``" Critical
+        Implementation Detail: if a future refactor tries to make the
+        two tuple shapes match (e.g. using ``datetime.max`` for expired),
+        ``datetime.max`` is naive and would ``TypeError`` against the
+        tz-aware ``fire_at`` values. This test asserts the bucket-first
+        ordering keeps the two shapes from ever needing to compare past
+        element 0.
+
+        Uses real ``_sort_key`` outputs (not hand-built tuples) so the
+        assertion is grounded in production behaviour and the test
+        catches a regression where the buckets accidentally unify.
+        """
+        future_reminder = Reminder(name="future", start_at=datetime(2099, 1, 1, tzinfo=UTC))
+        expired_reminder = Reminder(name="expired", start_at=datetime(2000, 1, 1, tzinfo=UTC))
+        now = datetime(2026, 1, 1, tzinfo=UTC)
+
+        future_key = _sort_key(future_reminder, now)
+        expired_key = _sort_key(expired_reminder, now)
+
+        # Sortable side-by-side without ``TypeError`` — confirms the
+        # bucket-first short-circuit works for both real shapes.
+        assert sorted([expired_key, future_key]) == [future_key, expired_key]
+
+    def test_compose_row_future_branch(self) -> None:
+        """``_compose_row`` produces ``"name  —  <formatted>"`` for a future reminder."""
+        reminder = Reminder(
+            name="StretchTime",
+            start_at=datetime(2099, 6, 3, 22, 0, tzinfo=UTC),
+        )
+        now = datetime(2026, 1, 1, tzinfo=UTC)
+        row = _compose_row(reminder, now, tz=timezone(timedelta(hours=-8)))
+        assert row == "StretchTime  —  Wed 2099-06-03 14:00"
+
+    def test_compose_row_expired_branch(self) -> None:
+        """``_compose_row`` produces ``"name  —  (expired)"`` for an expired reminder."""
+        reminder = Reminder(
+            name="LongPast",
+            start_at=datetime(2000, 1, 1, 10, 0, tzinfo=UTC),
+        )
+        now = datetime(2026, 1, 1, tzinfo=UTC)
+        assert _compose_row(reminder, now) == "LongPast  —  (expired)"
+
+
+# ---------------------------------------------------------------------------
+# Reminders tab — dialog construction (S-05 / FR-012)
+# ---------------------------------------------------------------------------
+
+
+class TestRemindersTab:
+    """Behavioural tests for the Reminders tab — empty + populated branches.
+
+    Mirrors the ``TestLoad`` / ``TestSave`` pattern in this file: each
+    test exercises one branch or invariant of the tab. The fixture chain
+    is ``reminders_path`` → ``reminder_store`` → ``dialog``; tests that
+    need a non-empty store seed it via ``reminder_store.add(...)`` BEFORE
+    invoking the dialog so the dialog's "load once at construction" path
+    picks the rows up.
+    """
+
+    def test_tab_label_and_position(self, dialog: SettingsDialog) -> None:
+        """The Reminders tab is the fourth tab with the documented label."""
+        assert dialog._tabs.tabText(3) == SettingsDialog.REMINDERS_TAB_LABEL
+        assert dialog._tabs.count() == 4
+
+    def test_empty_store_renders_placeholder(self, dialog: SettingsDialog) -> None:
+        """Empty store → placeholder label is shown; no ``QListWidget``.
+
+        Tripwire for the dual-state branch: exactly one of
+        ``_reminders_list`` / ``_reminders_placeholder`` is non-``None``;
+        the other is ``None``. The placeholder text is the documented
+        FR-012 hint.
+        """
+        assert dialog._reminders_list is None
+        assert dialog._reminders_placeholder is not None
+        assert dialog._reminders_placeholder.text() == _REMINDERS_EMPTY_MESSAGE
+
+    def test_populated_store_renders_list(
+        self,
+        qtbot,
+        settings: Settings,
+        voice: StubVoiceNotifier,
+        reminder_store: ReminderStore,
+    ) -> None:
+        """Non-empty store → ``QListWidget`` populated; no placeholder."""
+        # Seed BEFORE constructing the dialog — the dialog reads
+        # ``list_all()`` once during ``__init__``.
+        reminder_store.add(Reminder(name="Alpha", start_at=datetime(2099, 1, 1, tzinfo=UTC)))
+        reminder_store.add(Reminder(name="Bravo", start_at=datetime(2099, 2, 1, tzinfo=UTC)))
+        reminder_store.add(Reminder(name="Charlie", start_at=datetime(2099, 3, 1, tzinfo=UTC)))
+
+        d = SettingsDialog(
+            settings=settings,
+            voice=voice,  # type: ignore[arg-type]
+            reminder_store=reminder_store,
+        )
+        qtbot.addWidget(d)
+
+        assert d._reminders_list is not None
+        assert d._reminders_placeholder is None
+        assert d._reminders_list.count() == 3
+
+    def test_one_shot_future_renders_formatted_date(
+        self,
+        qtbot,
+        settings: Settings,
+        voice: StubVoiceNotifier,
+        reminder_store: ReminderStore,
+    ) -> None:
+        """A one-shot future reminder renders ``"<name>  —  <date>"`` (not ``(expired)``)."""
+        reminder_store.add(
+            Reminder(name="FutureOneShot", start_at=datetime(2099, 6, 3, 14, 0, tzinfo=UTC))
+        )
+
+        d = SettingsDialog(
+            settings=settings,
+            voice=voice,  # type: ignore[arg-type]
+            reminder_store=reminder_store,
+        )
+        qtbot.addWidget(d)
+
+        assert d._reminders_list is not None
+        text = d._reminders_list.item(0).text()
+        assert text.startswith("FutureOneShot  —  ")
+        assert _EXPIRED_LABEL not in text
+
+    def test_recurring_rrule_renders_future_firing(
+        self,
+        qtbot,
+        settings: Settings,
+        voice: StubVoiceNotifier,
+        reminder_store: ReminderStore,
+    ) -> None:
+        """A recurring reminder whose ``start_at`` is past still renders a future firing.
+
+        ``FREQ=WEEKLY`` from a past ``start_at`` should keep recurring;
+        ``next_firing_after`` returns the next weekly instance, not
+        ``None``. So the rendered text must NOT contain ``(expired)``.
+        """
+        reminder_store.add(
+            Reminder(
+                name="Weekly",
+                start_at=datetime(2025, 1, 1, 9, 0, tzinfo=UTC),
+                rrule_str="FREQ=WEEKLY",
+            )
+        )
+
+        d = SettingsDialog(
+            settings=settings,
+            voice=voice,  # type: ignore[arg-type]
+            reminder_store=reminder_store,
+        )
+        qtbot.addWidget(d)
+
+        assert d._reminders_list is not None
+        text = d._reminders_list.item(0).text()
+        assert text.startswith("Weekly  —  ")
+        assert _EXPIRED_LABEL not in text
+
+    def test_expired_one_shot_renders_expired_label(
+        self,
+        qtbot,
+        settings: Settings,
+        voice: StubVoiceNotifier,
+        reminder_store: ReminderStore,
+    ) -> None:
+        """An expired one-shot reminder renders ``"<name>  —  (expired)"``."""
+        reminder_store.add(Reminder(name="Expired", start_at=datetime(2000, 1, 1, tzinfo=UTC)))
+
+        d = SettingsDialog(
+            settings=settings,
+            voice=voice,  # type: ignore[arg-type]
+            reminder_store=reminder_store,
+        )
+        qtbot.addWidget(d)
+
+        assert d._reminders_list is not None
+        text = d._reminders_list.item(0).text()
+        assert text.endswith(f"  —  {_EXPIRED_LABEL}")
+
+    def test_sort_order_future_ascending_expired_last_tiebreak_by_name(
+        self,
+        qtbot,
+        settings: Settings,
+        voice: StubVoiceNotifier,
+        reminder_store: ReminderStore,
+    ) -> None:
+        """Sort order: future ascending → expired last → tiebreak alphabetical.
+
+        Seeds four reminders in deliberately-shuffled insertion order to
+        prove the sort key (not insertion order) drives the rendering:
+
+        - "Zebra" (expired) → must land last
+        - "B" and "A" share a firing instant → must alphabetize "A" before "B"
+        - "Far" is further future → must land between "A"/"B" and "Zebra"
+        """
+        same_instant = datetime(2099, 1, 1, 10, 0, tzinfo=UTC)
+        far_future = datetime(2099, 6, 1, 10, 0, tzinfo=UTC)
+        long_past = datetime(2000, 1, 1, tzinfo=UTC)
+
+        reminder_store.add(Reminder(name="B", start_at=same_instant))
+        reminder_store.add(Reminder(name="A", start_at=same_instant))
+        reminder_store.add(Reminder(name="Zebra", start_at=long_past))
+        reminder_store.add(Reminder(name="Far", start_at=far_future))
+
+        d = SettingsDialog(
+            settings=settings,
+            voice=voice,  # type: ignore[arg-type]
+            reminder_store=reminder_store,
+        )
+        qtbot.addWidget(d)
+
+        assert d._reminders_list is not None
+        names = [d._reminders_list.item(i).text().split("  —  ")[0] for i in range(4)]
+        assert names == ["A", "B", "Far", "Zebra"]
+
+    def test_buttons_are_disabled_by_default(self, dialog: SettingsDialog) -> None:
+        """All three buttons start disabled — no row selected, no Add handler."""
+        assert dialog._reminders_add_button.isEnabled() is False
+        assert dialog._reminders_edit_button.isEnabled() is False
+        assert dialog._reminders_delete_button.isEnabled() is False
+
+    def test_buttons_tooltip_lives_on_wrapper_not_on_button(self, dialog: SettingsDialog) -> None:
+        """The "coming soon" tooltip lives on the parent ``QWidget`` wrapper.
+
+        Per the Critical Implementation Detail: Qt 6 does not deliver
+        hover events to disabled widgets, so a tooltip set on the
+        disabled ``QPushButton`` itself would be a no-op at runtime
+        (the property reads back but the user sees nothing). The
+        workaround is a tooltip-bearing enabled wrapper ``QWidget``.
+
+        Tripwire: if a future refactor removes the wrapper and puts
+        the tooltip back on the button, this test fails — the
+        wrapper's ``toolTip()`` will be empty.
+        """
+        for button in (
+            dialog._reminders_add_button,
+            dialog._reminders_edit_button,
+            dialog._reminders_delete_button,
+        ):
+            wrapper = button.parentWidget()
+            assert wrapper is not None
+            assert wrapper.toolTip() == _REMINDERS_BUTTONS_DISABLED_TOOLTIP
+            # The wrapper MUST stay enabled so it receives the hover
+            # event Qt swallows on the disabled child.
+            assert wrapper.isEnabled() is True
+
+    def test_button_labels(self, dialog: SettingsDialog) -> None:
+        """Buttons carry the documented labels (ellipsis on sub-dialog openers)."""
+        assert dialog._reminders_add_button.text() == "Add…"
+        assert dialog._reminders_edit_button.text() == "Edit…"
+        assert dialog._reminders_delete_button.text() == "Delete"
+
+    def test_selection_changed_slot_is_wired(
+        self,
+        qtbot,
+        settings: Settings,
+        voice: StubVoiceNotifier,
+        reminder_store: ReminderStore,
+    ) -> None:
+        """The ``currentRowChanged`` signal is connected — S-07 will fill the body.
+
+        Even though the slot body is ``pass`` in this slice, the wiring
+        must be in place so S-07 can flip the body without re-wiring
+        the signal. Tripwire: emit the signal manually and confirm the
+        slot is invoked (counted via monkeypatching).
+        """
+        reminder_store.add(Reminder(name="Solo", start_at=datetime(2099, 1, 1, tzinfo=UTC)))
+
+        d = SettingsDialog(
+            settings=settings,
+            voice=voice,  # type: ignore[arg-type]
+            reminder_store=reminder_store,
+        )
+        qtbot.addWidget(d)
+
+        call_count = 0
+
+        def _counting_slot(_row: int) -> None:
+            nonlocal call_count
+            call_count += 1
+
+        # Disconnect the original and reconnect a counting stub. If the
+        # original was never connected, ``disconnect`` raises — that's
+        # the assertion the test relies on.
+        assert d._reminders_list is not None
+        d._reminders_list.currentRowChanged.disconnect(d._on_reminders_selection_changed)
+        d._reminders_list.currentRowChanged.connect(_counting_slot)
+
+        d._reminders_list.setCurrentRow(0)
+
+        assert call_count >= 1
+
+    def test_list_all_called_exactly_once_across_construction_and_tab_switch(
+        self,
+        qtbot,
+        settings: Settings,
+        voice: StubVoiceNotifier,
+        reminder_store: ReminderStore,
+    ) -> None:
+        """``list_all`` is called exactly once: at construction, never on tab switch.
+
+        Pins the "no live reload" decision. A regression that wires
+        ``currentChanged`` on the tab widget to ``_build_reminders_tab``
+        would double the file I/O without anyone noticing; this spy
+        catches it.
+        """
+        reminder_store.add(Reminder(name="Solo", start_at=datetime(2099, 1, 1, tzinfo=UTC)))
+
+        call_count = 0
+        real_list_all = reminder_store.list_all
+
+        def _counting_list_all() -> list[Reminder]:
+            nonlocal call_count
+            call_count += 1
+            return real_list_all()
+
+        reminder_store.list_all = _counting_list_all  # type: ignore[method-assign]
+
+        d = SettingsDialog(
+            settings=settings,
+            voice=voice,  # type: ignore[arg-type]
+            reminder_store=reminder_store,
+        )
+        qtbot.addWidget(d)
+
+        assert call_count == 1
+
+        # Switch tabs (Scheduling → Reminders → Lifecycle → Reminders) —
+        # the count must NOT increment.
+        d._tabs.setCurrentIndex(0)
+        d._tabs.setCurrentIndex(3)
+        d._tabs.setCurrentIndex(2)
+        d._tabs.setCurrentIndex(3)
+
+        assert call_count == 1
+
+    def test_empty_state_still_renders_button_row(self, dialog: SettingsDialog) -> None:
+        """Even in the empty state, the disabled button row is rendered.
+
+        Tripwire: if a future refactor only adds the button row to the
+        populated branch (so users on an empty store never see them),
+        the user has no way to discover the upcoming Add affordance
+        before S-06 ships. The button row is part of the empty state
+        too — its buttons stay disabled with the tooltip.
+        """
+        assert dialog._reminders_add_button is not None
+        assert dialog._reminders_edit_button is not None
+        assert dialog._reminders_delete_button is not None
+        assert dialog._reminders_add_button.parentWidget() is not None
+
+    def test_dialog_enforces_minimum_width(self, dialog: SettingsDialog) -> None:
+        """The dialog floors its width at ``_DIALOG_MINIMUM_WIDTH``.
+
+        Tripwire surfaced during S-05 manual verification: the
+        Scheduling / Notifications / Lifecycle tabs are dominated by
+        compact widgets (spinboxes, line edits, checkboxes) so without
+        an explicit floor the dialog sizes itself to ~360 px and the
+        Reminders tab's ``QListWidget`` rows horizontally scroll on a
+        fresh open. The floor is intentionally a *minimum*, not a
+        fixed size — users can still resize the dialog larger.
+        """
+        assert dialog.minimumWidth() >= _DIALOG_MINIMUM_WIDTH

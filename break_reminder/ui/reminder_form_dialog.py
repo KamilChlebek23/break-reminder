@@ -1,11 +1,12 @@
-"""Add Reminder form dialog (FR-011 / S-06 / S-06b).
+"""Add / Edit Reminder form dialog (FR-011 / FR-012 / S-06 / S-06b / S-07).
 
-Modal sub-dialog launched from the Reminders tab's Add button. Collects a
-name, future date/time, and a 0-60 minute lead time, validates all three,
-persists a one-shot ``Reminder`` via the injected ``ReminderStore``, and
-arms the running session via the injected ``ReminderScheduler``. Emits
-``reminder_added`` on success so ``SettingsDialog`` can rebuild the
-Reminders tab in place.
+Modal sub-dialog launched from the Reminders tab's Add / Edit buttons.
+Collects a name, future date/time, and a 0-60 minute lead time, validates
+all three, persists a one-shot ``Reminder`` via the injected
+``ReminderStore``, and arms the running session via the injected
+``ReminderScheduler``. Emits ``reminder_added`` (Add mode) or
+``reminder_updated`` (Edit mode) on success so ``SettingsDialog`` can
+rebuild the Reminders tab in place.
 
 S-06b note: when ``lead_minutes > 0``, the datetime widget is the
 **event time** and the saved ``start_at`` is ``event_at - lead_minutes``.
@@ -14,32 +15,57 @@ to S-06 (datetime widget IS the firing time). Storage Model A: lead is
 round-trip metadata on ``Reminder`` and the scheduler still arms on
 ``start_at`` — no scheduler change was required.
 
-Design notes for future Stream B slices:
+S-07 dual-mode design:
 
-- The form is **generic by name** so S-07's Edit dialog can reuse the
-  same class with a pre-populated ``Reminder`` argument. The module is
-  ``reminder_form_dialog`` (not ``add_reminder_dialog``) precisely so
-  that reuse doesn't require a file rename or a sibling clone. S-07
-  can reconstruct ``event_at`` from a loaded ``Reminder`` via
-  ``start_at + timedelta(minutes=lead_minutes)``.
+- The constructor takes an optional ``reminder: Reminder | None = None``
+  parameter. When ``None`` (the default), the dialog is in **Add mode**
+  — fields seed from defaults, title reads "Add Reminder", save calls
+  ``store.add()``, and ``reminder_added`` fires. When a ``Reminder`` is
+  provided, the dialog is in **Edit mode** — fields pre-fill from it,
+  title reads "Edit Reminder", save calls ``store.update()`` preserving
+  the loaded ``id``, and ``reminder_updated`` fires. Both flows route
+  through the same ``accept()``; the mode is checked at the four points
+  that diverge (title, pre-fill, save path, signal).
+- The past-time gate has an **Edit-mode skip**: when the user hasn't
+  moved the firing time (``start_at_utc == self._editing.start_at``),
+  the gate is bypassed so renaming or re-leading an already-expired
+  reminder doesn't require also rescheduling it. Both halves are pinned
+  by ``tests/test_reminder_form_dialog.py``:
+  ``test_edit_mode_unchanged_firing_time_skips_past_time_gate`` (skip
+  path) and ``test_edit_mode_changed_datetime_to_past_blocks_save`` /
+  ``test_edit_mode_changed_lead_into_past_blocks_save`` (apply path).
+
+Design notes:
+
+- The form is **generic by name** so the Edit dialog reuses the same
+  class with a pre-populated ``Reminder`` argument (the module is
+  ``reminder_form_dialog`` — not ``add_reminder_dialog`` — precisely
+  so that reuse doesn't require a file rename or a sibling clone).
+  S-07 cashes this contract in. Edit mode reconstructs the event time
+  for the widget as ``start_at + timedelta(minutes=lead_minutes)``.
 - The dialog reads ``self._clock()`` exactly once at construction to
-  seed the date/time field's default value. The clock returns
-  tz-aware UTC; the widget displays naive local. See ``__init__``'s
-  default-seeding flow for the explicit UTC → local → +1h → round-up
-  → strip-tzinfo conversion.
+  seed the date/time field's default value (Add mode only — Edit mode
+  uses the loaded ``Reminder``'s event time instead). The clock returns
+  tz-aware UTC; the widget displays naive local. See
+  ``_compute_default_datetime`` for the explicit UTC → local → +1h →
+  round-up → strip-tzinfo conversion.
 - ``accept()`` order is load-bearing: validate name → validate datetime
-  (with lead-aware tooltip wording) → construct Reminder → store.add
-  (with ``OSError`` gate) → scheduler.reload → emit ``reminder_added``
-  → super().accept(). The emit-before-super-accept ordering matters
-  because connected slots on ``reminder_added`` need to see the dialog
-  as still-open (``result`` still ``Rejected``) — running them after
-  ``exec()`` has returned is too late since the dialog may already be
-  slated for destruction.
+  (with lead-aware tooltip wording and Edit-mode skip) → construct
+  Reminder (preserving the loaded ``id`` in Edit mode) → ``store.add()``
+  or ``store.update()`` (with ``OSError`` gate) → scheduler.reload →
+  emit ``reminder_added`` or ``reminder_updated`` → super().accept().
+  The emit-before-super-accept ordering matters because connected slots
+  need to see the dialog as still-open (``result`` still ``Rejected``)
+  — running them after ``exec()`` has returned is too late since the
+  dialog may already be slated for destruction.
 - Validation uses the same ``QToolTip.showText`` anchored-to-field
   pattern the ``SettingsDialog`` voice-phrase gate uses
   (``ui/settings_dialog.py`` ``accept()``). Do **not** introduce
   ``QMessageBox`` here — the codebase has no validation ``QMessageBox``
   precedents and the tooltip pattern is the established convention.
+  ``QMessageBox`` IS used by the Delete confirm (one level up in
+  ``SettingsDialog._on_reminders_delete_clicked``); that's a
+  **confirmation** for a destructive action, not validation.
 """
 
 from __future__ import annotations
@@ -47,7 +73,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from PySide6.QtCore import QDate, QDateTime, Qt, QTime, Signal
 from PySide6.QtWidgets import (
@@ -202,28 +228,46 @@ def _round_up_to_minutes(local_dt: datetime, granularity_minutes: int) -> dateti
 
 
 class ReminderFormDialog(QDialog):
-    """Modal sub-dialog for adding a one-shot custom reminder (FR-011).
+    """Modal sub-dialog for adding or editing a one-shot custom reminder.
 
-    Constructed by ``SettingsDialog._on_reminders_add_clicked`` with the
-    app's injected ``ReminderStore`` and ``ReminderScheduler``. Emits
-    ``reminder_added`` with the persisted ``Reminder`` on a successful
-    save; the connected slot is responsible for refreshing the
-    Reminders tab.
+    Constructed by ``SettingsDialog._on_reminders_add_clicked`` (Add
+    mode) or ``SettingsDialog._on_reminders_edit_clicked`` (Edit mode)
+    with the app's injected ``ReminderStore`` and ``ReminderScheduler``.
+    Emits ``reminder_added`` (Add) or ``reminder_updated`` (Edit) with
+    the persisted ``Reminder`` on a successful save; the connected slot
+    is responsible for refreshing the Reminders tab.
+
+    Mode is determined by the optional ``reminder`` constructor
+    parameter: ``None`` → Add mode (fresh entry, auto-generated ``id``),
+    a ``Reminder`` → Edit mode (pre-filled, save preserves the loaded
+    ``id``).
 
     The dialog deliberately uses ``QDialog.exec()`` (not ``show()``) so
     the caller blocks on the user's OK/Cancel choice — this is the
     first modal sub-dialog launched from inside another dialog in the
-    codebase, establishing the convention S-07 will reuse for Edit.
+    codebase, established by S-06 and extended by S-07.
     """
 
-    # Emitted from ``accept()`` immediately BEFORE ``super().accept()``.
-    # Connected slots run synchronously while the dialog is still "open"
-    # (``result()`` still ``Rejected``); only after every slot has
-    # returned does ``super().accept()`` flip the result and let
-    # ``exec()`` return. The emit-before-super-accept order is pinned
-    # by a unit test — see ``tests/test_reminder_form_dialog.py``
+    # Emitted from ``accept()`` immediately BEFORE ``super().accept()``
+    # in **Add mode** (``self._editing is None``). Connected slots run
+    # synchronously while the dialog is still "open" (``result()`` still
+    # ``Rejected``); only after every slot has returned does
+    # ``super().accept()`` flip the result and let ``exec()`` return.
+    # The emit-before-super-accept order is pinned by a unit test —
+    # see ``tests/test_reminder_form_dialog.py``
     # ``test_save_emits_reminder_added_before_super_accept``.
     reminder_added = Signal(Reminder)
+
+    # Emitted from ``accept()`` immediately BEFORE ``super().accept()``
+    # in **Edit mode** (``self._editing is not None``). Mirrors
+    # ``reminder_added`` in shape and ordering; pinned by
+    # ``test_edit_mode_save_emits_reminder_updated`` and
+    # ``test_edit_mode_emit_before_super_accept_ordering``. Kept as a
+    # **separate** signal (rather than overloading ``reminder_added``)
+    # so the existing Add-mode test surface stays bit-for-bit valid
+    # and the signal name documents which mode ran — useful for any
+    # future event-log integration.
+    reminder_updated = Signal(Reminder)
 
     def __init__(
         self,
@@ -231,9 +275,10 @@ class ReminderFormDialog(QDialog):
         store: ReminderStore,
         scheduler: ReminderScheduler,
         clock: Callable[[], datetime] | None = None,
+        reminder: Reminder | None = None,
         parent: QWidget | None = None,
     ) -> None:
-        """Build the dialog and seed the date/time field.
+        """Build the dialog and either seed defaults (Add) or pre-fill (Edit).
 
         Args:
             store: ``ReminderStore`` the form persists into on save.
@@ -243,10 +288,19 @@ class ReminderFormDialog(QDialog):
                 running session against the freshly-saved reminder.
                 Required for the same reason as ``store``.
             clock: Optional injectable clock for the default-value
-                seeding. Returns tz-aware UTC. Defaults to the
-                module-level ``_utcnow``. Tests inject a frozen clock
-                so default-value assertions are stable regardless of
-                wall-clock or CI-runner timezone.
+                seeding (Add mode) and the past-time gate (both modes).
+                Returns tz-aware UTC. Defaults to the module-level
+                ``_utcnow``. Tests inject a frozen clock so default-value
+                assertions are stable regardless of wall-clock or
+                CI-runner timezone.
+            reminder: Optional existing reminder to load. ``None``
+                (default) means **Add mode** — fields seed from
+                defaults, save calls ``store.add()``, emits
+                ``reminder_added``, title reads "Add Reminder". A
+                ``Reminder`` instance means **Edit mode** — fields
+                pre-fill from it, save calls ``store.update()``
+                preserving the loaded ``id``, emits ``reminder_updated``,
+                title reads "Edit Reminder".
             parent: Optional Qt parent. Typically the ``SettingsDialog``
                 that opened this form so closing Settings disposes the
                 sub-dialog cleanly.
@@ -255,8 +309,13 @@ class ReminderFormDialog(QDialog):
         self._store = store
         self._scheduler = scheduler
         self._clock = clock or _utcnow
+        # ``self._editing`` is the single source of truth for "which
+        # mode are we in?" — checked at the four divergence points
+        # (title, pre-fill, save path, signal). The stored Reminder
+        # also carries the ``id`` we must preserve on update.
+        self._editing: Reminder | None = reminder
 
-        self.setWindowTitle("Add Reminder")
+        self.setWindowTitle("Edit Reminder" if self._editing is not None else "Add Reminder")
         # Stays on top of the parent SettingsDialog. The popup is modal
         # via ``exec()``; ``WindowStaysOnTopHint`` ensures it doesn't
         # slide behind a focus-stealing window the OS pops up
@@ -269,7 +328,6 @@ class ReminderFormDialog(QDialog):
         self._datetime_field = QDateTimeEdit(self)
         self._datetime_field.setCalendarPopup(True)
         self._datetime_field.setDisplayFormat(_DATETIME_DISPLAY_FORMAT)
-        self._datetime_field.setDateTime(self._compute_default_datetime())
 
         # S-06b lead-time spinbox. When ``value() > 0``, ``accept()``
         # treats the datetime widget as the event time and saves
@@ -278,7 +336,26 @@ class ReminderFormDialog(QDialog):
         self._lead_minutes_field.setRange(_LEAD_MIN_VALUE, _LEAD_MAX_VALUE)
         self._lead_minutes_field.setSingleStep(1)
         self._lead_minutes_field.setSuffix(_LEAD_SUFFIX)
-        self._lead_minutes_field.setValue(_LEAD_DEFAULT)
+
+        if self._editing is not None:
+            # Edit mode: pre-fill from the loaded reminder. The
+            # datetime widget shows the **event time** (firing instant
+            # + lead), matching the user's mental model — same
+            # convention the Reminders list uses in ``_compose_row``.
+            # The UTC → local → naive conversion is the inverse of
+            # the save path's local → UTC dance; ``.astimezone()`` on
+            # a tz-aware value is well-defined across Python versions
+            # so the one-liner is safe.
+            self._name_field.setText(self._editing.name)
+            self._lead_minutes_field.setValue(self._editing.lead_minutes)
+            event_at_utc = self._editing.start_at + timedelta(minutes=self._editing.lead_minutes)
+            naive_local = event_at_utc.astimezone().replace(tzinfo=None)
+            self._datetime_field.setDateTime(_qdatetime_from_naive_local(naive_local))
+        else:
+            # Add mode: defaults (empty name, +1h-rounded datetime,
+            # lead=0).
+            self._datetime_field.setDateTime(self._compute_default_datetime())
+            self._lead_minutes_field.setValue(_LEAD_DEFAULT)
 
         form = QFormLayout()
         form.addRow("Name:", self._name_field)
@@ -349,21 +426,29 @@ class ReminderFormDialog(QDialog):
            "Event must be in the future", non-zero-lead reads
            "Event must be at least N minutes in the future" (so the
            user can decide whether to push the event later or trim the
-           lead).
+           lead). **Edit-mode skip**: when the user hasn't moved the
+           firing time (``start_at_utc == self._editing.start_at``),
+           the gate is bypassed so renaming or re-leading an already-
+           expired reminder doesn't require also rescheduling it.
         3. **Construct Reminder.** One-shot encoding: ``rrule_str=None``,
-           ``end_at=None``, ``id`` auto-generated. ``start_at`` is the
-           tz-aware UTC firing instant; ``lead_minutes`` is recorded as
-           round-trip metadata so S-07's Edit dialog can reconstruct
-           the event time as ``start_at + timedelta(lead_minutes)``.
-        4. **Persist.** ``store.add()`` is atomic; the only error we
-           guard is ``OSError`` (permission denied / disk full). On
-           failure: tooltip anchored to OK button, early return, no
-           scheduler reload, no signal emit, no super().accept().
+           ``end_at=None``. In Add mode ``id`` is auto-generated; in
+           Edit mode ``id`` is preserved from ``self._editing.id`` so
+           ``store.update()`` finds the existing row. ``start_at`` is
+           the tz-aware UTC firing instant; ``lead_minutes`` is round-
+           trip metadata so the Edit dialog can reconstruct the event
+           time as ``start_at + timedelta(lead_minutes)``.
+        4. **Persist.** Add mode calls ``store.add()``, Edit mode calls
+           ``store.update()``. Both are atomic; the only error we guard
+           is ``OSError`` (permission denied / disk full). On failure:
+           tooltip anchored to OK button, early return, no scheduler
+           reload, no signal emit, no super().accept().
         5. **Arm.** ``scheduler.reload()`` recomputes the next firing
-           and rearms the single-shot timer. The roadmap flags this
-           call as the S-06 risk surface — without it, the reminder
-           sits on disk but never fires in the running session.
-        6. **Emit.** ``self.reminder_added.emit(reminder)`` runs
+           and rearms the single-shot timer. Without it, the reminder
+           sits on disk but the running session doesn't see the change.
+           Edit mode arms against the (possibly retimed) reminder; Add
+           mode arms against the new entry.
+        6. **Emit.** ``self.reminder_added.emit(reminder)`` (Add) or
+           ``self.reminder_updated.emit(reminder)`` (Edit) runs
            connected slots synchronously. They see ``self.result() ==
            Rejected`` because ``super().accept()`` hasn't fired yet.
         7. **Close.** ``super().accept()`` flips ``result`` to
@@ -377,22 +462,35 @@ class ReminderFormDialog(QDialog):
 
         # 2. Datetime validation (compare in UTC; widget gives naive local)
         # ``.toPython()`` returns a Python ``datetime`` at runtime but
-        # the PySide6 stubs type it as ``object`` — narrow explicitly.
-        naive_local_raw = self._datetime_field.dateTime().toPython()
-        assert isinstance(naive_local_raw, datetime), (
-            "QDateTimeEdit.dateTime().toPython() must return a datetime "
-            "(PySide6 stub typing is broader than the runtime contract)"
-        )
-        naive_local = naive_local_raw
-        # ``datetime.now().astimezone().tzinfo`` captures the system
-        # local zone as a ``tzinfo`` object. Attaching it via
-        # ``.replace`` makes the previously-naive value aware in the
-        # user's local zone; ``.astimezone(UTC)`` then converts.
-        local_tz = datetime.now().astimezone().tzinfo
-        event_at_utc = naive_local.replace(tzinfo=local_tz).astimezone(UTC)
+        # the PySide6 stubs type it as ``object``. Use ``typing.cast``
+        # for static narrowing — the runtime contract is documented by
+        # PySide6 and an ``assert isinstance`` here would be stripped
+        # under ``python -O`` while adding zero value at runtime
+        # (retrospective impl-review F5).
+        naive_local = cast(datetime, self._datetime_field.dateTime().toPython())
+        # ``naive_local.astimezone(UTC)`` interprets the naive value as
+        # system-local wall-clock and converts to UTC. Per the Python
+        # 3.6+ contract, ``astimezone`` on a naive datetime uses the
+        # local zone's offset for **that** wall-clock value — which
+        # means DST is correct on a per-instant basis. The previous
+        # idiom (``datetime.now().astimezone().tzinfo`` + ``.replace``)
+        # captured NOW's offset and reapplied it to ``naive_local``;
+        # in a DST-spanning Edit (load a January reminder in July,
+        # change only the name, save) that produced a wrong UTC and
+        # broke the Edit-mode skip equality. See impl-review F3.
+        event_at_utc = naive_local.astimezone(UTC)
         lead_minutes = self._lead_minutes_field.value()
         start_at_utc = event_at_utc - timedelta(minutes=lead_minutes)
-        if start_at_utc <= self._clock():
+        # Edit-mode skip: when the firing time hasn't moved from the
+        # loaded reminder, the past-time gate is bypassed. The
+        # comparison is on tz-aware UTC datetimes so DST / zone
+        # transitions don't matter — equality at the UTC level means
+        # the firing instant is unchanged regardless of how the user
+        # composed the (event_at, lead) inputs.
+        firing_unchanged_in_edit = (
+            self._editing is not None and start_at_utc == self._editing.start_at
+        )
+        if start_at_utc <= self._clock() and not firing_unchanged_in_edit:
             message = (
                 _format_past_time_with_lead(lead_minutes)
                 if lead_minutes > 0
@@ -401,18 +499,36 @@ class ReminderFormDialog(QDialog):
             self._show_tooltip(self._datetime_field, message)
             return
 
-        # 3. Construct one-shot reminder
-        reminder = Reminder(
-            name=stripped_name,
-            start_at=start_at_utc,
-            lead_minutes=lead_minutes,
-        )
+        # 3. Construct one-shot reminder. In Edit mode pass the loaded
+        # ``id`` explicitly so ``store.update()`` finds the existing
+        # row; in Add mode the dataclass default-factory generates a
+        # fresh UUID.
+        if self._editing is not None:
+            reminder = Reminder(
+                id=self._editing.id,
+                name=stripped_name,
+                start_at=start_at_utc,
+                lead_minutes=lead_minutes,
+            )
+        else:
+            reminder = Reminder(
+                name=stripped_name,
+                start_at=start_at_utc,
+                lead_minutes=lead_minutes,
+            )
 
-        # 4. Persist (atomic; only OSError needs guarding)
+        # 4. Persist (atomic; only OSError needs guarding). Dispatch
+        # by mode: Edit → update, Add → add.
         try:
-            self._store.add(reminder)
+            if self._editing is not None:
+                self._store.update(reminder)
+            else:
+                self._store.add(reminder)
         except OSError as exc:
-            logger.exception("ReminderStore.add failed")
+            logger.exception(
+                "ReminderStore.%s failed",
+                "update" if self._editing is not None else "add",
+            )
             ok_button = self._buttons.button(QDialogButtonBox.StandardButton.Ok)
             anchor_widget = ok_button if ok_button is not None else self._datetime_field
             self._show_tooltip(
@@ -425,9 +541,13 @@ class ReminderFormDialog(QDialog):
         self._scheduler.reload()
 
         # 6. Emit BEFORE super().accept() so connected slots see the
-        #    dialog as still-open (result == Rejected). Pinned by test
-        #    ``test_save_emits_reminder_added_before_super_accept``.
-        self.reminder_added.emit(reminder)
+        #    dialog as still-open (result == Rejected). Pinned by
+        #    ``test_save_emits_reminder_added_before_super_accept`` (Add)
+        #    and ``test_edit_mode_emit_before_super_accept_ordering`` (Edit).
+        if self._editing is not None:
+            self.reminder_updated.emit(reminder)
+        else:
+            self.reminder_added.emit(reminder)
 
         # 7. Close
         super().accept()

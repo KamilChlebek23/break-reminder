@@ -36,7 +36,7 @@ BreakReminder is a Windows 11 tray-resident utility for focus-minded solo progra
 | S-05 | reminders-list-view | see existing custom reminders in the settings dialog | S-01 | FR-005, FR-012 | done |
 | S-06 | reminders-add-form | add a one-shot custom reminder with a name and a date/time | S-05 | FR-011, FR-013 | done |
 | S-06b | reminders-lead-time | configure a reminder to fire N minutes (0-60) before the event | S-06 | FR-011, FR-013 | done |
-| S-07 | reminders-edit-delete | edit and delete custom reminders in the list | S-06 | FR-012 | proposed |
+| S-07 | reminders-edit-delete | edit and delete custom reminders in the list | S-06 | FR-012 | done |
 | S-08 | reminders-recurrence-editor | configure a custom reminder to recur daily / weekly / monthly | S-06 | FR-014 | proposed |
 
 ## Streams
@@ -180,7 +180,7 @@ The PRD must-have FRs and user stories below are **already shipped in v0.1.0** a
 - **Blockers:** —
 - **Unknowns:** —
 - **Risk:** low. The CRUD-edit and CRUD-delete code paths in `storage/reminders.py` already exist; this slice only adds UI affordances and the re-arm signal-flow.
-- **Status:** proposed
+- **Status:** done
 
 ### S-08: reminders-recurrence-editor
 
@@ -205,7 +205,7 @@ The PRD must-have FRs and user stories below are **already shipped in v0.1.0** a
 | S-05 | `reminders-list-view` | Reminders tab with read-only list bound to reminders.json | yes | Planned + shipped 2026-05-27 |
 | S-06 | `reminders-add-form` | Add a one-shot custom reminder via sub-dialog | yes | Planned + shipped 2026-05-27 |
 | S-06b | `reminders-lead-time` | Add "notify N min before event" lead-time spinbox to the add form | yes | Planned + shipped 2026-05-27 |
-| S-07 | `reminders-edit-delete` | Edit and delete entries in the reminders list | no | Run after S-06 |
+| S-07 | `reminders-edit-delete` | Edit and delete entries in the reminders list | yes | Planned + shipped 2026-05-27 |
 | S-08 | `reminders-recurrence-editor` | Daily / weekly / monthly recurrence in the add/edit dialog | no | Run after S-06 |
 
 ## Open Roadmap Questions
@@ -237,3 +237,5 @@ The PRD must-have FRs and user stories below are **already shipped in v0.1.0** a
 - **S-03: user opens settings, edits "Snooze duration (minutes)" (range 1–30) and "Max snoozes per cycle" (range 0–5), saves; the next break dialog respects the new values. Scope addendum shipped: the tray-icon tooltip now flips to `BreakReminder — snooze time left Xm YYs` while a snooze window is open (paused still wins).** — Archived 2026-05-27 → `context/archive/2026-05-26-settings-snooze-config/`. Lesson: cross-tab invariants (e.g., the atomic-save tripwire established by S-04's voice validation gate) belong in the plan's test contract for any slice that adds new persisted writes to `SettingsDialog.accept()`, and when mirroring a precedent test class enumerate ALL failure classes (out-of-range / boundary / clamp-high / clamp-low / unparseable) rather than just the obvious ones — both gaps caught at impl-review with no production impact (see retrospective plan-review F1 + F2).
 - **S-04: user opens settings, ticks "Enable voice notification", optionally edits the spoken phrase, saves; voice now plays alongside the popup on the next break event.** — Archived 2026-05-27 → `context/archive/2026-05-25-settings-voice-toggle/`. Lesson: —.
 - **S-06b: the Add Reminder form gains a "Notify (minutes before event):" `QSpinBox` (0-60, step 1, default 0). When the user sets a non-zero value, the datetime field is interpreted as the event time and the form computes `start_at = event_at - lead_minutes` at save; when the value is 0 (the default), behavior is identical to S-06. The Reminders list row shows the event time + "(fires N min before)" suffix when `lead_minutes > 0`; existing rows render unchanged.** — Archived 2026-05-27 → `context/archive/2026-05-27-reminders-lead-time/`. Lesson: storage layers reading hand-editable files (FR-015) should coerce-and-clamp at the `from_dict` boundary rather than trust the type — silent crashes inside downstream `timedelta(...)` / arithmetic are otherwise the failure mode; user-facing format strings with embedded counts must handle the `n == 1` singular case at parity-switch time, not assume plural, with a regression test pinning the singular branch; and mid-phase scope additions (here: popup body text re-scope from "This is a scheduled reminder." → "Time of event is <ddd HH:mm>") belong as struck-through "What We're NOT Doing" entries with an explicit scope-addendum note rather than silent re-scopes — integrating the change in the same Phase 1 keeps the commit boundary intact (see impl-review F2 + F4 and the Phase 1 scope addendum).
+- **S-06: user clicks "Add" in the list view, a sub-dialog opens with "Name" + "Date/time" fields, "Save" persists to `reminders.json` and the list refreshes; at the saved date/time, the existing `reminder_dialog.py` fires as a dismissable popup. No recurrence yet.** — Archived 2026-05-27 → `context/archive/2026-05-27-reminders-add-form/`. Lesson: —.
+- **S-07: user clicks an existing reminder in the list and either "Edit" (opens the same dialog as S-06 pre-filled) or "Delete" (with a confirm); changes/removals are persisted to `reminders.json` and the running scheduler re-arms accordingly.** — Archived 2026-05-27 → `context/archive/2026-05-27-reminders-edit-delete/`. Lesson: —.

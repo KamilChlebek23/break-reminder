@@ -18,7 +18,7 @@ import json
 import threading
 import uuid
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from break_reminder.storage.paths import reminders_json_path
@@ -72,9 +72,60 @@ def _coerce_lead_minutes(raw: object) -> int:
     return coerced
 
 
+def _coerce_aware_utc(value: datetime | None) -> datetime | None:
+    """Coerce a datetime to tz-aware UTC, treating naive input as UTC.
+
+    The on-disk format always writes ``+00:00`` suffixes (every code
+    path constructs tz-aware UTC values before serializing), but FR-015
+    documents ``reminders.json`` as user-editable in Notepad. A
+    well-intentioned hand-edit that drops the timezone suffix
+    (``"2026-06-01T09:00:00"`` instead of ``"...+00:00"``) used to load
+    as a tz-naive ``datetime`` and crash downstream comparisons —
+    notably the S-07 Edit-mode past-time skip predicate
+    (``start_at_utc == self._editing.start_at``) which would raise
+    ``TypeError: can't compare offset-naive and offset-aware datetimes``.
+
+    Coercion (rather than rejection) is the chosen response because it
+    mirrors the existing ``_coerce_lead_minutes`` self-healing pattern
+    — the storage layer treats disk input as potentially-hostile and
+    quietly normalizes rather than refusing to load. Naive values are
+    assumed to be UTC; that matches what our own code paths produce
+    and is the only stable interpretation (we don't know the
+    hand-editor's intent).
+
+    Args:
+        value: A ``datetime`` from ``datetime.fromisoformat`` (already
+            UTC-aware if the input string had a ``+00:00`` suffix;
+            tz-naive otherwise) or ``None`` for optional fields like
+            ``end_at``.
+
+    Returns:
+        ``None`` when ``value`` is ``None``; the same datetime when it
+        was already tz-aware; otherwise the datetime with ``tzinfo=UTC``
+        attached (interpreting the wall-clock as UTC).
+    """
+    if value is None:
+        return None
+    if value.tzinfo is not None:
+        return value
+    return value.replace(tzinfo=UTC)
+
+
 @dataclass
 class Reminder:
-    """A user-created custom reminder (FR-011)."""
+    """A user-created custom reminder (FR-011).
+
+    Invariant: ``start_at`` and ``end_at`` (when set) are always
+    **tz-aware UTC** ``datetime`` instances. Every constructing code
+    path — ``ReminderFormDialog.accept``, the scheduler's recurrence
+    math, and the storage layer's ``from_dict`` — produces tz-aware
+    UTC values. Downstream consumers (especially the Edit-mode
+    past-time skip predicate in ``ReminderFormDialog``) rely on this
+    so that ``start_at_utc == self._editing.start_at`` is a valid
+    comparison rather than a ``TypeError`` source. Hand-edits to
+    ``reminders.json`` that drop the ``+00:00`` suffix are normalized
+    back to UTC-aware via ``_coerce_aware_utc`` at load time.
+    """
 
     name: str
     start_at: datetime
@@ -110,12 +161,20 @@ class Reminder:
         Returns:
             A populated ``Reminder`` instance.
         """
+        start_at = _coerce_aware_utc(datetime.fromisoformat(data["start_at"]))
+        # ``_coerce_aware_utc`` returns ``None`` only for ``None`` input;
+        # ``start_at`` is never optional, so narrow the type for callers.
+        assert start_at is not None, "start_at must not be None after coercion"
         return cls(
             id=data["id"],
             name=data["name"],
-            start_at=datetime.fromisoformat(data["start_at"]),
+            start_at=start_at,
             rrule_str=data.get("rrule_str"),
-            end_at=datetime.fromisoformat(data["end_at"]) if data.get("end_at") else None,
+            end_at=(
+                _coerce_aware_utc(datetime.fromisoformat(data["end_at"]))
+                if data.get("end_at")
+                else None
+            ),
             lead_minutes=_coerce_lead_minutes(data.get("lead_minutes", 0)),
         )
 

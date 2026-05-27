@@ -127,6 +127,28 @@ class TestClockInjection:
         # depends on Qt's internal clock resolution.
         assert 0 < scheduler._timer.remainingTime() <= 5 * 60 * 1000 + 1
 
+    def test_reload_caps_timer_at_24h_for_far_future_reminder(
+        self, scheduler: ReminderScheduler, store: ReminderStore, clock: Clock
+    ) -> None:
+        """Reminders >24h out arm the ``QTimer`` at the 24h cap (86_400_000 ms).
+
+        Retrospective impl-review F1: pins the daily-wakeup ceiling that
+        ``reload()`` enforces at ``scheduler.py`` (``min(ms, 24*60*60*1000)``).
+        Without this assertion, a future change that dropped the cap (e.g.
+        passing the full delta to ``QTimer.start`` for a reminder 30 days
+        out) would not fail any test — ``QTimer.start`` has a ~24.8-day
+        32-bit-ms ceiling, so an uncapped delta could either silently
+        overflow on 32-bit platforms or skip the daily integrity-check
+        rearm branch entirely on 64-bit.
+        """
+        far_future = clock() + timedelta(days=30)
+        store.add(Reminder(name="far", start_at=far_future))
+
+        scheduler.reload()
+
+        assert scheduler._timer.isActive()
+        assert scheduler._timer.interval() == 24 * 60 * 60 * 1000
+
     def test_compute_next_picks_soonest_future(
         self, scheduler: ReminderScheduler, store: ReminderStore, clock: Clock
     ) -> None:

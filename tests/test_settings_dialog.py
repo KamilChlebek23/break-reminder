@@ -22,6 +22,7 @@ from pathlib import Path
 import pytest
 from PySide6.QtWidgets import (
     QCheckBox,
+    QDialog,
     QLineEdit,
     QPushButton,
     QSpinBox,
@@ -109,12 +110,38 @@ def reminder_store(reminders_path: Path) -> ReminderStore:
     return ReminderStore(path=reminders_path)
 
 
+class StubReminderScheduler:
+    """Counting ``ReminderScheduler`` stand-in for the dialog tests.
+
+    The settings-dialog tests don't exercise scheduler firing math
+    (``tests/test_reminder_scheduler.py`` covers that). We only need to
+    prove the dialog wires the scheduler into the Add sub-dialog so the
+    sub-dialog can call ``reload``. Stub keeps the suite free of real
+    ``QTimer`` arming for every dialog construction.
+    """
+
+    def __init__(self) -> None:
+        """Initialize the stub with a zero reload count."""
+        self.reload_calls = 0
+
+    def reload(self) -> None:
+        """Record one ``reload`` invocation by incrementing ``reload_calls``."""
+        self.reload_calls += 1
+
+
+@pytest.fixture
+def reminder_scheduler() -> StubReminderScheduler:
+    """A ``StubReminderScheduler`` injected into every ``SettingsDialog`` build."""
+    return StubReminderScheduler()
+
+
 @pytest.fixture
 def dialog(
     qtbot,
     settings: Settings,
     voice: StubVoiceNotifier,
     reminder_store: ReminderStore,
+    reminder_scheduler: StubReminderScheduler,
 ) -> SettingsDialog:
     """A ``SettingsDialog`` wired against the per-test fixtures.
 
@@ -126,6 +153,7 @@ def dialog(
         settings=settings,
         voice=voice,  # type: ignore[arg-type]
         reminder_store=reminder_store,
+        reminder_scheduler=reminder_scheduler,  # type: ignore[arg-type]
     )
     qtbot.addWidget(d)
     return d
@@ -146,7 +174,11 @@ class TestLoad:
         assert dialog._break_interval_spinbox.value() == DEFAULT_BREAK_INTERVAL_MIN
 
     def test_spinbox_initial_value_reflects_pre_set_value(
-        self, qtbot, ini_path: Path, reminder_store: ReminderStore
+        self,
+        qtbot,
+        ini_path: Path,
+        reminder_store: ReminderStore,
+        reminder_scheduler: StubReminderScheduler,
     ) -> None:
         """Spinbox shows whatever ``Settings.break_interval_min`` already holds."""
         pre_set = Settings(ini_path=ini_path)
@@ -157,6 +189,7 @@ class TestLoad:
             settings=Settings(ini_path=ini_path),
             voice=StubVoiceNotifier(),  # type: ignore[arg-type]
             reminder_store=reminder_store,
+            reminder_scheduler=reminder_scheduler,  # type: ignore[arg-type]
         )
         qtbot.addWidget(d)
 
@@ -257,7 +290,11 @@ class TestSave:
         assert settings.break_interval_min == 30
 
     def test_accept_persists_across_settings_instances(
-        self, qtbot, ini_path: Path, reminder_store: ReminderStore
+        self,
+        qtbot,
+        ini_path: Path,
+        reminder_store: ReminderStore,
+        reminder_scheduler: StubReminderScheduler,
     ) -> None:
         """A persisted value is observable from a freshly constructed ``Settings``."""
         first_settings = Settings(ini_path=ini_path)
@@ -265,6 +302,7 @@ class TestSave:
             settings=first_settings,
             voice=StubVoiceNotifier(),  # type: ignore[arg-type]
             reminder_store=reminder_store,
+            reminder_scheduler=reminder_scheduler,  # type: ignore[arg-type]
         )
         qtbot.addWidget(d)
         d._break_interval_spinbox.setValue(90)
@@ -282,6 +320,7 @@ class TestSave:
         settings: Settings,
         ini_path: Path,
         reminder_store: ReminderStore,
+        reminder_scheduler: StubReminderScheduler,
     ) -> None:
         """``reject()`` after editing leaves ``Settings.break_interval_min`` unchanged."""
         # Pre-set to a known value so we can observe the absence of writes.
@@ -292,6 +331,7 @@ class TestSave:
             settings=settings,
             voice=StubVoiceNotifier(),  # type: ignore[arg-type]
             reminder_store=reminder_store,
+            reminder_scheduler=reminder_scheduler,  # type: ignore[arg-type]
         )
         qtbot.addWidget(d)
         d._break_interval_spinbox.setValue(15)
@@ -301,7 +341,11 @@ class TestSave:
         assert settings.break_interval_min == 75
 
     def test_reject_does_not_write_to_ini(
-        self, qtbot, ini_path: Path, reminder_store: ReminderStore
+        self,
+        qtbot,
+        ini_path: Path,
+        reminder_store: ReminderStore,
+        reminder_scheduler: StubReminderScheduler,
     ) -> None:
         """``reject()`` on a never-saved dialog does not materialize the INI."""
         # Fresh INI path: the file should not exist, and Cancel must not
@@ -311,6 +355,7 @@ class TestSave:
             settings=s,
             voice=StubVoiceNotifier(),  # type: ignore[arg-type]
             reminder_store=reminder_store,
+            reminder_scheduler=reminder_scheduler,  # type: ignore[arg-type]
         )
         qtbot.addWidget(d)
         d._break_interval_spinbox.setValue(120)
@@ -559,6 +604,7 @@ class TestNotificationsTabLoad:
         ini_path: Path,
         voice: StubVoiceNotifier,
         reminder_store: ReminderStore,
+        reminder_scheduler: StubReminderScheduler,
     ) -> None:
         """The checkbox shows whatever ``Settings.voice_enabled`` already holds."""
         pre_set = Settings(ini_path=ini_path)
@@ -570,6 +616,7 @@ class TestNotificationsTabLoad:
             settings=Settings(ini_path=ini_path),
             voice=voice,  # type: ignore[arg-type]
             reminder_store=reminder_store,
+            reminder_scheduler=reminder_scheduler,  # type: ignore[arg-type]
         )
         qtbot.addWidget(d)
 
@@ -585,6 +632,7 @@ class TestNotificationsTabLoad:
         ini_path: Path,
         voice: StubVoiceNotifier,
         reminder_store: ReminderStore,
+        reminder_scheduler: StubReminderScheduler,
     ) -> None:
         """The phrase field shows whatever ``Settings.voice_phrase`` already holds."""
         pre_set = Settings(ini_path=ini_path)
@@ -596,6 +644,7 @@ class TestNotificationsTabLoad:
             settings=Settings(ini_path=ini_path),
             voice=voice,  # type: ignore[arg-type]
             reminder_store=reminder_store,
+            reminder_scheduler=reminder_scheduler,  # type: ignore[arg-type]
         )
         qtbot.addWidget(d)
 
@@ -661,6 +710,7 @@ class TestNotificationsTabSave:
         ini_path: Path,
         voice: StubVoiceNotifier,
         reminder_store: ReminderStore,
+        reminder_scheduler: StubReminderScheduler,
     ) -> None:
         """Voice settings are observable from a freshly constructed ``Settings``."""
         first_settings = Settings(ini_path=ini_path)
@@ -668,6 +718,7 @@ class TestNotificationsTabSave:
             settings=first_settings,
             voice=voice,  # type: ignore[arg-type]
             reminder_store=reminder_store,
+            reminder_scheduler=reminder_scheduler,  # type: ignore[arg-type]
         )
         qtbot.addWidget(d)
         d._voice_enabled_checkbox.setChecked(True)
@@ -686,6 +737,7 @@ class TestNotificationsTabSave:
         settings: Settings,
         voice: StubVoiceNotifier,
         reminder_store: ReminderStore,
+        reminder_scheduler: StubReminderScheduler,
     ) -> None:
         """``reject()`` after editing voice fields leaves ``Settings`` untouched."""
         # Pre-set known values so absence-of-write is observable.
@@ -697,6 +749,7 @@ class TestNotificationsTabSave:
             settings=settings,
             voice=voice,  # type: ignore[arg-type]
             reminder_store=reminder_store,
+            reminder_scheduler=reminder_scheduler,  # type: ignore[arg-type]
         )
         qtbot.addWidget(d)
         d._voice_enabled_checkbox.setChecked(False)
@@ -1070,6 +1123,7 @@ class TestLifecycleTabLoad:
         ini_path: Path,
         voice: StubVoiceNotifier,
         reminder_store: ReminderStore,
+        reminder_scheduler: StubReminderScheduler,
     ) -> None:
         """The checkbox shows whatever ``Settings.autostart`` already holds."""
         pre_set = Settings(ini_path=ini_path)
@@ -1081,6 +1135,7 @@ class TestLifecycleTabLoad:
             settings=Settings(ini_path=ini_path),
             voice=voice,  # type: ignore[arg-type]
             reminder_store=reminder_store,
+            reminder_scheduler=reminder_scheduler,  # type: ignore[arg-type]
         )
         qtbot.addWidget(d)
 
@@ -1149,6 +1204,7 @@ class TestAutostartTabSave:
         ini_path: Path,
         voice: StubVoiceNotifier,
         reminder_store: ReminderStore,
+        reminder_scheduler: StubReminderScheduler,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Untick + OK → ``_delete_autostart_runkey`` called once; INI flips to False."""
@@ -1163,6 +1219,7 @@ class TestAutostartTabSave:
             settings=s,
             voice=voice,  # type: ignore[arg-type]
             reminder_store=reminder_store,
+            reminder_scheduler=reminder_scheduler,  # type: ignore[arg-type]
         )
         qtbot.addWidget(d)
 
@@ -1181,6 +1238,7 @@ class TestAutostartTabSave:
         ini_path: Path,
         voice: StubVoiceNotifier,
         reminder_store: ReminderStore,
+        reminder_scheduler: StubReminderScheduler,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """Opening with autostart=True and OK without changing the box still re-issues the write.
@@ -1202,6 +1260,7 @@ class TestAutostartTabSave:
             settings=s,
             voice=voice,  # type: ignore[arg-type]
             reminder_store=reminder_store,
+            reminder_scheduler=reminder_scheduler,  # type: ignore[arg-type]
         )
         qtbot.addWidget(d)
         # Sanity: the dialog loaded the True state.
@@ -1725,6 +1784,7 @@ class TestRemindersTab:
         settings: Settings,
         voice: StubVoiceNotifier,
         reminder_store: ReminderStore,
+        reminder_scheduler: StubReminderScheduler,
     ) -> None:
         """Non-empty store → ``QListWidget`` populated; no placeholder."""
         # Seed BEFORE constructing the dialog — the dialog reads
@@ -1737,6 +1797,7 @@ class TestRemindersTab:
             settings=settings,
             voice=voice,  # type: ignore[arg-type]
             reminder_store=reminder_store,
+            reminder_scheduler=reminder_scheduler,  # type: ignore[arg-type]
         )
         qtbot.addWidget(d)
 
@@ -1750,6 +1811,7 @@ class TestRemindersTab:
         settings: Settings,
         voice: StubVoiceNotifier,
         reminder_store: ReminderStore,
+        reminder_scheduler: StubReminderScheduler,
     ) -> None:
         """A one-shot future reminder renders ``"<name>  —  <date>"`` (not ``(expired)``)."""
         reminder_store.add(
@@ -1760,6 +1822,7 @@ class TestRemindersTab:
             settings=settings,
             voice=voice,  # type: ignore[arg-type]
             reminder_store=reminder_store,
+            reminder_scheduler=reminder_scheduler,  # type: ignore[arg-type]
         )
         qtbot.addWidget(d)
 
@@ -1774,6 +1837,7 @@ class TestRemindersTab:
         settings: Settings,
         voice: StubVoiceNotifier,
         reminder_store: ReminderStore,
+        reminder_scheduler: StubReminderScheduler,
     ) -> None:
         """A recurring reminder whose ``start_at`` is past still renders a future firing.
 
@@ -1793,6 +1857,7 @@ class TestRemindersTab:
             settings=settings,
             voice=voice,  # type: ignore[arg-type]
             reminder_store=reminder_store,
+            reminder_scheduler=reminder_scheduler,  # type: ignore[arg-type]
         )
         qtbot.addWidget(d)
 
@@ -1807,6 +1872,7 @@ class TestRemindersTab:
         settings: Settings,
         voice: StubVoiceNotifier,
         reminder_store: ReminderStore,
+        reminder_scheduler: StubReminderScheduler,
     ) -> None:
         """An expired one-shot reminder renders ``"<name>  —  (expired)"``."""
         reminder_store.add(Reminder(name="Expired", start_at=datetime(2000, 1, 1, tzinfo=UTC)))
@@ -1815,6 +1881,7 @@ class TestRemindersTab:
             settings=settings,
             voice=voice,  # type: ignore[arg-type]
             reminder_store=reminder_store,
+            reminder_scheduler=reminder_scheduler,  # type: ignore[arg-type]
         )
         qtbot.addWidget(d)
 
@@ -1828,6 +1895,7 @@ class TestRemindersTab:
         settings: Settings,
         voice: StubVoiceNotifier,
         reminder_store: ReminderStore,
+        reminder_scheduler: StubReminderScheduler,
     ) -> None:
         """Sort order: future ascending → expired last → tiebreak alphabetical.
 
@@ -1851,6 +1919,7 @@ class TestRemindersTab:
             settings=settings,
             voice=voice,  # type: ignore[arg-type]
             reminder_store=reminder_store,
+            reminder_scheduler=reminder_scheduler,  # type: ignore[arg-type]
         )
         qtbot.addWidget(d)
 
@@ -1858,14 +1927,21 @@ class TestRemindersTab:
         names = [d._reminders_list.item(i).text().split("  —  ")[0] for i in range(4)]
         assert names == ["A", "B", "Far", "Zebra"]
 
-    def test_buttons_are_disabled_by_default(self, dialog: SettingsDialog) -> None:
-        """All three buttons start disabled — no row selected, no Add handler."""
-        assert dialog._reminders_add_button.isEnabled() is False
+    def test_edit_and_delete_disabled_by_default(self, dialog: SettingsDialog) -> None:
+        """Edit and Delete start disabled — no row selected (S-07 unblocks).
+
+        Pinned post-S-06 — the Add button is now enabled (covered by
+        ``TestRemindersAddButton`` below); the previous "all three
+        disabled" assertion would fail because Add ships in this slice.
+        Edit and Delete still wait on S-07.
+        """
         assert dialog._reminders_edit_button.isEnabled() is False
         assert dialog._reminders_delete_button.isEnabled() is False
 
-    def test_buttons_tooltip_lives_on_wrapper_not_on_button(self, dialog: SettingsDialog) -> None:
-        """The "coming soon" tooltip lives on the parent ``QWidget`` wrapper.
+    def test_edit_delete_tooltip_lives_on_wrapper_not_on_button(
+        self, dialog: SettingsDialog
+    ) -> None:
+        """The "coming soon" tooltip lives on the wrappers around Edit/Delete only.
 
         Per the Critical Implementation Detail: Qt 6 does not deliver
         hover events to disabled widgets, so a tooltip set on the
@@ -1876,9 +1952,13 @@ class TestRemindersTab:
         Tripwire: if a future refactor removes the wrapper and puts
         the tooltip back on the button, this test fails — the
         wrapper's ``toolTip()`` will be empty.
+
+        Post-S-06 the Add button no longer needs (and does not have) a
+        wrapper because it's enabled and delivers its own hover events.
+        That contract is pinned by
+        ``TestRemindersAddButton.test_add_button_has_no_wrapper_tooltip``.
         """
         for button in (
-            dialog._reminders_add_button,
             dialog._reminders_edit_button,
             dialog._reminders_delete_button,
         ):
@@ -1901,6 +1981,7 @@ class TestRemindersTab:
         settings: Settings,
         voice: StubVoiceNotifier,
         reminder_store: ReminderStore,
+        reminder_scheduler: StubReminderScheduler,
     ) -> None:
         """The ``currentRowChanged`` signal is connected — S-07 will fill the body.
 
@@ -1915,6 +1996,7 @@ class TestRemindersTab:
             settings=settings,
             voice=voice,  # type: ignore[arg-type]
             reminder_store=reminder_store,
+            reminder_scheduler=reminder_scheduler,  # type: ignore[arg-type]
         )
         qtbot.addWidget(d)
 
@@ -1935,19 +2017,31 @@ class TestRemindersTab:
 
         assert call_count >= 1
 
-    def test_list_all_called_exactly_once_across_construction_and_tab_switch(
+    def test_list_all_called_exactly_once_per_build_reminders_tab_invocation(
         self,
         qtbot,
         settings: Settings,
         voice: StubVoiceNotifier,
         reminder_store: ReminderStore,
+        reminder_scheduler: StubReminderScheduler,
     ) -> None:
-        """``list_all`` is called exactly once: at construction, never on tab switch.
+        """``list_all`` is called once per ``_build_reminders_tab()`` invocation.
 
-        Pins the "no live reload" decision. A regression that wires
-        ``currentChanged`` on the tab widget to ``_build_reminders_tab``
-        would double the file I/O without anyone noticing; this spy
-        catches it.
+        S-05 pinned "exactly once at construction, never on tab switch";
+        S-06 evolves the invariant to "exactly once per
+        ``_build_reminders_tab()`` invocation":
+
+        - Construction triggers the first call (initial build).
+        - Tab switches must NOT trigger additional calls (the "no live
+          reload" decision still holds — a regression wiring
+          ``currentChanged`` on the tab widget to a rebuild would
+          double the file I/O silently).
+        - A successful Add (simulated here by calling
+          ``_refresh_reminders_tab`` directly, which is what the
+          ``reminder_added`` signal wires to) DOES trigger one more
+          call because the tab gets rebuilt in place.
+
+        The spy catches accidental double-reads in either direction.
         """
         reminder_store.add(Reminder(name="Solo", start_at=datetime(2099, 1, 1, tzinfo=UTC)))
 
@@ -1965,6 +2059,7 @@ class TestRemindersTab:
             settings=settings,
             voice=voice,  # type: ignore[arg-type]
             reminder_store=reminder_store,
+            reminder_scheduler=reminder_scheduler,  # type: ignore[arg-type]
         )
         qtbot.addWidget(d)
 
@@ -1979,14 +2074,23 @@ class TestRemindersTab:
 
         assert call_count == 1
 
+        # A successful Add (simulated by direct refresh call) DOES bump
+        # the count by exactly one — the tab gets rebuilt in place. The
+        # signal wiring is exercised separately in
+        # ``TestRemindersAddButton.test_reminder_added_signal_triggers_tab_refresh``.
+        d._refresh_reminders_tab()
+        assert call_count == 2
+
     def test_empty_state_still_renders_button_row(self, dialog: SettingsDialog) -> None:
-        """Even in the empty state, the disabled button row is rendered.
+        """Even in the empty state, the button row is rendered.
 
         Tripwire: if a future refactor only adds the button row to the
         populated branch (so users on an empty store never see them),
-        the user has no way to discover the upcoming Add affordance
-        before S-06 ships. The button row is part of the empty state
-        too — its buttons stay disabled with the tooltip.
+        the user has no way to discover the Add affordance from an
+        empty list. The button row is part of the empty state too —
+        Add is enabled (so the user can create the first reminder
+        directly from the empty state), Edit/Delete stay disabled
+        with the tooltip until S-07.
         """
         assert dialog._reminders_add_button is not None
         assert dialog._reminders_edit_button is not None
@@ -2005,3 +2109,213 @@ class TestRemindersTab:
         fixed size — users can still resize the dialog larger.
         """
         assert dialog.minimumWidth() >= _DIALOG_MINIMUM_WIDTH
+
+
+# ---------------------------------------------------------------------------
+# Reminders tab — Add button + sub-dialog wiring (S-06 / FR-011)
+# ---------------------------------------------------------------------------
+
+
+class TestRemindersAddButton:
+    """The Add button is enabled, opens ``ReminderFormDialog``, and refreshes the tab.
+
+    The sub-dialog itself is covered by ``tests/test_reminder_form_dialog.py``;
+    here we pin the wiring at the ``SettingsDialog`` boundary: the
+    button is enabled, clicking it constructs the sub-dialog with the
+    right keyword arguments, and ``reminder_added`` triggers an
+    in-place tab rebuild.
+    """
+
+    def test_add_button_is_enabled(self, dialog: SettingsDialog) -> None:
+        """``Add…`` is enabled post-S-06 (no longer waiting on a future slice)."""
+        assert dialog._reminders_add_button.isEnabled() is True
+
+    def test_add_button_has_no_wrapper_tooltip(self, dialog: SettingsDialog) -> None:
+        """Add's parent is the bare row container — no tooltip-bearing wrapper.
+
+        The wrapper pattern exists ONLY to surface a tooltip on disabled
+        widgets (Qt 6 swallows hover events on disabled widgets so a
+        button-level tooltip would never appear). Now that Add is
+        enabled, the wrapper is dead weight; removing it lets Add
+        deliver its own hover events.
+
+        Tripwire: ``parentWidget().toolTip() == ""``. A single-widget
+        wrapper would have inherited
+        ``_REMINDERS_BUTTONS_DISABLED_TOOLTIP`` from the disabled-pair
+        wrapper construction. The "count children of the row" alternative
+        is a tautology — the row layout has the same number of widgets
+        whether Add is wrapped or bare — so it doesn't actually pin
+        the invariant.
+        """
+        wrapper = dialog._reminders_add_button.parentWidget()
+        assert wrapper is not None
+        assert wrapper.toolTip() == ""
+
+    def test_edit_and_delete_buttons_remain_wrapped_and_disabled(
+        self, dialog: SettingsDialog
+    ) -> None:
+        """Edit and Delete still sit inside tooltip-bearing wrappers + disabled."""
+        for button in (
+            dialog._reminders_edit_button,
+            dialog._reminders_delete_button,
+        ):
+            assert button.isEnabled() is False
+            wrapper = button.parentWidget()
+            assert wrapper is not None
+            assert wrapper.toolTip() == _REMINDERS_BUTTONS_DISABLED_TOOLTIP
+
+    def test_add_button_click_opens_sub_dialog(
+        self,
+        dialog: SettingsDialog,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Clicking Add constructs the sub-dialog with the injected store + scheduler.
+
+        Monkeypatches ``ReminderFormDialog`` at the import site so the
+        test never actually shows a sub-dialog. The stub records the
+        constructor kwargs the click handler used, then ``exec`` returns
+        ``Rejected`` so the click handler returns cleanly.
+        """
+        constructor_calls: list[dict] = []
+
+        class _StubFormDialog:
+            """Recording stub that mimics the ``ReminderFormDialog`` surface."""
+
+            def __init__(self, **kwargs: object) -> None:
+                constructor_calls.append(kwargs)
+                # The real dialog exposes ``reminder_added`` as a Signal;
+                # the click handler connects to it BEFORE calling exec().
+                # A bare object with a ``connect`` no-op suffices for
+                # this test — we don't fire the signal.
+                self.reminder_added = _StubSignal()
+
+            def exec(self) -> int:
+                return int(QDialog.DialogCode.Rejected)
+
+        class _StubSignal:
+            def connect(self, _slot: object) -> None:
+                pass
+
+        monkeypatch.setattr(
+            "break_reminder.ui.settings_dialog.ReminderFormDialog",
+            _StubFormDialog,
+        )
+
+        dialog._reminders_add_button.click()
+
+        assert len(constructor_calls) == 1
+        kwargs = constructor_calls[0]
+        assert kwargs["store"] is dialog._reminder_store
+        assert kwargs["scheduler"] is dialog._reminder_scheduler
+        assert kwargs["parent"] is dialog
+
+    def test_reminder_added_signal_triggers_tab_refresh(
+        self,
+        qtbot,
+        settings: Settings,
+        voice: StubVoiceNotifier,
+        reminder_store: ReminderStore,
+        reminder_scheduler: StubReminderScheduler,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """On Add success the Reminders tab gets rebuilt (new widget identity + new row).
+
+        Stubs ``ReminderFormDialog`` so its ``exec`` adds a new reminder
+        to the store, emits ``reminder_added`` synchronously, then
+        returns ``Accepted``. Asserts:
+
+        - The ``self._reminders_tab`` reference changes (proves
+          ``removeTab`` + ``insertTab`` happened).
+        - The rebuilt list contains the new row (proves
+          ``_build_reminders_tab`` reread the store).
+        """
+        # Pre-seed one row so the dialog opens with a populated list.
+        reminder_store.add(Reminder(name="Existing", start_at=datetime(2099, 1, 1, tzinfo=UTC)))
+        d = SettingsDialog(
+            settings=settings,
+            voice=voice,  # type: ignore[arg-type]
+            reminder_store=reminder_store,
+            reminder_scheduler=reminder_scheduler,  # type: ignore[arg-type]
+        )
+        qtbot.addWidget(d)
+        original_tab = d._reminders_tab
+
+        # Build a sub-dialog stub whose exec() simulates a successful
+        # save: persist a second reminder + fire the signal.
+        from PySide6.QtCore import QObject, Signal
+
+        class _StubFormDialog(QObject):
+            reminder_added = Signal(Reminder)
+
+            def __init__(self, **kwargs: object) -> None:
+                super().__init__()
+                store_kwarg = kwargs["store"]
+                assert isinstance(store_kwarg, ReminderStore)
+                self._store: ReminderStore = store_kwarg
+
+            def exec(self) -> int:
+                new_reminder = Reminder(
+                    name="Added by stub", start_at=datetime(2099, 2, 1, tzinfo=UTC)
+                )
+                self._store.add(new_reminder)
+                self.reminder_added.emit(new_reminder)
+                return int(QDialog.DialogCode.Accepted)
+
+        monkeypatch.setattr(
+            "break_reminder.ui.settings_dialog.ReminderFormDialog",
+            _StubFormDialog,
+        )
+
+        d._reminders_add_button.click()
+
+        # The tab widget was rebuilt — new instance, not the same one.
+        assert d._reminders_tab is not original_tab
+        # The rebuilt list shows both reminders.
+        assert d._reminders_list is not None
+        assert d._reminders_list.count() == 2
+        # The new row's text mentions the added reminder name.
+        rendered_names = {
+            d._reminders_list.item(i).text().split("  —  ")[0]
+            for i in range(d._reminders_list.count())
+        }
+        assert rendered_names == {"Existing", "Added by stub"}
+
+    def test_tab_index_preserved_across_refresh(self, dialog: SettingsDialog) -> None:
+        """The Reminders tab stays at index 3 (position 4) after a refresh.
+
+        Tripwire: if a future refactor swaps ``removeTab`` + ``insertTab``
+        for ``addTab``, the rebuilt tab would land at the END (index 4)
+        and the layout would silently drift. ``insertTab(idx, ...)``
+        is load-bearing.
+        """
+        assert dialog._reminders_tab is not None
+        assert dialog._tabs.indexOf(dialog._reminders_tab) == 3
+        dialog._refresh_reminders_tab()
+        assert dialog._reminders_tab is not None
+        assert dialog._tabs.indexOf(dialog._reminders_tab) == 3
+        assert dialog._tabs.count() == 4
+
+    def test_refresh_disposes_old_tab_widget(self, dialog: SettingsDialog) -> None:
+        """The old tab widget is scheduled for deletion (no orphan accumulation).
+
+        ``QTabWidget.removeTab`` removes the page but does NOT delete
+        the underlying ``QWidget`` — it stays parented to the dialog.
+        Per the Phase 1 #7 contract, ``_refresh_reminders_tab`` calls
+        ``deleteLater()`` on the old tab so repeated Adds don't leak
+        widgets across the dialog's lifetime.
+
+        We can't easily prove ``deleteLater`` was *called* without
+        monkeypatching, but we can assert the old reference is no
+        longer parented to the QTabWidget after refresh — its parent
+        is still the SettingsDialog (Qt parent ownership) but the tab
+        widget no longer claims it as a page.
+        """
+        assert dialog._reminders_tab is not None
+        old_tab = dialog._reminders_tab
+        dialog._refresh_reminders_tab()
+        # Pre-condition: the old tab is no longer in the tab widget.
+        assert dialog._tabs.indexOf(old_tab) == -1
+        # And the new tab IS in the widget.
+        assert dialog._reminders_tab is not None
+        assert dialog._reminders_tab is not old_tab
+        assert dialog._tabs.indexOf(dialog._reminders_tab) == 3

@@ -324,13 +324,18 @@ class BreakReminderApp:
         Four tabs ship today: "Scheduling" (FR-006 break interval +
         FR-010 snooze), "Notifications" (FR-007 voice toggle, phrase,
         Test), "Lifecycle" (FR-003 Windows autostart), and "Reminders"
-        (FR-012 read-only custom-reminders list — S-06/S-07/S-08 will
-        light the Add/Edit/Delete buttons up).
+        (FR-012 custom-reminders list — Add ships with S-06; S-07/S-08
+        will light up Edit/Delete).
+
+        The ``ReminderScheduler`` is threaded through so the Add
+        sub-dialog can call ``reload()`` and arm the running session
+        against the freshly-saved reminder.
         """
         SettingsDialog(
             settings=self._settings,
             voice=self._voice,
             reminder_store=self._reminder_store,
+            reminder_scheduler=self._reminder_scheduler,
         ).exec()
 
     def _on_check_for_updates(self) -> None:

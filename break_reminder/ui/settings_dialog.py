@@ -21,15 +21,19 @@ Layout uses a ``QTabWidget`` from day one. The current tabs:
   On winreg failure the dialog surfaces a transient ``QToolTip`` on the
   checkbox and blocks the entire save (atomic save — see S-03 impl-review
   F2 invariant, now extended across all four persisted fields).
-- **Reminders** (S-05) — read-only list of custom reminders pulled from
-  ``ReminderStore.list_all()`` exactly once at construction. Each row
-  reads ``"<name>  —  <next firing | (expired)>"``, sorted chronologically
+- **Reminders** (S-05 / S-06) — list of custom reminders pulled from
+  ``ReminderStore.list_all()`` once per (re)build. Each row reads
+  ``"<name>  —  <next firing | (expired)>"``, sorted chronologically
   (soonest first; expired sink to bottom; tiebreak by name). Empty store
-  swaps the list for a centered placeholder label. ``Add…`` / ``Edit…`` /
-  ``Delete`` buttons live in a row below the list, all disabled with a
-  tooltip; Edit/Delete additionally have a ``currentRowChanged`` slot
-  scaffolded but no-op until S-07 ships the click handlers. The slice is
-  a pure read-side consumer — no ``accept()`` participation.
+  swaps the list for a centered placeholder label. After S-06 the
+  ``Add…`` button opens the ``ReminderFormDialog`` sub-dialog; a
+  successful save persists via ``ReminderStore.add``, arms the running
+  session via ``ReminderScheduler.reload``, and the tab rebuilds in
+  place via ``_refresh_reminders_tab`` so the new row appears
+  immediately. ``Edit…`` / ``Delete`` remain visible-but-disabled with
+  the "coming in a future update" tooltip; their ``currentRowChanged``
+  slot is wired no-op until S-07. The tab does not participate in
+  ``accept()``.
 
 The ``Reminders`` tab is the only reason this module imports
 ``next_firing_after`` from ``break_reminder.scheduler`` — display logic
@@ -97,7 +101,7 @@ from PySide6.QtWidgets import (
 )
 
 from break_reminder.notifications.voice import VoiceNotifier
-from break_reminder.scheduler import next_firing_after
+from break_reminder.scheduler import ReminderScheduler, next_firing_after
 from break_reminder.storage.reminders import Reminder, ReminderStore
 from break_reminder.storage.settings import (
     BREAK_INTERVAL_MAX_MINUTES,
@@ -108,6 +112,7 @@ from break_reminder.storage.settings import (
     SNOOZE_DURATION_MIN_MINUTES,
     Settings,
 )
+from break_reminder.ui.reminder_form_dialog import ReminderFormDialog
 
 logger = logging.getLogger(__name__)
 
@@ -361,12 +366,17 @@ class SettingsDialog(QDialog):
     Failures surface as a transient tooltip on the checkbox and block
     the entire save.
 
-    The "Reminders" tab (S-05) is read-only — it renders the contents
-    of the injected ``ReminderStore`` as a sorted list (next-firing
-    first, expired last, tiebreak by name) and exposes ``Add…`` /
-    ``Edit…`` / ``Delete`` buttons that are currently visible but
-    disabled. The tab does not participate in ``accept()``; the
-    ``OK`` button still saves the other three tabs' values.
+    The "Reminders" tab renders the contents of the injected
+    ``ReminderStore`` as a sorted list (next-firing first, expired
+    last, tiebreak by name). After S-06 the ``Add…`` button is
+    enabled and opens the ``ReminderFormDialog`` sub-dialog; on a
+    successful save the tab rebuilds in place via
+    ``_refresh_reminders_tab`` so the new row appears immediately
+    and the running ``ReminderScheduler`` is armed against it. The
+    ``Edit…`` / ``Delete`` buttons remain visible-but-disabled with
+    the "coming in a future update" tooltip until S-07. The tab
+    does not participate in ``accept()``; the ``OK`` button still
+    only saves the other three tabs' values.
     """
 
     SCHEDULING_TAB_LABEL = "Scheduling"
@@ -380,6 +390,7 @@ class SettingsDialog(QDialog):
         settings: Settings,
         voice: VoiceNotifier,
         reminder_store: ReminderStore,
+        reminder_scheduler: ReminderScheduler,
         parent: QWidget | None = None,
     ) -> None:
         """Build the dialog and pre-populate widgets from ``settings``.
@@ -398,8 +409,17 @@ class SettingsDialog(QDialog):
                 exactly once at construction via ``list_all()``.
                 Required (no default) for the same reason ``voice`` is
                 — tests must inject a tmp-path-bound store so the suite
-                doesn't touch ``%APPDATA%``. The dialog never writes
-                to this store; the Reminders tab is read-only in S-05.
+                doesn't touch ``%APPDATA%``. The Add sub-dialog
+                persists into the same store; the dialog never writes
+                directly outside of that flow.
+            reminder_scheduler: ``ReminderScheduler`` the Add sub-dialog
+                calls ``reload()`` on to arm the running session
+                against a freshly-saved reminder. Required for the same
+                reason as ``voice`` / ``reminder_store`` — tests inject
+                a stub or a real scheduler bound to the tmp-path store
+                so the suite never wires up a real ``QTimer`` against
+                production data. The dialog itself does not consult the
+                scheduler outside of threading it into the sub-dialog.
             parent: Optional Qt parent. Defaults to ``None`` so the
                 dialog gets its own top-level taskbar entry, matching
                 the convention used by ``BreakDialog`` and
@@ -409,6 +429,7 @@ class SettingsDialog(QDialog):
         self._settings = settings
         self._voice = voice
         self._reminder_store = reminder_store
+        self._reminder_scheduler = reminder_scheduler
         self._user_typed_text: str | None = None
 
         # Populated by ``_build_reminders_tab`` — exactly one is
@@ -417,6 +438,15 @@ class SettingsDialog(QDialog):
         # tab widget tree.
         self._reminders_list: QListWidget | None = None
         self._reminders_placeholder: QLabel | None = None
+        # The Reminders tab widget itself — stored as of S-06 so the
+        # Add-save refresh handler (``_refresh_reminders_tab``) can
+        # locate the tab via ``self._tabs.indexOf(self._reminders_tab)``
+        # to remove + reinsert it in place. The S-05 rule "store the
+        # tab on self only when accept() needs to switch to it" has
+        # been amended: storage is now also justified when a non-accept
+        # code path needs to address the tab. Initialised lazily by
+        # ``_build_reminders_tab``.
+        self._reminders_tab: QWidget | None = None
 
         self.setWindowTitle("Settings")
         # See ``_DIALOG_MINIMUM_WIDTH`` for the rationale — the Reminders
@@ -439,10 +469,9 @@ class SettingsDialog(QDialog):
         # before anchoring the tooltip on ``_autostart_checkbox``.
         self._lifecycle_tab = self._build_lifecycle_tab()
         self._tabs.addTab(self._lifecycle_tab, self.LIFECYCLE_TAB_LABEL)
-        # Reminders tab (S-05) — NOT stored on self because the tab has
-        # no ``accept()`` participation. Follows the same rule as
-        # ``_scheduling_tab``: only stored when the validation gate needs
-        # to switch to it. See ``settings-autostart-toggle`` impl-review F2.
+        # Reminders tab. The builder assigns ``self._reminders_tab``
+        # during construction so ``_refresh_reminders_tab`` can find it
+        # later by identity (``indexOf``).
         self._tabs.addTab(self._build_reminders_tab(), self.REMINDERS_TAB_LABEL)
 
         self._buttons = QDialogButtonBox(
@@ -619,6 +648,17 @@ class SettingsDialog(QDialog):
             list-or-placeholder on top, the button row on the bottom.
         """
         tab = QWidget(self._tabs)
+        # Store on self so ``_refresh_reminders_tab`` can locate the
+        # tab by identity for the remove+reinsert flow after a
+        # successful Add (S-06). The S-05 rule "store only when
+        # ``accept()`` switches to it" is amended: storage is also
+        # justified when a non-accept code path needs to address the
+        # tab.
+        self._reminders_tab = tab
+        # Reset the dual-state slots before every (re)build so a rebuild
+        # never leaves a stale reference to the old tab's widgets.
+        self._reminders_list = None
+        self._reminders_placeholder = None
 
         # Single shared "now" so every reminder gets compared against
         # the same instant — avoids the rare race where two reminders
@@ -648,27 +688,26 @@ class SettingsDialog(QDialog):
         return tab
 
     def _build_reminders_button_row(self) -> QWidget:
-        """Construct the disabled ``Add… / Edit… / Delete`` row (S-05).
+        """Construct the ``Add… / Edit… / Delete`` row.
 
-        Each ``QPushButton`` is ``setEnabled(False)`` and lives inside a
-        zero-margin ``QHBoxLayout`` wrapped by a parent ``QWidget`` that
-        owns the "coming in a future update" tooltip. The wrapper is the
-        workaround for Qt 6's "disabled widgets do not receive mouse
-        events" rule — setting the tooltip directly on the disabled
-        ``QPushButton`` would set the property (so a unit test could read
-        it back) but the tooltip would never appear on hover. The
-        wrapper stays enabled, receives the hover event, and shows the
-        tooltip; the inner button stays visually and functionally
-        disabled. Tests assert
-        ``button.parentWidget().toolTip() == _REMINDERS_BUTTONS_DISABLED_TOOLTIP``,
-        NOT ``button.toolTip()``.
+        After S-06: the **Add button is enabled** and wired to
+        ``_on_reminders_add_clicked``. It lives directly in the row
+        layout — no tooltip-bearing wrapper — because the wrapper
+        pattern exists only to surface a tooltip on a disabled widget
+        (Qt 6 swallows hover events on disabled widgets, so a tooltip
+        set on the button itself would never appear). An enabled
+        button delivers its own hover events; the wrapper is dead weight.
+
+        ``Edit…`` and ``Delete`` remain disabled and wrapped, with
+        their wrappers carrying the "coming in a future update"
+        tooltip. S-07 will enable them and drop their wrappers too.
 
         Returns:
-            A ``QWidget`` row containing the three wrapper-button pairs,
-            laid out horizontally with a stretchy spacer on the left so
-            the buttons hug the right edge of the tab (matches the
-            ``QDialogButtonBox`` convention the rest of the dialog
-            uses).
+            A ``QWidget`` row containing the bare Add button + the two
+            wrapped disabled buttons, laid out horizontally with a
+            stretchy spacer on the left so the buttons hug the right
+            edge of the tab (matches the ``QDialogButtonBox`` convention
+            the rest of the dialog uses).
         """
         row = QWidget(self)
         row_layout = QHBoxLayout(row)
@@ -676,14 +715,22 @@ class SettingsDialog(QDialog):
         row_layout.addStretch(1)
 
         self._reminders_add_button = QPushButton("Add…")
-        self._reminders_add_button.setEnabled(False)
+        # No wrapper — S-06 enables Add, so Qt delivers hover events
+        # natively. The button is parented directly to the row.
+        self._reminders_add_button.clicked.connect(self._on_reminders_add_clicked)
+        row_layout.addWidget(self._reminders_add_button)
+
         self._reminders_edit_button = QPushButton("Edit…")
         self._reminders_edit_button.setEnabled(False)
         self._reminders_delete_button = QPushButton("Delete")
         self._reminders_delete_button.setEnabled(False)
 
+        # Wrapper pattern for the still-disabled Edit/Delete pair.
+        # Tests assert ``button.parentWidget().toolTip() ==
+        # _REMINDERS_BUTTONS_DISABLED_TOOLTIP`` (NOT
+        # ``button.toolTip()``) — preserving that contract for the two
+        # that still need it.
         for button in (
-            self._reminders_add_button,
             self._reminders_edit_button,
             self._reminders_delete_button,
         ):
@@ -718,6 +765,71 @@ class SettingsDialog(QDialog):
                 ``current_row >= 0``.
         """
         del current_row  # S-05 placeholder; S-07 uses this to gate enable state.
+
+    def _on_reminders_add_clicked(self) -> None:
+        """Open the Add Reminder sub-dialog and refresh the tab on success.
+
+        Constructs a fresh ``ReminderFormDialog`` parented to ``self``
+        and connects its ``reminder_added`` signal to
+        ``_refresh_reminders_tab`` **before** ``exec()`` (the signal
+        emits from inside the sub-dialog's ``accept()``, which runs
+        before ``exec()`` returns). The connected slot rebuilds the
+        Reminders tab in place so the new row appears immediately.
+
+        The sub-dialog handles its own validation, persistence
+        (``ReminderStore.add``), and scheduler arming
+        (``ReminderScheduler.reload``) — this slot is pure wiring.
+        """
+        sub_dialog = ReminderFormDialog(
+            store=self._reminder_store,
+            scheduler=self._reminder_scheduler,
+            parent=self,
+        )
+        sub_dialog.reminder_added.connect(self._refresh_reminders_tab)
+        sub_dialog.exec()
+
+    def _refresh_reminders_tab(self, _reminder: Reminder | None = None) -> None:
+        """Remove the Reminders tab and reinsert a freshly-built one.
+
+        Re-uses ``_build_reminders_tab`` verbatim so the sort, compose,
+        empty→list transition, and select-gating wiring all evolve in
+        one place. The ``_reminder`` parameter exists only to absorb
+        the ``reminder_added`` signal payload — the rebuild reads
+        ``ReminderStore.list_all()`` fresh.
+
+        Order is load-bearing:
+
+        1. Capture ``idx`` via ``indexOf`` BEFORE any mutation — the
+           old reference becomes invalid the moment ``removeTab`` runs.
+        2. Capture ``old_tab`` so we can schedule it for deletion.
+        3. ``removeTab(idx)`` removes the page from the tab strip but
+           does NOT delete the underlying ``QWidget`` — Qt keeps it
+           parented to this dialog.
+        4. ``old_tab.deleteLater()`` schedules the orphan for deletion
+           on the next event-loop iteration so repeated Adds don't
+           accumulate stale tab widgets across the dialog's lifetime.
+        5. ``_build_reminders_tab()`` reassigns ``self._reminders_tab``
+           (the builder always writes this slot first).
+        6. ``insertTab(idx, ..., LABEL)`` puts the fresh tab back at
+           the same position so the user's view is undisturbed.
+
+        Args:
+            _reminder: Unused — present so this method matches the
+                ``reminder_added(Reminder)`` signal signature when used
+                as a connected slot.
+        """
+        del _reminder  # signal payload absorbed; rebuild reads the store fresh
+        if self._reminders_tab is None:
+            # Defensive: should never happen because the constructor
+            # builds the tab. Silently no-op rather than raising so a
+            # rogue signal can't crash the running dialog.
+            return
+        idx = self._tabs.indexOf(self._reminders_tab)
+        old_tab = self._reminders_tab
+        self._tabs.removeTab(idx)
+        old_tab.deleteLater()
+        self._build_reminders_tab()  # reassigns self._reminders_tab
+        self._tabs.insertTab(idx, self._reminders_tab, self.REMINDERS_TAB_LABEL)
 
     def _on_test_voice_clicked(self) -> None:
         """Speak the phrase line edit's current (unsaved) text.

@@ -228,6 +228,7 @@ class ReminderScheduler(QObject):
         *,
         store: ReminderStore,
         parent: QObject | None = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         """Wire the scheduler to its reminder store and a single-shot QTimer.
 
@@ -235,9 +236,19 @@ class ReminderScheduler(QObject):
             store: ``ReminderStore`` whose ``list_all()`` is consulted on
                 every reload.
             parent: Optional Qt parent.
+            clock: Optional injectable ``datetime``-returning callable
+                for deterministic tests. Defaults to UTC ``datetime.now``
+                via the module-level ``_utcnow`` helper. Mirrors the
+                same injection pattern ``BreakScheduler`` already uses,
+                so ``tests/test_reminder_scheduler.py`` can drive
+                ``reload()`` without waiting for wall-clock seconds.
         """
         super().__init__(parent)
         self._store = store
+        # Clock is injectable so tests can pin the "next firing" math
+        # to a known instant. Production passes ``None`` and gets
+        # ``datetime.now(UTC)`` via the shared ``_utcnow`` helper.
+        self._clock = clock or _utcnow
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self._on_timer)
@@ -258,7 +269,7 @@ class ReminderScheduler(QObject):
         self._next = self._compute_next()
         if self._next is None:
             return
-        ms = max(0, int((self._next.fire_at - datetime.now(UTC)).total_seconds() * 1000))
+        ms = max(0, int((self._next.fire_at - self._clock()).total_seconds() * 1000))
         # QTimer.start has a 32-bit ms limit (~24.8 days). Reminders further
         # out than that get a daily wakeup that re-checks.
         self._timer.start(min(ms, 24 * 60 * 60 * 1000))
@@ -268,7 +279,7 @@ class ReminderScheduler(QObject):
     def _on_timer(self) -> None:
         if self._next is None:
             return
-        now = datetime.now(UTC)
+        now = self._clock()
         if now < self._next.fire_at:
             # Daily-wakeup case: not actually due yet, just rearm.
             self.reload()
@@ -283,7 +294,7 @@ class ReminderScheduler(QObject):
         self.reminder_due.emit(reminder.name)
 
     def _compute_next(self) -> _ReminderFiring | None:
-        now = datetime.now(UTC)
+        now = self._clock()
         candidates: list[_ReminderFiring] = []
         for reminder in self._store.list_all():
             fire_at = next_firing_after(reminder, now)

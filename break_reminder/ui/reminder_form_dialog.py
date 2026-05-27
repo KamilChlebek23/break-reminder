@@ -118,8 +118,10 @@ _PAST_TIME_MESSAGE = "Event must be in the future"
 # S-06b: when ``lead_minutes > 0``, the past-time tooltip explains
 # how-much-in-the-future is needed so the user can either push the
 # event later or reduce the lead. ``{lead}`` is the current spinbox
-# value at the time of the failed save.
-_PAST_TIME_WITH_LEAD_FORMAT = "Event must be at least {lead} minutes in the future"
+# value at the time of the failed save; ``{unit}`` is computed by
+# ``_format_past_time_with_lead`` so the singular ``lead == 1`` case
+# reads "at least 1 minute" rather than "at least 1 minutes".
+_PAST_TIME_WITH_LEAD_FORMAT = "Event must be at least {lead} {unit} in the future"
 # ``{error}`` is filled with ``OSError.strerror`` (or ``str(error)``
 # when ``strerror`` is empty) so the user sees the OS-level reason for
 # the save failure (permission denied, disk full, etc.).
@@ -147,6 +149,29 @@ def _qdatetime_from_naive_local(naive_local: datetime) -> QDateTime:
         QDate(naive_local.year, naive_local.month, naive_local.day),
         QTime(naive_local.hour, naive_local.minute, naive_local.second),
     )
+
+
+def _format_past_time_with_lead(lead: int) -> str:
+    """Render the past-time tooltip for a non-zero ``lead`` with correct plurality.
+
+    Pure helper so the wording is observable from a test without spinning
+    up the dialog. Mirrors the ``_format_body`` / ``_format_firing``
+    pattern elsewhere in the codebase: keep the format constant simple,
+    push the small conditional into a named helper so the call site
+    stays a one-liner and ``lead == 1`` doesn't read "1 minutes".
+
+    Args:
+        lead: The current spinbox value at the time of the failed save.
+            Expected to be ``>= 1`` (callers should use
+            ``_PAST_TIME_MESSAGE`` for ``lead == 0``).
+
+    Returns:
+        The formatted tooltip string, e.g. ``"Event must be at least
+        1 minute in the future"`` for ``lead=1`` or ``"... 15 minutes
+        ..."`` for any other positive value.
+    """
+    unit = "minute" if lead == 1 else "minutes"
+    return _PAST_TIME_WITH_LEAD_FORMAT.format(lead=lead, unit=unit)
 
 
 def _round_up_to_minutes(local_dt: datetime, granularity_minutes: int) -> datetime:
@@ -369,7 +394,7 @@ class ReminderFormDialog(QDialog):
         start_at_utc = event_at_utc - timedelta(minutes=lead_minutes)
         if start_at_utc <= self._clock():
             message = (
-                _PAST_TIME_WITH_LEAD_FORMAT.format(lead=lead_minutes)
+                _format_past_time_with_lead(lead_minutes)
                 if lead_minutes > 0
                 else _PAST_TIME_MESSAGE
             )

@@ -23,6 +23,54 @@ from pathlib import Path
 
 from break_reminder.storage.paths import reminders_json_path
 
+# S-06b lead-time bounds enforced on disk read. These deliberately mirror
+# ``break_reminder.ui.reminder_form_dialog._LEAD_MIN_VALUE`` /
+# ``_LEAD_MAX_VALUE`` — the storage layer can't import the UI layer
+# (dependency direction would flip), so the values are duplicated here
+# with this cross-reference. A drift between the two surfaces would be
+# caught fast by manual smoke (the form's spinbox cap stays at 60 while a
+# higher disk value would be clamped down silently on next read).
+# FR-015 documents ``reminders.json`` as user-editable; coercing here
+# means a hand-edited string / negative value / out-of-range int doesn't
+# crash ``ReminderScheduler._fire`` later inside ``timedelta(minutes=...)``.
+_LEAD_MIN_VALUE = 0
+_LEAD_MAX_VALUE = 60
+
+
+def _coerce_lead_minutes(raw: object) -> int:
+    """Coerce a hand-editable JSON value into the ``[0, 60]`` integer range.
+
+    The storage layer is the only place that sees raw JSON for
+    reminders, so input validation lives here rather than at the
+    scheduler / form boundaries. Resilient on three axes:
+
+    * **Type**: ``int()`` covers ``int``, ``float``, and numeric
+      strings ("15"); anything that doesn't coerce (``None``, "ten",
+      a list) returns the default 0.
+    * **Lower bound**: negative leads are clamped to 0 — negative
+      "minutes before" is nonsensical and would also crash the
+      ``timedelta`` subtraction in the form's ``accept()``.
+    * **Upper bound**: values above ``_LEAD_MAX_VALUE`` (60) are
+      clamped down so a hand-edited entry can't bypass the UI cap.
+
+    Args:
+        raw: The value pulled from ``data.get("lead_minutes", 0)``.
+            Typically a JSON int, but FR-015 allows hand-edited
+            files so the input type is effectively ``object``.
+
+    Returns:
+        An integer in ``[_LEAD_MIN_VALUE, _LEAD_MAX_VALUE]``.
+    """
+    try:
+        coerced = int(raw)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return _LEAD_MIN_VALUE
+    if coerced < _LEAD_MIN_VALUE:
+        return _LEAD_MIN_VALUE
+    if coerced > _LEAD_MAX_VALUE:
+        return _LEAD_MAX_VALUE
+    return coerced
+
 
 @dataclass
 class Reminder:
@@ -56,7 +104,8 @@ class Reminder:
             data: Mapping with ``id``, ``name``, ``start_at`` (ISO 8601),
                 optional ``rrule_str``, optional ``end_at`` (ISO 8601),
                 optional ``lead_minutes`` (int, defaults to 0 — pre-S-06b
-                files lack the key entirely).
+                files lack the key entirely; out-of-range or non-coercible
+                values are coerced by ``_coerce_lead_minutes``).
 
         Returns:
             A populated ``Reminder`` instance.
@@ -67,7 +116,7 @@ class Reminder:
             start_at=datetime.fromisoformat(data["start_at"]),
             rrule_str=data.get("rrule_str"),
             end_at=datetime.fromisoformat(data["end_at"]) if data.get("end_at") else None,
-            lead_minutes=data.get("lead_minutes", 0),
+            lead_minutes=_coerce_lead_minutes(data.get("lead_minutes", 0)),
         )
 
 

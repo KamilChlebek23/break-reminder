@@ -13,7 +13,13 @@ from pathlib import Path
 
 import pytest
 
-from break_reminder.storage.reminders import Reminder, ReminderStore
+from break_reminder.storage.reminders import (
+    _LEAD_MAX_VALUE,
+    _LEAD_MIN_VALUE,
+    Reminder,
+    ReminderStore,
+    _coerce_lead_minutes,
+)
 
 UTC = UTC
 
@@ -308,3 +314,83 @@ class TestReminderLeadMinutes:
         # Sanity: the rest of the round-trip still works.
         assert recovered.name == "legacy"
         assert recovered.start_at == datetime(2026, 6, 1, 9, 0, tzinfo=UTC)
+
+
+class TestCoerceLeadMinutes:
+    """``_coerce_lead_minutes`` boundary helper (S-06b hardening, F4).
+
+    FR-015 documents ``reminders.json`` as user-editable in Notepad, so the
+    storage layer treats every disk read as potentially-hostile input.
+    These tests pin the four invariants the helper enforces:
+
+    1. Valid int passes through unchanged.
+    2. Non-coercible types fall back to ``_LEAD_MIN_VALUE`` (0).
+    3. Negative values clamp up to ``_LEAD_MIN_VALUE``.
+    4. Values above ``_LEAD_MAX_VALUE`` (60) clamp down.
+
+    The fourth invariant also doubles as the contract between the
+    storage bounds and the UI's spinbox cap — the two surfaces
+    duplicate the bounds for layering reasons and a drift would slip
+    past the form's validation only to be silently corrected here.
+    """
+
+    def test_valid_int_passes_through(self) -> None:
+        """A well-formed int in range returns unchanged."""
+        assert _coerce_lead_minutes(0) == 0
+        assert _coerce_lead_minutes(15) == 15
+        assert _coerce_lead_minutes(60) == 60
+
+    def test_numeric_string_coerces(self) -> None:
+        """``"15"`` (string from a hand-edit) coerces to ``15``."""
+        assert _coerce_lead_minutes("15") == 15
+
+    def test_float_coerces_via_int_truncation(self) -> None:
+        """``int(15.7) == 15`` — float input truncates rather than rounding."""
+        assert _coerce_lead_minutes(15.7) == 15
+
+    def test_non_coercible_string_falls_back_to_min(self) -> None:
+        """``"ten"`` is not a numeric string — fall back to ``_LEAD_MIN_VALUE``.
+
+        Without this fallback, ``int("ten")`` would raise ``ValueError``
+        inside ``from_dict`` and the entire ``reminders.json`` file
+        would fail to load.
+        """
+        assert _coerce_lead_minutes("ten") == _LEAD_MIN_VALUE
+
+    def test_none_falls_back_to_min(self) -> None:
+        """``None`` (e.g. ``"lead_minutes": null`` in JSON) → 0."""
+        assert _coerce_lead_minutes(None) == _LEAD_MIN_VALUE
+
+    def test_list_falls_back_to_min(self) -> None:
+        """Wrong-type values (lists, dicts) → 0 rather than crash."""
+        assert _coerce_lead_minutes([1, 2, 3]) == _LEAD_MIN_VALUE
+
+    def test_negative_clamps_to_min(self) -> None:
+        """Negative leads are nonsensical — clamp up to ``_LEAD_MIN_VALUE``."""
+        assert _coerce_lead_minutes(-5) == _LEAD_MIN_VALUE
+        assert _coerce_lead_minutes(-1) == _LEAD_MIN_VALUE
+
+    def test_above_max_clamps_down(self) -> None:
+        """Values above ``_LEAD_MAX_VALUE`` clamp down to the cap."""
+        assert _coerce_lead_minutes(61) == _LEAD_MAX_VALUE
+        assert _coerce_lead_minutes(9999) == _LEAD_MAX_VALUE
+
+    def test_from_dict_coerces_hostile_input(self) -> None:
+        """End-to-end: ``from_dict`` of a hand-edited dict with bad lead value.
+
+        The most-likely real-world failure: someone opens
+        ``reminders.json`` in Notepad, types ``"lead_minutes": 9999``,
+        saves. Pre-fix this loaded as 9999 and the form's display + the
+        scheduler's ``timedelta`` arithmetic would happily process it.
+        Post-fix it clamps to 60 — same upper bound the UI enforces.
+        """
+        hostile_dict = {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "hand-edited",
+            "start_at": datetime(2026, 6, 1, 9, 0, tzinfo=UTC).isoformat(),
+            "rrule_str": None,
+            "end_at": None,
+            "lead_minutes": 9999,
+        }
+        recovered = Reminder.from_dict(hostile_dict)
+        assert recovered.lead_minutes == _LEAD_MAX_VALUE

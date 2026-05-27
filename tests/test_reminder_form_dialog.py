@@ -42,8 +42,8 @@ from break_reminder.ui.reminder_form_dialog import (
     _NAME_EMPTY_MESSAGE,
     _NAME_PLACEHOLDER,
     _PAST_TIME_MESSAGE,
-    _PAST_TIME_WITH_LEAD_FORMAT,
     ReminderFormDialog,
+    _format_past_time_with_lead,
     _qdatetime_from_naive_local,
     _round_up_to_minutes,
 )
@@ -784,11 +784,52 @@ class TestReminderFormDialogLeadMinutes:
         assert store.list_all() == []
         assert len(calls) == 1
         args, _kwargs = calls[0]
-        assert args[1] == _PAST_TIME_WITH_LEAD_FORMAT.format(lead=15)
+        assert args[1] == _format_past_time_with_lead(15)
         # Explicit check on the human-readable string so a regression
         # in wording (e.g. dropping the minute count) fails loudly.
         assert "15" in args[1]
         assert "minutes" in args[1]
+
+    def test_past_event_with_lead_one_uses_singular_minute(
+        self,
+        dialog: ReminderFormDialog,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """``lead == 1`` renders ``"1 minute"`` (singular), not ``"1 minutes"``.
+
+        Regression test for the F2 finding in the Phase 1 implementation
+        review: the original ``_PAST_TIME_WITH_LEAD_FORMAT`` hard-coded
+        the plural ``"minutes"``, producing the ungrammatical "Event must
+        be at least 1 minutes in the future" tooltip the moment the user
+        stepped the spinbox up to 1. The helper now switches on parity.
+        """
+        calls = _patch_show_text(monkeypatch)
+        dialog._name_field.setText("past-with-lead-one")
+        dialog._lead_minutes_field.setValue(1)
+        # Event = now (in local display zone); lead=1 ⇒ start_at = now - 1 min
+        # (in the past relative to the frozen clock).
+        local_event = dialog._clock().astimezone().replace(tzinfo=None)
+        dialog._datetime_field.setDateTime(_qdatetime_from_naive_local(local_event))
+
+        dialog.accept()
+
+        assert len(calls) == 1
+        args, _kwargs = calls[0]
+        assert args[1] == "Event must be at least 1 minute in the future"
+        # Tripwire: the plural form must NOT appear when lead == 1.
+        assert "1 minutes" not in args[1]
+
+    def test_format_past_time_with_lead_pluralizes(self) -> None:
+        """Pure-function check of the singular/plural switch on the helper.
+
+        Pinning the helper directly (no dialog spin-up) so both branches
+        of the conditional are exercised without depending on the form's
+        validation gates. ``lead == 1`` → singular; anything else (2, 60)
+        → plural.
+        """
+        assert _format_past_time_with_lead(1) == "Event must be at least 1 minute in the future"
+        assert _format_past_time_with_lead(2) == "Event must be at least 2 minutes in the future"
+        assert _format_past_time_with_lead(60) == "Event must be at least 60 minutes in the future"
 
     def test_atomic_save_tripwire_holds_with_nonzero_lead(
         self,

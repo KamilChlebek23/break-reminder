@@ -234,7 +234,7 @@ Add the `lead_minutes` field end-to-end (storage → form → list display), thr
 - In the "At a glance" table (around line 37-39), insert a new row between S-06 and S-07: `| S-06b | reminders-lead-time | configure a reminder to fire N minutes before the event | S-06 | FR-011, FR-013 | proposed |`. Status will flip to `done` in Phase 2.
 - In the body blocks (between `### S-06` and `### S-07`, around line 159), insert a new `### S-06b: reminders-lead-time` block with the same field set the other entries use: Outcome, Change ID, PRD refs, Prerequisites (S-06), Parallel with (S-02, S-03, S-04, S-07, S-08), Blockers (—), Unknowns (—), Risk (low — single field on `Reminder`, single spinbox on the form, single branch in `_compose_row`), Status (proposed; flips to done in Phase 2).
 - In the Backlog Handoff table (around line 193-195), insert a new row between S-06 and S-07: `| S-06b | reminders-lead-time | Add "notify N min before event" lead-time spinbox to the add form | no | Run after S-06 |`. Phase 2 flips the `no` to `yes | Planned + shipped 2026-05-27`.
-- In the Streams section (around line 48), update Stream B's chain notation from `S-05 → S-06 → S-07 / S-08` to `S-05 → S-06 → S-06b → S-07 / S-08` so the sequencing reads accurately.
+- In the Streams section (around line 48), update Stream B's chain notation from `S-05 → S-06 → S-07 / S-08` to `S-05 → S-06 → S-06b / S-07 / S-08 (parallel after S-06)` — S-06b is parallel with S-07/S-08, not their prerequisite (both S-07 and S-08 list `Prerequisites: S-06` in their body blocks).
 
 ### Success Criteria:
 
@@ -373,32 +373,32 @@ The `## Done` entry insertion is **deferred to archive time** per the establishe
 
 #### Automated
 
-- [x] 1.1 Unit tests pass: `uv run pytest tests/test_reminders.py -v`
-- [x] 1.2 Unit tests pass: `uv run pytest tests/test_reminder_form_dialog.py -v` (extended with `TestReminderFormDialogLeadMinutes`)
-- [x] 1.3 Unit tests pass: `uv run pytest tests/test_settings_dialog.py -v` (extended `TestComposeRow` cases)
-- [x] 1.4 Full suite passes: `uv run pytest`
-- [x] 1.5 Type check passes: `uv run pyright`
-- [x] 1.6 Linting passes: `uv run ruff check`
-- [x] 1.7 Format check passes: `uv run ruff format --check`
-- [x] 1.8 Security audit passes: `uv run pip-audit`
-- [x] 1.9 License gate passes: `uv run pip-licenses --fail-on="AGPL"`
-- [x] 1.1a Unit tests pass: `uv run pytest tests/test_reminder_scheduler.py -v` (extended with the lead-time `event_at` payload test)
-- [x] 1.1b Unit tests pass: `uv run pytest tests/test_reminder_dialog.py -v` (NEW file; pins `_format_body` + `ReminderDialog` constructor wiring)
+- [x] 1.1 Unit tests pass: `uv run pytest tests/test_reminders.py -v` — d99f122
+- [x] 1.2 Unit tests pass: `uv run pytest tests/test_reminder_form_dialog.py -v` (extended with `TestReminderFormDialogLeadMinutes`) — d99f122
+- [x] 1.3 Unit tests pass: `uv run pytest tests/test_settings_dialog.py -v` (extended `TestComposeRow` cases) — d99f122
+- [x] 1.4 Full suite passes: `uv run pytest` — d99f122
+- [x] 1.5 Type check passes: `uv run pyright` — d99f122
+- [x] 1.6 Linting passes: `uv run ruff check` — d99f122
+- [x] 1.7 Format check passes: `uv run ruff format --check` — d99f122
+- [x] 1.8 Security audit passes: `uv run pip-audit` — d99f122
+- [x] 1.9 License gate passes: `uv run pip-licenses --fail-on="AGPL"` — d99f122
+- [x] 1.1a Unit tests pass: `uv run pytest tests/test_reminder_scheduler.py -v` (extended with the lead-time `event_at` payload test) — d99f122
+- [x] 1.1b Unit tests pass: `uv run pytest tests/test_reminder_dialog.py -v` (NEW file; pins `_format_body` + `ReminderDialog` constructor wiring) — d99f122
 
 #### Manual
 
-- [x] 1.10 Spinbox visible: range 0-60, step 1, default 0, suffix " min"
-- [x] 1.11 Zero-lead save behaves identically to S-06 (no regression)
-- [x] 1.12 Non-zero-lead save: popup fires at (event - lead), not at event
-- [x] 1.13 Past-time tooltip wording correct in both zero-lead and non-zero-lead cases
-- [x] 1.14 List row with lead>0 shows event time + "(fires N min before)" suffix
-- [x] 1.15 List row with lead=0 renders unchanged from S-06
-- [x] 1.16 Expired row with lead>0 shows "(expired)" without the "fires" suffix
-- [x] 1.17 `reminders.json` in Notepad shows `"lead_minutes": <N>` field; file is well-formed JSON
-- [x] 1.18 Backward-compat: a pre-S-06b reminders.json loads cleanly (lead defaults to 0)
-- [x] 1.19 No regression in Scheduling / Notifications / Lifecycle tabs
-- [x] 1.20 Popup body for a `lead=0` fire reads `"Time of event is <ddd HH:mm>"` (HH:mm ≈ now)
-- [x] 1.21 Popup body for a `lead>0` fire reads `"Time of event is <ddd HH:mm>"` where HH:mm = event time (later than now)
+- [x] 1.10 Spinbox visible: range 0-60, step 1, default 0, suffix " min" — d99f122
+- [x] 1.11 Zero-lead save behaves identically to S-06 (no regression) — d99f122
+- [x] 1.12 Non-zero-lead save: popup fires at (event - lead), not at event — d99f122
+- [x] 1.13 Past-time tooltip wording correct in both zero-lead and non-zero-lead cases — d99f122
+- [x] 1.14 List row with lead>0 shows event time + "(fires N min before)" suffix — d99f122
+- [x] 1.15 List row with lead=0 renders unchanged from S-06 — d99f122
+- [x] 1.16 Expired row with lead>0 shows "(expired)" without the "fires" suffix — d99f122
+- [x] 1.17 `reminders.json` in Notepad shows `"lead_minutes": <N>` field; file is well-formed JSON — d99f122
+- [x] 1.18 Backward-compat: a pre-S-06b reminders.json loads cleanly (lead defaults to 0) — d99f122
+- [x] 1.19 No regression in Scheduling / Notifications / Lifecycle tabs — d99f122
+- [x] 1.20 Popup body for a `lead=0` fire reads `"Time of event is <ddd HH:mm>"` (HH:mm ≈ now) — d99f122
+- [x] 1.21 Popup body for a `lead>0` fire reads `"Time of event is <ddd HH:mm>"` where HH:mm = event time (later than now) — d99f122
 
 ### Phase 2: Bookkeeping
 

@@ -14,7 +14,7 @@ worth re-pinning here.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone, tzinfo
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialogButtonBox, QLabel
@@ -83,27 +83,59 @@ class TestFormatBody:
         assert _format_body(instant, tz=UTC) == "Time of event is Mon 14:30"
 
 
+_DEFAULT_EVENT_AT = datetime(2026, 6, 3, 14, 30, tzinfo=UTC)
+
+
+def _make_dialog(
+    qtbot,
+    *,
+    name: str = "anything",
+    event_at: datetime | None = None,
+    tz: tzinfo = UTC,
+) -> ReminderDialog:
+    """Construct + qtbot-register a ``ReminderDialog`` with sensible defaults.
+
+    Mirrors the ``make_dialog`` helper in ``tests/test_break_dialog.py`` —
+    every constructor test below builds essentially the same dialog, so
+    pushing the shared shape into a factory keeps each test focused on
+    the single property it pins.
+
+    Args:
+        qtbot: pytest-qt fixture forwarded by the caller.
+        name: Reminder name passed through to the dialog.
+        event_at: Tz-aware event instant. Defaults to
+            ``_DEFAULT_EVENT_AT`` (2026-06-03 14:30 UTC) — concrete
+            enough that day-of-week / time assertions in
+            ``test_body_label_renders_formatted_event_time`` and
+            zero-padding tests stay deterministic.
+        tz: Display zone forwarded to the dialog's body formatter.
+            Defaults to UTC so a no-conversion implementation would
+            still pass tests that don't explicitly check the zone.
+
+    Returns:
+        The instantiated dialog, already registered with ``qtbot`` so
+        the test runner tears it down at the end of the test.
+    """
+    d = ReminderDialog(
+        name=name,
+        event_at=event_at if event_at is not None else _DEFAULT_EVENT_AT,
+        tz=tz,
+    )
+    qtbot.addWidget(d)
+    return d
+
+
 class TestReminderDialogConstructor:
     """The constructor wires ``event_at`` through to the body label."""
 
     def test_dialog_window_title_is_reminder(self, qtbot) -> None:
         """The window title is the documented bare ``"Reminder"`` label."""
-        d = ReminderDialog(
-            name="anything",
-            event_at=datetime(2026, 6, 3, 14, 30, tzinfo=UTC),
-            tz=UTC,
-        )
-        qtbot.addWidget(d)
+        d = _make_dialog(qtbot)
         assert d.windowTitle() == "Reminder"
 
     def test_dialog_carries_stays_on_top_hint(self, qtbot) -> None:
         """The popup is marked ``WindowStaysOnTopHint`` so it can't slip behind."""
-        d = ReminderDialog(
-            name="anything",
-            event_at=datetime(2026, 6, 3, 14, 30, tzinfo=UTC),
-            tz=UTC,
-        )
-        qtbot.addWidget(d)
+        d = _make_dialog(qtbot)
         assert bool(d.windowFlags() & Qt.WindowType.WindowStaysOnTopHint)
 
     def test_body_label_renders_formatted_event_time(self, qtbot) -> None:
@@ -114,13 +146,12 @@ class TestReminderDialogConstructor:
         label is checked separately so the test fails clearly when
         the body label specifically regresses.
         """
-        event_at = datetime(2026, 6, 3, 22, 0, tzinfo=UTC)
-        d = ReminderDialog(
+        d = _make_dialog(
+            qtbot,
             name="dentist",
-            event_at=event_at,
+            event_at=datetime(2026, 6, 3, 22, 0, tzinfo=UTC),
             tz=timezone(timedelta(hours=-8)),  # -8 zone: 14:00 Wed
         )
-        qtbot.addWidget(d)
 
         label_texts = {label.text() for label in d.findChildren(QLabel)}
         assert "Time of event is Wed 14:00" in label_texts
@@ -131,12 +162,7 @@ class TestReminderDialogConstructor:
 
     def test_dialog_has_ok_button(self, qtbot) -> None:
         """The dialog exposes a single OK button (no Cancel — FR-013)."""
-        d = ReminderDialog(
-            name="anything",
-            event_at=datetime(2026, 6, 3, 14, 30, tzinfo=UTC),
-            tz=UTC,
-        )
-        qtbot.addWidget(d)
+        d = _make_dialog(qtbot)
         ok_buttons = d.findChildren(QDialogButtonBox)
         assert len(ok_buttons) == 1
         assert ok_buttons[0].button(QDialogButtonBox.StandardButton.Ok) is not None

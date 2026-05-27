@@ -1,7 +1,7 @@
 ---
 change_id: reminders-lead-time
 title: Add "notify N min before event" lead-time option to reminders
-status: implementing
+status: impl_reviewed
 created: 2026-05-27
 updated: 2026-05-27
 archived_at: null

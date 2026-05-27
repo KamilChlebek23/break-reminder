@@ -1,7 +1,7 @@
 ---
 change_id: reminders-list-view
 title: Reminders tab with read-only list bound to reminders.json
-status: implemented
+status: impl_reviewed
 created: 2026-05-27
 updated: 2026-05-27
 archived_at: null

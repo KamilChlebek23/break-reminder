@@ -670,7 +670,7 @@ class SettingsDialog(QDialog):
             ``QDialogButtonBox`` convention the rest of the dialog
             uses).
         """
-        row = QWidget()
+        row = QWidget(self)
         row_layout = QHBoxLayout(row)
         row_layout.setContentsMargins(0, 0, 0, 0)
         row_layout.addStretch(1)

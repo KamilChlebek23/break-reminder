@@ -1,11 +1,11 @@
 ---
-id: settings-voice-toggle
-type: slice
-roadmap_ref: S-04
+change_id: settings-voice-toggle
+title: Add voice on/off + phrase editor to settings dialog
 status: archived
 created: 2026-05-25
 updated: 2026-05-27
 archived_at: 2026-05-27T06:57:32Z
+roadmap_ref: S-04
 prd_refs: [FR-005, FR-007]
 ---
 

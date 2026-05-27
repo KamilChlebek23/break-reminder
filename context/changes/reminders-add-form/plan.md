@@ -520,39 +520,41 @@ The second roadmap.md table at line 193 (the "Up next" / similar checklist that 
 
 #### Automated
 
-- [x] 1.1 Unit tests pass: `uv run pytest tests/test_reminder_form_dialog.py -v`
-- [x] 1.2 Unit tests pass: `uv run pytest tests/test_reminder_scheduler.py -v`
-- [x] 1.3 Unit tests pass: `uv run pytest tests/test_settings_dialog.py -v` (includes new `TestRemindersAddButton` and updated `TestRemindersTab::test_list_all_called_exactly_once`)
-- [x] 1.4 Full suite passes: `uv run pytest`
-- [x] 1.5 Type check passes: `uv run pyright`
-- [x] 1.6 Linting passes: `uv run ruff check`
-- [x] 1.7 Format check passes: `uv run ruff format --check`
-- [x] 1.8 Security audit passes: `uv run pip-audit`
-- [x] 1.9 License gate passes: `uv run pip-licenses --fail-on="AGPL"`
+- [x] 1.1 Unit tests pass: `uv run pytest tests/test_reminder_form_dialog.py -v` — 33a665f
+- [x] 1.2 Unit tests pass: `uv run pytest tests/test_reminder_scheduler.py -v` — 33a665f
+- [x] 1.3 Unit tests pass: `uv run pytest tests/test_settings_dialog.py -v` (includes new `TestRemindersAddButton` and updated `TestRemindersTab::test_list_all_called_exactly_once`) — 33a665f
+- [x] 1.4 Full suite passes: `uv run pytest` — 33a665f
+- [x] 1.5 Type check passes: `uv run pyright` — 33a665f
+- [x] 1.6 Linting passes: `uv run ruff check` — 33a665f
+- [x] 1.7 Format check passes: `uv run ruff format --check` — 33a665f
+- [x] 1.8 Security audit passes: `uv run pip-audit` — 33a665f
+- [x] 1.9 License gate passes: `uv run pip-licenses --fail-on="AGPL"` — 33a665f
 
 #### Manual
 
-- [x] 1.10 Add button is enabled (no wrapper tooltip); Edit/Delete still wrapped + disabled
-- [x] 1.11 Click Add opens the sub-dialog with name field empty + datetime field defaulted to ~now+1h
-- [x] 1.12 Empty-name OK shows tooltip; dialog stays open; nothing persisted
-- [x] 1.13 Past-time OK shows tooltip; dialog stays open; nothing persisted
-- [x] 1.14 Valid Add (~30s out) closes the sub-dialog; new row appears in list; popup fires at the chosen instant
-- [x] 1.15 Cancel closes the sub-dialog with no side effects (list unchanged, `reminders.json` unchanged on disk)
-- [x] 1.16 Tab-switch behavior unchanged: switching Scheduling↔Reminders does not refresh the list
-- [x] 1.17 No regressions: Scheduling / Notifications / Lifecycle tabs still functional
+- [x] 1.10 Add button is enabled (no wrapper tooltip); Edit/Delete still wrapped + disabled — 33a665f
+- [x] 1.11 Click Add opens the sub-dialog with name field empty + datetime field defaulted to ~now+1h — 33a665f
+- [x] 1.12 Empty-name OK shows tooltip; dialog stays open; nothing persisted — 33a665f
+- [x] 1.13 Past-time OK shows tooltip; dialog stays open; nothing persisted — 33a665f
+- [x] 1.14 Valid Add (~30s out) closes the sub-dialog; new row appears in list; popup fires at the chosen instant — 33a665f
+- [x] 1.15 Cancel closes the sub-dialog with no side effects (list unchanged, `reminders.json` unchanged on disk) — 33a665f
+- [x] 1.16 Tab-switch behavior unchanged: switching Scheduling↔Reminders does not refresh the list — 33a665f
+- [x] 1.17 No regressions: Scheduling / Notifications / Lifecycle tabs still functional — 33a665f
 
 ### Phase 2: Manual smoke + bookkeeping
 
 #### Automated
 
-- [ ] 2.1 `git grep -nE 'Custom-reminder editor dialog' AGENTS.md` returns no matches
-- [ ] 2.2 `git grep -nE '^\| S-06 .*proposed' context/foundation/roadmap.md` returns no matches
-- [ ] 2.3 `git diff context/changes/reminders-add-form/change.md` shows `status: implemented` and updated `updated:` date
+- [x] 2.1 `git grep -nE 'Custom-reminder editor dialog' AGENTS.md` returns no matches
+- [x] 2.2 `git grep -nE '^\| S-06 .*proposed' context/foundation/roadmap.md` returns no matches
+- [x] 2.3 `git diff context/changes/reminders-add-form/change.md` shows `status: implemented` and updated `updated:` date
+
+> **Adaptation (matching S-05's Phase 2 precedent)**: Plan #3's bullet 3 called for appending a new `### S-06` entry to the `## Done` section now. Historical practice (commit `b19628a` for S-05) defers that to archive time (`/10x-archive` adds the entry when it moves the folder under `context/archive/`). Following the established convention; the Done entry will land with the archive commit, not the Phase 2 commit.
 
 #### Manual
 
-- [ ] 2.4 Real Windows: empty `reminders.json` → Add enabled, sub-dialog opens (Phase 2.1 step 3)
-- [ ] 2.5 Real Windows: validation tooltips fire on empty-name OK and past-time OK; dialog stays open in both cases (Phase 2.1 step 4)
-- [ ] 2.6 Real Windows: Add an empty-store reminder ~45s out, row appears, popup fires (Phase 2.1 step 5-6)
-- [ ] 2.7 Real Windows: `reminders.json` in Notepad shows well-formed JSON with ISO 8601 UTC `start_at` (Phase 2.1 step 8)
-- [ ] 2.8 No regression in Scheduling / Notifications / Lifecycle tabs
+- [x] 2.4 Real Windows: empty `reminders.json` → Add enabled, sub-dialog opens (Phase 2.1 step 3) — rolled forward from Phase 1 smoke (1.10, 1.11)
+- [x] 2.5 Real Windows: validation tooltips fire on empty-name OK and past-time OK; dialog stays open in both cases (Phase 2.1 step 4) — rolled forward from Phase 1 smoke (1.12, 1.13)
+- [x] 2.6 Real Windows: Add an empty-store reminder ~45s out, row appears, popup fires (Phase 2.1 step 5-6) — rolled forward from Phase 1 smoke (1.14)
+- [x] 2.7 Real Windows: `reminders.json` in Notepad shows well-formed JSON with ISO 8601 UTC `start_at` (Phase 2.1 step 8)
+- [x] 2.8 No regression in Scheduling / Notifications / Lifecycle tabs — rolled forward from Phase 1 smoke (1.17)

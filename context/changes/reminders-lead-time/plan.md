@@ -404,10 +404,10 @@ The `## Done` entry insertion is **deferred to archive time** per the establishe
 
 #### Automated
 
-- [x] 2.1 `git grep -nE '^\| S-06b .*proposed' context/foundation/roadmap.md` returns no matches
-- [x] 2.2 `git diff context/changes/reminders-lead-time/change.md` shows `status: implemented` and updated `updated:` date
+- [x] 2.1 `git grep -nE '^\| S-06b .*proposed' context/foundation/roadmap.md` returns no matches — f806cad
+- [x] 2.2 `git diff context/changes/reminders-lead-time/change.md` shows `status: implemented` and updated `updated:` date — f806cad
 
 #### Manual
 
-- [x] 2.3 Reminders tab still functional after the bookkeeping commit (smoke check)
-- [x] 2.4 No regression in any tab
+- [x] 2.3 Reminders tab still functional after the bookkeeping commit (smoke check) — f806cad
+- [x] 2.4 No regression in any tab — f806cad

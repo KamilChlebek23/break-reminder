@@ -545,16 +545,16 @@ The second roadmap.md table at line 193 (the "Up next" / similar checklist that 
 
 #### Automated
 
-- [x] 2.1 `git grep -nE 'Custom-reminder editor dialog' AGENTS.md` returns no matches
-- [x] 2.2 `git grep -nE '^\| S-06 .*proposed' context/foundation/roadmap.md` returns no matches
-- [x] 2.3 `git diff context/changes/reminders-add-form/change.md` shows `status: implemented` and updated `updated:` date
+- [x] 2.1 `git grep -nE 'Custom-reminder editor dialog' AGENTS.md` returns no matches — beba743
+- [x] 2.2 `git grep -nE '^\| S-06 .*proposed' context/foundation/roadmap.md` returns no matches — beba743
+- [x] 2.3 `git diff context/changes/reminders-add-form/change.md` shows `status: implemented` and updated `updated:` date — beba743
 
 > **Adaptation (matching S-05's Phase 2 precedent)**: Plan #3's bullet 3 called for appending a new `### S-06` entry to the `## Done` section now. Historical practice (commit `b19628a` for S-05) defers that to archive time (`/10x-archive` adds the entry when it moves the folder under `context/archive/`). Following the established convention; the Done entry will land with the archive commit, not the Phase 2 commit.
 
 #### Manual
 
-- [x] 2.4 Real Windows: empty `reminders.json` → Add enabled, sub-dialog opens (Phase 2.1 step 3) — rolled forward from Phase 1 smoke (1.10, 1.11)
-- [x] 2.5 Real Windows: validation tooltips fire on empty-name OK and past-time OK; dialog stays open in both cases (Phase 2.1 step 4) — rolled forward from Phase 1 smoke (1.12, 1.13)
-- [x] 2.6 Real Windows: Add an empty-store reminder ~45s out, row appears, popup fires (Phase 2.1 step 5-6) — rolled forward from Phase 1 smoke (1.14)
-- [x] 2.7 Real Windows: `reminders.json` in Notepad shows well-formed JSON with ISO 8601 UTC `start_at` (Phase 2.1 step 8)
-- [x] 2.8 No regression in Scheduling / Notifications / Lifecycle tabs — rolled forward from Phase 1 smoke (1.17)
+- [x] 2.4 Real Windows: empty `reminders.json` → Add enabled, sub-dialog opens (Phase 2.1 step 3) — beba743 (rolled forward from Phase 1 smoke 1.10, 1.11)
+- [x] 2.5 Real Windows: validation tooltips fire on empty-name OK and past-time OK; dialog stays open in both cases (Phase 2.1 step 4) — beba743 (rolled forward from Phase 1 smoke 1.12, 1.13)
+- [x] 2.6 Real Windows: Add an empty-store reminder ~45s out, row appears, popup fires (Phase 2.1 step 5-6) — beba743 (rolled forward from Phase 1 smoke 1.14)
+- [x] 2.7 Real Windows: `reminders.json` in Notepad shows well-formed JSON with ISO 8601 UTC `start_at` (Phase 2.1 step 8) — beba743
+- [x] 2.8 No regression in Scheduling / Notifications / Lifecycle tabs — beba743 (rolled forward from Phase 1 smoke 1.17)

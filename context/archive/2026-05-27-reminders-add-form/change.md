@@ -1,9 +1,10 @@
 ---
 change_id: reminders-add-form
 title: Add custom reminder form (name + future date/time) wired through scheduler
-status: implemented
+status: archived
 created: 2026-05-27
 updated: 2026-05-27
+archived_at: 2026-05-27T10:50:33Z
 roadmap_ref: S-06
 prd_refs: [FR-011, FR-013]
 ---

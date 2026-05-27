@@ -141,6 +141,9 @@ All code changes land here. After Phase 1: snooze duration and max snoozes are u
   - `test_max_snoozes_setter_rejects_above_5` — expects `ValueError`.
   - `test_max_snoozes_setter_accepts_boundary_values` — 0 and 5 round-trip (zero is intentional).
   - `test_max_snoozes_getter_clamps_corrupt_high_value` — INI with 99 reads back as 5.
+  - `test_snooze_duration_getter_falls_back_when_unparseable` — INI with `"abc"` reads back as `DEFAULT_SNOOZE_DURATION_MIN` (mirrors the break-interval unparseable-string fallback case in `TestValidation`).
+  - `test_max_snoozes_getter_falls_back_when_unparseable` — INI with `"abc"` reads back as `DEFAULT_MAX_SNOOZES`.
+  - `test_max_snoozes_getter_clamps_corrupt_low_value` — INI with -10 reads back as 0 (closes the low-side getter-clamp gap; 0 is the legal lower bound for this field).
 
 #### 7. Dialog-layer tests
 
@@ -160,6 +163,7 @@ All code changes land here. After Phase 1: snooze duration and max snoozes are u
   - `test_max_snoozes_save_round_trip` — set spinbox to 3, click OK, fresh `Settings` reads 3.
   - `test_max_snoozes_save_zero_round_trip` — explicit zero coverage; set 0, click OK, reads 0.
 - Extend `TestLayout` (around `tests/test_settings_dialog.py:221-`): assert the Scheduling tab's `QFormLayout` row count grew by 2 and the new row labels are present.
+- Extend `TestNotificationsTabValidation::test_voice_on_blank_phrase_blocks_save` (the atomic-save tripwire established by S-04 impl-review F2): pre-set + edit all three Scheduling-tab fields (break-interval, snooze-duration, max-snoozes) and assert each is unchanged on disk after the blocked-save attempt. Without this, a future refactor that moves either new snooze write below the voice-phrase validation gate would silently leak — the existing tripwire pins only `break_interval_min`.
 
 #### 8. `BreakScheduler.seconds_until_snooze_end` property (scope addendum)
 

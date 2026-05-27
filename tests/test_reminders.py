@@ -18,6 +18,7 @@ from break_reminder.storage.reminders import (
     _LEAD_MIN_VALUE,
     Reminder,
     ReminderStore,
+    _coerce_aware_utc,
     _coerce_lead_minutes,
 )
 
@@ -394,3 +395,94 @@ class TestCoerceLeadMinutes:
         }
         recovered = Reminder.from_dict(hostile_dict)
         assert recovered.lead_minutes == _LEAD_MAX_VALUE
+
+
+class TestCoerceAwareUtc:
+    """``_coerce_aware_utc`` boundary helper (impl-review F2 hardening).
+
+    Pins the tz-aware invariant the ``Reminder`` dataclass docstring
+    documents. Three invariants:
+
+    1. Already-aware datetimes pass through unchanged.
+    2. Tz-naive datetimes (from a hand-edited ``reminders.json`` where
+       the user dropped the ``+00:00`` suffix) gain a UTC tzinfo so
+       downstream comparisons don't raise ``TypeError``.
+    3. ``None`` (for optional ``end_at``) round-trips as ``None``.
+
+    Without this helper the S-07 Edit-mode past-time skip predicate
+    (``start_at_utc == self._editing.start_at``) would crash on any
+    hand-edited entry that lost its timezone suffix, since Python
+    refuses to compare tz-aware and tz-naive datetimes.
+    """
+
+    def test_aware_utc_passes_through(self) -> None:
+        """A tz-aware UTC datetime returns unchanged (identity preserved)."""
+        aware = datetime(2026, 6, 1, 9, 0, tzinfo=UTC)
+        result = _coerce_aware_utc(aware)
+        assert result is aware
+
+    def test_aware_non_utc_passes_through(self) -> None:
+        """A tz-aware non-UTC datetime is not re-anchored; we preserve the zone.
+
+        The helper is "ensure tz-aware", not "convert to UTC". A future
+        code path that hands us an aware datetime in another zone
+        (e.g., a recurrence rule that returns local times) must round-
+        trip its zone faithfully — only naive inputs get UTC attached.
+        """
+        from datetime import timedelta, timezone
+
+        est = timezone(timedelta(hours=-5))
+        aware_est = datetime(2026, 6, 1, 9, 0, tzinfo=est)
+        result = _coerce_aware_utc(aware_est)
+        assert result is aware_est
+
+    def test_naive_gains_utc(self) -> None:
+        """A tz-naive datetime gets ``tzinfo=UTC`` (wall-clock interpreted as UTC)."""
+        naive = datetime(2026, 6, 1, 9, 0)
+        result = _coerce_aware_utc(naive)
+        assert result == datetime(2026, 6, 1, 9, 0, tzinfo=UTC)
+        assert result is not None and result.tzinfo is UTC
+
+    def test_none_returns_none(self) -> None:
+        """``None`` input (optional ``end_at``) returns ``None``."""
+        assert _coerce_aware_utc(None) is None
+
+    def test_from_dict_normalizes_naive_start_at(self) -> None:
+        """A hand-edited entry without timezone suffix loads as UTC-aware.
+
+        Most-likely real-world failure mode: user opens
+        ``reminders.json`` in Notepad, edits the time, and saves
+        without re-adding the ``+00:00`` suffix. ``fromisoformat``
+        returns a tz-naive datetime; pre-fix this loaded into
+        ``Reminder.start_at`` and crashed any tz-aware comparison
+        downstream (notably the S-07 Edit-mode skip predicate).
+        Post-fix it normalizes to ``datetime(..., tzinfo=UTC)``.
+        """
+        hand_edited = {
+            "id": "00000000-0000-4000-8000-000000000002",
+            "name": "hand-edited-no-tz",
+            "start_at": "2026-06-01T09:00:00",  # NO +00:00 suffix
+            "rrule_str": None,
+            "end_at": None,
+        }
+        recovered = Reminder.from_dict(hand_edited)
+        assert recovered.start_at == datetime(2026, 6, 1, 9, 0, tzinfo=UTC)
+        assert recovered.start_at.tzinfo is not None
+
+    def test_from_dict_normalizes_naive_end_at(self) -> None:
+        """A hand-edited ``end_at`` without timezone suffix loads as UTC-aware.
+
+        Symmetric tripwire to ``start_at`` for the optional end-date
+        field. Tests that the coercion is applied to ``end_at`` too,
+        not just ``start_at``.
+        """
+        hand_edited = {
+            "id": "00000000-0000-4000-8000-000000000003",
+            "name": "with-end-no-tz",
+            "start_at": datetime(2026, 6, 1, 9, 0, tzinfo=UTC).isoformat(),
+            "rrule_str": "FREQ=DAILY",
+            "end_at": "2026-12-31T17:00:00",  # NO +00:00 suffix
+        }
+        recovered = Reminder.from_dict(hand_edited)
+        assert recovered.end_at == datetime(2026, 12, 31, 17, 0, tzinfo=UTC)
+        assert recovered.end_at is not None and recovered.end_at.tzinfo is not None

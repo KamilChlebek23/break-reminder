@@ -468,12 +468,17 @@ class ReminderFormDialog(QDialog):
         # under ``python -O`` while adding zero value at runtime
         # (retrospective impl-review F5).
         naive_local = cast(datetime, self._datetime_field.dateTime().toPython())
-        # ``datetime.now().astimezone().tzinfo`` captures the system
-        # local zone as a ``tzinfo`` object. Attaching it via
-        # ``.replace`` makes the previously-naive value aware in the
-        # user's local zone; ``.astimezone(UTC)`` then converts.
-        local_tz = datetime.now().astimezone().tzinfo
-        event_at_utc = naive_local.replace(tzinfo=local_tz).astimezone(UTC)
+        # ``naive_local.astimezone(UTC)`` interprets the naive value as
+        # system-local wall-clock and converts to UTC. Per the Python
+        # 3.6+ contract, ``astimezone`` on a naive datetime uses the
+        # local zone's offset for **that** wall-clock value — which
+        # means DST is correct on a per-instant basis. The previous
+        # idiom (``datetime.now().astimezone().tzinfo`` + ``.replace``)
+        # captured NOW's offset and reapplied it to ``naive_local``;
+        # in a DST-spanning Edit (load a January reminder in July,
+        # change only the name, save) that produced a wrong UTC and
+        # broke the Edit-mode skip equality. See impl-review F3.
+        event_at_utc = naive_local.astimezone(UTC)
         lead_minutes = self._lead_minutes_field.value()
         start_at_utc = event_at_utc - timedelta(minutes=lead_minutes)
         # Edit-mode skip: when the firing time hasn't moved from the

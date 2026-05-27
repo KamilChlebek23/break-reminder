@@ -1475,3 +1475,154 @@ class TestReminderFormDialogEditMode:
         assert len(calls) == 1
         args, _kwargs = calls[0]
         assert args[1] == _format_past_time_with_lead(10)
+
+    def test_edit_mode_name_validation_still_applies(
+        self,
+        qtbot,
+        store: ReminderStore,
+        scheduler_stub: StubScheduler,
+        clock: Clock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Clearing the name in Edit mode trips the empty-name gate just like Add.
+
+        The name gate is shared between Add and Edit (single ``stripped_name``
+        check at the top of ``accept``), but the dispatch downstream differs
+        (``store.update`` vs ``store.add``, ``reminder_updated`` vs
+        ``reminder_added``). This test pins that the gate fires AND nothing
+        in the Edit-specific dispatch leaks through on early return — the
+        loaded reminder stays byte-identical on disk and ``reminder_updated``
+        stays silent.
+
+        Impl-review F1 follow-up: the plan called this test out by name and
+        the Add-mode equivalent (``test_empty_name_blocks_save``) doesn't
+        exercise the Edit-mode dispatch surface.
+        """
+        calls = _patch_show_text(monkeypatch)
+        reminder = self._make_future_reminder(store, clock, name="Has a name")
+        before = store.list_all()
+
+        d = _make_edit_dialog(qtbot, store, scheduler_stub, clock, reminder)
+        d._name_field.setText("")  # blank out the pre-filled name
+        received_updated: list[Reminder] = []
+        d.reminder_updated.connect(received_updated.append)
+
+        d.accept()
+
+        # Store byte-identical to the pre-state (no update dispatched).
+        assert store.list_all() == before
+        assert scheduler_stub.reload_calls == 0
+        assert received_updated == []
+        assert d.result() == int(QDialog.DialogCode.Rejected)
+        # Tooltip surfaced the empty-name message.
+        assert len(calls) == 1
+        args, _kwargs = calls[0]
+        assert args[1] == _NAME_EMPTY_MESSAGE
+
+    def test_edit_mode_cancel_does_not_modify_store(
+        self,
+        qtbot,
+        store: ReminderStore,
+        scheduler_stub: StubScheduler,
+        clock: Clock,
+    ) -> None:
+        """``reject()`` on an Edit dialog discards every edit without persisting.
+
+        Even after the user has typed a different name, picked a different
+        event time, and bumped the lead, ``reject()`` leaves the store
+        byte-identical to the pre-state and ``reminder_updated`` silent.
+        Mirror of the Add-mode ``test_reject_does_not_persist`` for the
+        Edit branch.
+        """
+        reminder = self._make_future_reminder(store, clock, name="Keep me", lead_minutes=5)
+        before = store.list_all()
+
+        d = _make_edit_dialog(qtbot, store, scheduler_stub, clock, reminder)
+        d._name_field.setText("Would have been renamed")
+        new_event = clock().astimezone() + timedelta(hours=12)
+        d._datetime_field.setDateTime(_qdatetime_from_naive_local(new_event.replace(tzinfo=None)))
+        d._lead_minutes_field.setValue(30)
+        received_updated: list[Reminder] = []
+        d.reminder_updated.connect(received_updated.append)
+
+        d.reject()
+
+        assert store.list_all() == before
+        assert scheduler_stub.reload_calls == 0
+        assert received_updated == []
+        assert d.result() == int(QDialog.DialogCode.Rejected)
+
+    def test_edit_mode_oserror_on_store_update_blocks_dialog(
+        self,
+        qtbot,
+        store: ReminderStore,
+        scheduler_stub: StubScheduler,
+        clock: Clock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """``OSError`` from ``store.update`` triggers the atomic-save tripwire.
+
+        Edit-mode counterpart to ``test_oserror_on_store_add_blocks_dialog_and_shows_tooltip``.
+        The OSError catch in ``accept`` wraps both ``store.update`` and
+        ``store.add`` in the same ``try`` block, but the Edit branch
+        (``store.update`` raising) is not covered by the Add-mode test —
+        a regression that, e.g., only caught errors from ``add`` would
+        slip past until this test fires.
+
+        On failure: scheduler is NOT reloaded, ``reminder_updated`` is
+        NOT emitted, dialog stays open (``super().accept()`` skipped),
+        tooltip surfaces with the OS-level reason.
+        """
+        calls = _patch_show_text(monkeypatch)
+        reminder = self._make_future_reminder(store, clock)
+
+        def _raise(_reminder: Reminder) -> None:
+            raise PermissionError(13, "Permission denied")
+
+        monkeypatch.setattr(store, "update", _raise)
+
+        d = _make_edit_dialog(qtbot, store, scheduler_stub, clock, reminder)
+        received_updated: list[Reminder] = []
+        d.reminder_updated.connect(received_updated.append)
+
+        d.accept()
+
+        assert scheduler_stub.reload_calls == 0
+        assert received_updated == []
+        assert d.result() == int(QDialog.DialogCode.Rejected)
+        # Tooltip surfaced with the OS-level reason.
+        assert len(calls) == 1
+        args, _kwargs = calls[0]
+        assert "Permission denied" in args[1]
+
+    def test_add_mode_constructor_still_works_with_reminder_none(
+        self,
+        qtbot,
+        store: ReminderStore,
+        scheduler_stub: StubScheduler,
+        clock: Clock,
+    ) -> None:
+        """Explicitly passing ``reminder=None`` is equivalent to omitting the kwarg.
+
+        Sanity tripwire for the dispatch default: every Add-mode test
+        in this file relies on the kwarg being absent, but the production
+        signature reads ``reminder: Reminder | None = None``. A
+        regression that, e.g., flipped the default to a sentinel and
+        broke the ``is not None`` check at the four dispatch points
+        wouldn't show up in any existing test. This test exercises the
+        explicit-``None`` form to keep that path honest.
+        """
+        d = ReminderFormDialog(
+            store=store,
+            scheduler=scheduler_stub,  # type: ignore[arg-type]
+            clock=clock,
+            reminder=None,
+        )
+        qtbot.addWidget(d)
+
+        # Add-mode invariants: Add title, no loaded reminder, fields seed
+        # from defaults.
+        assert d.windowTitle() == "Add Reminder"
+        assert d._editing is None
+        assert d._name_field.text() == ""
+        assert d._lead_minutes_field.value() == _LEAD_DEFAULT

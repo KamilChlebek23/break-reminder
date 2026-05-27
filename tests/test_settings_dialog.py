@@ -2963,3 +2963,77 @@ class TestRemindersDeleteButton:
         assert len(tooltip_calls) == 1
         args, _kwargs = tooltip_calls[0]
         assert args[1] == _DELETE_FAILED_FORMAT.format(error="Permission denied")
+
+    def test_delete_real_storage_write_failure_keeps_disk_byte_identical(
+        self,
+        qtbot,
+        settings: Settings,
+        voice: StubVoiceNotifier,
+        reminders_path: Path,
+        reminder_store: ReminderStore,
+        reminder_scheduler: StubReminderScheduler,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """End-to-end: real ``ReminderStore.delete`` + write-side failure leaves disk intact.
+
+        Complements ``test_delete_oserror_on_store_delete_keeps_list_intact``
+        (which stubs the public ``delete`` itself) by going one layer
+        deeper: the real public ``delete()`` runs (lock acquired, file
+        read, list filtered), and the failure happens inside ``_write``
+        where the storage layer's atomic-rename would actually live.
+
+        Pins the **storage layer's atomic-save invariant** at the
+        ``SettingsDialog`` boundary: when the write fails, the on-disk
+        ``reminders.json`` is byte-identical to its pre-state. The
+        storage layer has its own tests for this (``test_reminders.py``
+        ``TestDefensiveBehavior``); this test ties the disk invariant
+        to the UI surface so a regression in either layer surfaces
+        here too.
+
+        Impl-review F4 follow-up.
+        """
+        d = _build_populated_dialog(qtbot, settings, voice, reminder_store, reminder_scheduler)
+        assert d._reminders_list is not None
+        d._reminders_list.setCurrentRow(0)
+        original_tab = d._reminders_tab
+        # Snapshot the on-disk bytes before the failing delete.
+        assert reminders_path.exists()
+        before_bytes = reminders_path.read_bytes()
+        before_items = reminder_store.list_all()
+        self._patch_question(monkeypatch, QMessageBox.StandardButton.Yes)
+
+        # Patch the store's private ``_write`` (called from inside the
+        # real ``delete``) to raise. The public ``delete`` still runs:
+        # lock, read, filter — and only fails at the moment of actual
+        # disk replacement.
+        def _fail_write(_items: list[Reminder]) -> None:
+            raise PermissionError(13, "Permission denied")
+
+        monkeypatch.setattr(reminder_store, "_write", _fail_write)
+
+        tooltip_calls: list[tuple] = []
+
+        def _tooltip_stub(*args: object, **kwargs: object) -> None:
+            tooltip_calls.append((args, kwargs))
+
+        monkeypatch.setattr(
+            "break_reminder.ui.settings_dialog.QToolTip.showText",
+            _tooltip_stub,
+        )
+
+        d._reminders_delete_button.click()
+
+        # Atomic-save invariant: on-disk file byte-identical to pre-state.
+        after_bytes = reminders_path.read_bytes()
+        assert after_bytes == before_bytes
+        # Round-trip: a fresh ReminderStore reading the same path sees
+        # the same items (the in-memory state matches disk).
+        after_items = ReminderStore(path=reminders_path).list_all()
+        assert after_items == before_items
+        # UI invariants: scheduler not reloaded, tab not rebuilt.
+        assert reminder_scheduler.reload_calls == 0
+        assert d._reminders_tab is original_tab
+        # Tooltip surfaced with the OS-level reason.
+        assert len(tooltip_calls) == 1
+        args, _kwargs = tooltip_calls[0]
+        assert args[1] == _DELETE_FAILED_FORMAT.format(error="Permission denied")

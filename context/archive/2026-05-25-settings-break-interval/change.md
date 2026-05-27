@@ -1,11 +1,11 @@
 ---
-id: settings-break-interval
-type: slice
-roadmap_ref: S-01
+change_id: settings-break-interval
+title: Replace settings placeholder QMessageBox with real QDialog + break-interval edit
 status: archived
 created: 2026-05-25
 updated: 2026-05-27
 archived_at: 2026-05-27T06:23:06Z
+roadmap_ref: S-01
 prd_refs: [FR-005, FR-006]
 ---
 

@@ -5,6 +5,8 @@ status: archived
 created: 2026-05-26
 updated: 2026-05-27
 archived_at: 2026-05-27T06:06:48Z
+roadmap_ref: S-02
+prd_refs: [FR-003, FR-005]
 ---
 
 ## Notes
@@ -25,4 +27,4 @@ Fix:
 - `_delete_autostart_runkey`: outer `try/except FileNotFoundError` around the entire `with` block — both "subkey absent" and "value absent" now map to the same "already-deleted" success semantic.
 - Tests: scaffold extended to patch `winreg.CreateKeyEx`; three new regression tests (`test_write_helper_succeeds_when_subkey_missing`, `test_delete_helper_swallows_filenotfounderror_when_subkey_missing`, `test_delete_helper_propagates_oserror_from_openkey`) pin both the subkey-missing-success and the symmetric `PermissionError`-propagation paths so the gap can't reopen.
 
-Slice status remains `implemented`; this is a CI-hardening hotfix landing under the v0.5.0 tag.
+Slice status at the time was `implemented`; this is a CI-hardening hotfix landing under the v0.5.0 tag. (Slice has since been archived.)

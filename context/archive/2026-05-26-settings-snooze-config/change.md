@@ -5,6 +5,8 @@ status: archived
 created: 2026-05-26
 updated: 2026-05-27
 archived_at: 2026-05-27T06:41:05Z
+roadmap_ref: S-03
+prd_refs: [FR-005, FR-010]
 ---
 
 ## Notes

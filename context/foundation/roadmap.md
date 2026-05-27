@@ -35,7 +35,7 @@ BreakReminder is a Windows 11 tray-resident utility for focus-minded solo progra
 | S-04 | settings-voice-toggle | enable voice notification and edit the voice phrase from settings | S-01 | FR-005, FR-007 | done |
 | S-05 | reminders-list-view | see existing custom reminders in the settings dialog | S-01 | FR-005, FR-012 | done |
 | S-06 | reminders-add-form | add a one-shot custom reminder with a name and a date/time | S-05 | FR-011, FR-013 | done |
-| S-06b | reminders-lead-time | configure a reminder to fire N minutes (0-60) before the event | S-06 | FR-011, FR-013 | proposed |
+| S-06b | reminders-lead-time | configure a reminder to fire N minutes (0-60) before the event | S-06 | FR-011, FR-013 | done |
 | S-07 | reminders-edit-delete | edit and delete custom reminders in the list | S-06 | FR-012 | proposed |
 | S-08 | reminders-recurrence-editor | configure a custom reminder to recur daily / weekly / monthly | S-06 | FR-014 | proposed |
 
@@ -168,7 +168,7 @@ The PRD must-have FRs and user stories below are **already shipped in v0.1.0** a
 - **Blockers:** —
 - **Unknowns:** —
 - **Risk:** low. One field on `Reminder` (storage Model A: round-trip metadata, scheduler unchanged), one `QSpinBox` on the form, one branch in `_compose_row`. Backward-compatible — pre-S-06b `reminders.json` files load with `lead_minutes=0` (no migration). The only non-obvious site is the displayed-time switch in `_compose_row` from firing time to event time; pinned by tests.
-- **Status:** proposed
+- **Status:** done
 
 ### S-07: reminders-edit-delete
 
@@ -204,7 +204,7 @@ The PRD must-have FRs and user stories below are **already shipped in v0.1.0** a
 | S-04 | `settings-voice-toggle` | Add voice on/off + phrase editor to settings dialog | yes | Planned + shipped 2026-05-25 |
 | S-05 | `reminders-list-view` | Reminders tab with read-only list bound to reminders.json | yes | Planned + shipped 2026-05-27 |
 | S-06 | `reminders-add-form` | Add a one-shot custom reminder via sub-dialog | yes | Planned + shipped 2026-05-27 |
-| S-06b | `reminders-lead-time` | Add "notify N min before event" lead-time spinbox to the add form | no | Run after S-06 |
+| S-06b | `reminders-lead-time` | Add "notify N min before event" lead-time spinbox to the add form | yes | Planned + shipped 2026-05-27 |
 | S-07 | `reminders-edit-delete` | Edit and delete entries in the reminders list | no | Run after S-06 |
 | S-08 | `reminders-recurrence-editor` | Daily / weekly / monthly recurrence in the add/edit dialog | no | Run after S-06 |
 

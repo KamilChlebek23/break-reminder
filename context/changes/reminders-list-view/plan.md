@@ -453,12 +453,12 @@ Move the slice from "implemented" to "shipped + traceable": confirm the dialog b
 
 #### Automated
 
-- [x] 2.1 `git grep -nE 'Custom-reminder editor surfaces inside the settings window' AGENTS.md` returns no matches
-- [x] 2.2 `git grep -nE '^\| S-05 .*proposed' context/foundation/roadmap.md` returns no matches (tightened from `S-05.*proposed` during Phase 2 — the original was over-broad and matched S-06's "S-05" Prerequisites mention)
-- [x] 2.3 `git diff context/changes/reminders-list-view/change.md` shows `status: implemented` and updated `updated:` date
+- [x] 2.1 `git grep -nE 'Custom-reminder editor surfaces inside the settings window' AGENTS.md` returns no matches — b19628a
+- [x] 2.2 `git grep -nE '^\| S-05 .*proposed' context/foundation/roadmap.md` returns no matches (tightened from `S-05.*proposed` during Phase 2 — the original was over-broad and matched S-06's "S-05" Prerequisites mention) — b19628a
+- [x] 2.3 `git diff context/changes/reminders-list-view/change.md` shows `status: implemented` and updated `updated:` date — b19628a
 
 #### Manual
 
-- [x] 2.4 Real Windows: empty `reminders.json` shows placeholder (Phase 2.1 step 3)
-- [x] 2.5 Real Windows: three seeded entries render in expected order with `(expired)` handling (Phase 2.1 step 5)
-- [x] 2.6 No regression in Scheduling / Notifications / Lifecycle tabs
+- [x] 2.4 Real Windows: empty `reminders.json` shows placeholder (Phase 2.1 step 3) — b19628a
+- [x] 2.5 Real Windows: three seeded entries render in expected order with `(expired)` handling (Phase 2.1 step 5) — b19628a
+- [x] 2.6 No regression in Scheduling / Notifications / Lifecycle tabs — b19628a

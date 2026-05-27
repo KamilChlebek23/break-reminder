@@ -3,7 +3,7 @@ project: BreakReminder
 version: 1
 status: draft
 created: 2026-05-25
-updated: 2026-05-26
+updated: 2026-05-27
 prd_version: 1
 main_goal: low-complexity
 top_blocker: none
@@ -216,4 +216,4 @@ The PRD must-have FRs and user stories below are **already shipped in v0.1.0** a
 
 ## Done
 
-(Empty on first generation. `/10x-archive` will append entries here when changes whose Change IDs match items above are archived.)
+- **S-05: user opens settings, switches to the "Reminders" tab/section, and sees a list (likely `QListView` or `QTableView`) of any custom reminders saved in `reminders.json`. List is read-only in this slice; "Add" / "Edit" / "Delete" buttons are present but disabled.** — Archived 2026-05-27 → `context/archive/2026-05-27-reminders-list-view/`. Lesson: —.

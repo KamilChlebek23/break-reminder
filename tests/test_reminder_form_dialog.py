@@ -1,19 +1,29 @@
-"""Tests for ``ReminderFormDialog`` (S-06 / FR-011).
+"""Tests for ``ReminderFormDialog`` (S-06 / S-06b / S-07 / FR-011 / FR-012).
 
 Covers:
 
-- **Defaults**: name field empty + placeholder set; datetime field
-  defaulted to ``clock() + 1h`` rounded up to the next 15-minute boundary
-  in **system local time** (the widget displays naive local).
+- **Defaults** (Add mode): name field empty + placeholder set; datetime
+  field defaulted to ``clock() + 1h`` rounded up to the next 15-minute
+  boundary in **system local time** (the widget displays naive local).
 - **Validation**: empty-name and past-time gates each surface their
   documented tooltip AND block the entire save (no ``store.add``, no
-  ``scheduler.reload``, no signal emit, no ``super().accept()``).
-- **Save**: happy path persists via ``store.add``, calls
+  ``scheduler.reload``, no signal emit, no ``super().accept()``). In
+  Edit mode the past-time gate is skipped when the firing time hasn't
+  moved from the loaded reminder.
+- **Save (Add)**: happy path persists via ``store.add``, calls
   ``scheduler.reload``, and emits ``reminder_added`` with the saved
   ``Reminder``. The emit-before-super-accept ordering is pinned by a
   ``dialog.result()`` snapshot at emit time.
-- **Atomic save tripwire**: ``OSError`` from ``store.add`` blocks
-  scheduler reload, signal emit, and the dialog close.
+- **Save (Edit, S-07)**: pre-fills name / lead / event-time from the
+  loaded ``Reminder``, persists via ``store.update`` (preserving id),
+  calls ``scheduler.reload``, and emits ``reminder_updated`` (NOT
+  ``reminder_added``) with the updated ``Reminder``. Same emit-before-
+  super-accept ordering as Add.
+- **Atomic save tripwire**: ``OSError`` from ``store.add`` /
+  ``store.update`` blocks scheduler reload, signal emit, and the
+  dialog close.
+- **Lead minutes (S-06b)**: spinbox bounds + signal payload +
+  lead-aware tooltip wording for the past-event gate.
 
 Tests inject a frozen ``Clock`` so default-value and past-time assertions
 are stable regardless of the runner's wall clock and system zone.
@@ -191,7 +201,7 @@ class TestReminderFormDialogDefaults:
         assert dialog._datetime_field.displayFormat() == _DATETIME_DISPLAY_FORMAT
 
     def test_window_title_is_add_reminder(self, dialog: ReminderFormDialog) -> None:
-        """The dialog title is exactly the documented label."""
+        """In Add mode (no ``reminder=`` kwarg) the dialog title reads "Add Reminder"."""
         assert dialog.windowTitle() == "Add Reminder"
 
     def test_dialog_carries_stays_on_top_hint(self, dialog: ReminderFormDialog) -> None:
@@ -1031,3 +1041,437 @@ class TestReminderFormDialogLeadMinutes:
         assert len(received) == 1
         assert received[0].lead_minutes == 25
         assert received[0].name == "signal-payload"
+
+
+# ---------------------------------------------------------------------------
+# S-07: Edit mode
+# ---------------------------------------------------------------------------
+
+
+def _make_edit_dialog(
+    qtbot,
+    store: ReminderStore,
+    scheduler_stub: StubScheduler,
+    clock: Clock,
+    reminder: Reminder,
+) -> ReminderFormDialog:
+    """Build a ``ReminderFormDialog`` in Edit mode wired against fixtures."""
+    d = ReminderFormDialog(
+        store=store,
+        scheduler=scheduler_stub,  # type: ignore[arg-type]
+        clock=clock,
+        reminder=reminder,
+    )
+    qtbot.addWidget(d)
+    return d
+
+
+class TestReminderFormDialogEditMode:
+    """S-07 Edit-mode pre-fill, save dispatch, signal selection, and past-time skip.
+
+    Mode is determined by the ``reminder=`` kwarg: ``None`` → Add
+    (covered above); a ``Reminder`` instance → Edit (covered here).
+    The Edit flow re-uses the Add validation gates and the same
+    accept-order contract; the divergence points are:
+
+    1. Title reads "Edit Reminder".
+    2. Fields pre-fill from the loaded reminder (datetime widget shows
+       the **event time** = ``start_at + lead_minutes``).
+    3. Save calls ``store.update`` (preserving ``id``), not ``store.add``.
+    4. ``reminder_updated`` fires; ``reminder_added`` stays silent.
+    5. Past-time gate is **skipped** when the firing time hasn't moved
+       — lets the user rename / re-lead an already-expired reminder
+       without rescheduling it. Moving the firing time back into the
+       past still trips the gate.
+    """
+
+    def _make_future_reminder(
+        self,
+        store: ReminderStore,
+        clock: Clock,
+        *,
+        name: str = "Loaded",
+        offset_hours: int = 6,
+        lead_minutes: int = 5,
+    ) -> Reminder:
+        """Pre-seed a future ``Reminder`` and return it for Edit-mode loading."""
+        reminder = Reminder(
+            name=name,
+            start_at=clock() + timedelta(hours=offset_hours),
+            lead_minutes=lead_minutes,
+        )
+        store.add(reminder)
+        return reminder
+
+    def test_edit_mode_window_title_is_edit_reminder(
+        self,
+        qtbot,
+        store: ReminderStore,
+        scheduler_stub: StubScheduler,
+        clock: Clock,
+    ) -> None:
+        """The title flips to "Edit Reminder" when a ``reminder=`` is supplied."""
+        reminder = self._make_future_reminder(store, clock)
+        d = _make_edit_dialog(qtbot, store, scheduler_stub, clock, reminder)
+        assert d.windowTitle() == "Edit Reminder"
+
+    def test_edit_mode_name_field_pre_filled(
+        self,
+        qtbot,
+        store: ReminderStore,
+        scheduler_stub: StubScheduler,
+        clock: Clock,
+    ) -> None:
+        """The name field shows the loaded reminder's name verbatim."""
+        reminder = self._make_future_reminder(store, clock, name="Doctor visit")
+        d = _make_edit_dialog(qtbot, store, scheduler_stub, clock, reminder)
+        assert d._name_field.text() == "Doctor visit"
+
+    def test_edit_mode_lead_field_pre_filled(
+        self,
+        qtbot,
+        store: ReminderStore,
+        scheduler_stub: StubScheduler,
+        clock: Clock,
+    ) -> None:
+        """The lead spinbox shows the loaded reminder's ``lead_minutes``."""
+        reminder = self._make_future_reminder(store, clock, lead_minutes=20)
+        d = _make_edit_dialog(qtbot, store, scheduler_stub, clock, reminder)
+        assert d._lead_minutes_field.value() == 20
+
+    def test_edit_mode_datetime_field_pre_filled_to_event_time(
+        self,
+        qtbot,
+        store: ReminderStore,
+        scheduler_stub: StubScheduler,
+        clock: Clock,
+    ) -> None:
+        """Datetime widget shows ``start_at + lead_minutes`` (the event time, local naive).
+
+        The user's mental model is event-time-first (matches the
+        Reminders list's ``_compose_row`` output and the Add-mode UX
+        for non-zero lead). Pre-filling with the raw ``start_at``
+        would force the user to mentally re-add the lead every time
+        they opened Edit.
+        """
+        reminder = self._make_future_reminder(store, clock, lead_minutes=10)
+        d = _make_edit_dialog(qtbot, store, scheduler_stub, clock, reminder)
+
+        expected_event_utc = reminder.start_at + timedelta(minutes=reminder.lead_minutes)
+        expected_naive_local = expected_event_utc.astimezone().replace(tzinfo=None)
+        actual = d._datetime_field.dateTime().toPython()
+        assert actual == expected_naive_local
+
+    def test_edit_mode_unchanged_save_preserves_id(
+        self,
+        qtbot,
+        store: ReminderStore,
+        scheduler_stub: StubScheduler,
+        clock: Clock,
+    ) -> None:
+        """OK on a pristine Edit dialog re-writes the same row (same ``id``)."""
+        reminder = self._make_future_reminder(store, clock)
+        d = _make_edit_dialog(qtbot, store, scheduler_stub, clock, reminder)
+
+        d.accept()
+
+        items = store.list_all()
+        assert len(items) == 1
+        assert items[0].id == reminder.id
+
+    def test_edit_mode_unchanged_save_calls_store_update_not_add(
+        self,
+        qtbot,
+        store: ReminderStore,
+        scheduler_stub: StubScheduler,
+        clock: Clock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The save path dispatches to ``store.update``; ``store.add`` is never called.
+
+        Tripwire for the mode dispatch in ``accept``. If a regression
+        flipped the branch and called ``add()``, the store would end
+        up with two rows (duplicate id) and the assertion fails.
+        """
+        reminder = self._make_future_reminder(store, clock)
+        d = _make_edit_dialog(qtbot, store, scheduler_stub, clock, reminder)
+
+        update_calls: list[Reminder] = []
+        add_calls: list[Reminder] = []
+
+        def _record_update(r: Reminder) -> None:
+            update_calls.append(r)
+
+        def _record_add(r: Reminder) -> None:
+            add_calls.append(r)
+
+        monkeypatch.setattr(store, "update", _record_update)
+        monkeypatch.setattr(store, "add", _record_add)
+
+        d.accept()
+
+        assert len(update_calls) == 1
+        assert update_calls[0].id == reminder.id
+        assert add_calls == []
+
+    def test_edit_mode_changed_name_persists(
+        self,
+        qtbot,
+        store: ReminderStore,
+        scheduler_stub: StubScheduler,
+        clock: Clock,
+    ) -> None:
+        """Editing the name and saving overwrites the prior row's name."""
+        reminder = self._make_future_reminder(store, clock, name="Old name")
+        d = _make_edit_dialog(qtbot, store, scheduler_stub, clock, reminder)
+        d._name_field.setText("New name")
+
+        d.accept()
+
+        items = store.list_all()
+        assert len(items) == 1
+        assert items[0].id == reminder.id
+        assert items[0].name == "New name"
+
+    def test_edit_mode_changed_datetime_persists_new_start_at(
+        self,
+        qtbot,
+        store: ReminderStore,
+        scheduler_stub: StubScheduler,
+        clock: Clock,
+    ) -> None:
+        """Editing the event time shifts ``start_at`` by the same delta (lead unchanged).
+
+        Lead held at the loaded value (5 min); user picks an event 3
+        hours after the original. The saved ``start_at`` must move by
+        exactly 3 hours (not 3 hours minus the lead — the lead is
+        round-trip metadata that only modulates the event/firing
+        relationship).
+        """
+        reminder = self._make_future_reminder(store, clock, lead_minutes=5)
+        d = _make_edit_dialog(qtbot, store, scheduler_stub, clock, reminder)
+
+        original_event_utc = reminder.start_at + timedelta(minutes=reminder.lead_minutes)
+        new_event_utc = original_event_utc + timedelta(hours=3)
+        new_event_naive_local = new_event_utc.astimezone().replace(tzinfo=None)
+        d._datetime_field.setDateTime(_qdatetime_from_naive_local(new_event_naive_local))
+
+        d.accept()
+
+        items = store.list_all()
+        assert len(items) == 1
+        assert items[0].start_at == reminder.start_at + timedelta(hours=3)
+        assert items[0].lead_minutes == 5
+
+    def test_edit_mode_changed_lead_persists_new_start_at(
+        self,
+        qtbot,
+        store: ReminderStore,
+        scheduler_stub: StubScheduler,
+        clock: Clock,
+    ) -> None:
+        """Changing only the lead moves ``start_at`` earlier; event time unchanged.
+
+        Loaded reminder has ``lead == 5``. We bump the lead to 20 (15
+        minutes more) without touching the datetime widget. The saved
+        ``start_at`` should land 15 minutes earlier; the
+        widget-displayed event time is unchanged.
+        """
+        reminder = self._make_future_reminder(store, clock, lead_minutes=5)
+        d = _make_edit_dialog(qtbot, store, scheduler_stub, clock, reminder)
+
+        d._lead_minutes_field.setValue(20)  # +15 minutes of lead
+
+        d.accept()
+
+        items = store.list_all()
+        assert len(items) == 1
+        assert items[0].lead_minutes == 20
+        # Event time (start_at + lead) is preserved; therefore start_at
+        # is 15 minutes earlier than the loaded reminder's start_at.
+        original_event = reminder.start_at + timedelta(minutes=reminder.lead_minutes)
+        new_event = items[0].start_at + timedelta(minutes=items[0].lead_minutes)
+        assert new_event == original_event
+        assert items[0].start_at == reminder.start_at - timedelta(minutes=15)
+
+    def test_edit_mode_save_emits_reminder_updated(
+        self,
+        qtbot,
+        store: ReminderStore,
+        scheduler_stub: StubScheduler,
+        clock: Clock,
+    ) -> None:
+        """A successful Edit save emits ``reminder_updated`` with the persisted record."""
+        reminder = self._make_future_reminder(store, clock)
+        d = _make_edit_dialog(qtbot, store, scheduler_stub, clock, reminder)
+        received: list[Reminder] = []
+        d.reminder_updated.connect(received.append)
+
+        d.accept()
+
+        assert len(received) == 1
+        assert received[0].id == reminder.id
+
+    def test_edit_mode_save_does_not_emit_reminder_added(
+        self,
+        qtbot,
+        store: ReminderStore,
+        scheduler_stub: StubScheduler,
+        clock: Clock,
+    ) -> None:
+        """Edit mode must NOT fire the Add-mode signal.
+
+        Tripwire for the mode dispatch on the emit branch. If a
+        regression collapsed the two signals (or fired both), the
+        ``received_added`` list would be non-empty and the assertion
+        fails. Mirror of ``test_edit_mode_unchanged_save_calls_store_update_not_add``
+        for the signal side.
+        """
+        reminder = self._make_future_reminder(store, clock)
+        d = _make_edit_dialog(qtbot, store, scheduler_stub, clock, reminder)
+        received_added: list[Reminder] = []
+        d.reminder_added.connect(received_added.append)
+
+        d.accept()
+
+        assert received_added == []
+
+    def test_edit_mode_emit_before_super_accept_ordering(
+        self,
+        qtbot,
+        store: ReminderStore,
+        scheduler_stub: StubScheduler,
+        clock: Clock,
+    ) -> None:
+        """Mirror of Add's emit-before-super-accept invariant for the Edit signal."""
+        reminder = self._make_future_reminder(store, clock)
+        d = _make_edit_dialog(qtbot, store, scheduler_stub, clock, reminder)
+        captured_result_at_emit: list[int] = []
+
+        def _capture(_reminder: Reminder) -> None:
+            captured_result_at_emit.append(d.result())
+
+        d.reminder_updated.connect(_capture)
+
+        d.accept()
+
+        assert captured_result_at_emit == [int(QDialog.DialogCode.Rejected)]
+        assert d.result() == int(QDialog.DialogCode.Accepted)
+
+    def test_edit_mode_unchanged_firing_time_skips_past_time_gate(
+        self,
+        qtbot,
+        store: ReminderStore,
+        scheduler_stub: StubScheduler,
+        clock: Clock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Editing a now-expired reminder without moving the firing time succeeds.
+
+        Pins the Edit-mode past-time-skip carve-out. A user who saved
+        a reminder for "Tuesday 2pm" and then opens Edit on Wednesday
+        to rename it should NOT have to also reschedule it — that
+        would force them to either pick a fake future time or lose
+        the historical name change. The skip predicate is "firing
+        time identical to the loaded value"; renaming alone leaves
+        the firing time pinned and the gate yields.
+        """
+        # Pre-seed a reminder, then advance the clock past its firing
+        # time so it would fail the gate if the carve-out didn't apply.
+        reminder = self._make_future_reminder(
+            store, clock, name="Already expired", offset_hours=1, lead_minutes=0
+        )
+        clock.advance(seconds=2 * 60 * 60)  # advance 2 hours; reminder now 1h in the past
+        _patch_show_text(monkeypatch)  # would record a call if gate fired
+
+        d = _make_edit_dialog(qtbot, store, scheduler_stub, clock, reminder)
+        d._name_field.setText("Renamed")  # change only the name
+
+        d.accept()
+
+        items = store.list_all()
+        assert len(items) == 1
+        assert items[0].name == "Renamed"
+        assert items[0].start_at == reminder.start_at  # firing time unchanged
+        assert d.result() == int(QDialog.DialogCode.Accepted)
+
+    def test_edit_mode_changed_datetime_to_past_blocks_save(
+        self,
+        qtbot,
+        store: ReminderStore,
+        scheduler_stub: StubScheduler,
+        clock: Clock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Moving the event time INTO the past trips the gate (skip only applies when unchanged).
+
+        Counter-test to the skip carve-out: the moment the user
+        actively dials the firing time backwards into the past, the
+        gate re-engages. Otherwise the carve-out would be a foot-gun
+        ("I can schedule things in the past as long as I claim to be
+        editing").
+        """
+        calls = _patch_show_text(monkeypatch)
+        reminder = self._make_future_reminder(store, clock, lead_minutes=0)
+        d = _make_edit_dialog(qtbot, store, scheduler_stub, clock, reminder)
+
+        # Move the event time to 5 minutes BEFORE the clock.
+        local_past = (clock().astimezone() - timedelta(minutes=5)).replace(tzinfo=None)
+        d._datetime_field.setDateTime(_qdatetime_from_naive_local(local_past))
+
+        d.accept()
+
+        # Store still holds the original loaded reminder, byte-identical.
+        items = store.list_all()
+        assert len(items) == 1
+        assert items[0].start_at == reminder.start_at
+        assert d.result() == int(QDialog.DialogCode.Rejected)
+        # Tooltip surfaced with the bare past-time message (lead == 0).
+        assert len(calls) == 1
+        args, _kwargs = calls[0]
+        assert args[1] == _PAST_TIME_MESSAGE
+
+    def test_edit_mode_changed_lead_into_past_blocks_save(
+        self,
+        qtbot,
+        store: ReminderStore,
+        scheduler_stub: StubScheduler,
+        clock: Clock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Increasing the lead such that ``start_at`` goes into the past trips the gate.
+
+        Edit-mode counterpart to the Add-mode lead-into-past test.
+        Event time stays where it was (3 minutes in the future, well
+        inside reach); but the user bumps the lead to 10, which would
+        push the firing instant 7 minutes into the past. The lead-
+        aware tooltip wording must fire (NOT the bare past-time
+        message — the user composed an impossible event+lead pair,
+        not a literal past event).
+        """
+        calls = _patch_show_text(monkeypatch)
+        # Reminder with event time only 3 minutes in the future from the
+        # clock; loaded lead is 0 so the load-time firing time == event time.
+        reminder_start = clock() + timedelta(minutes=3)
+        reminder = Reminder(
+            name="lead-bump",
+            start_at=reminder_start,
+            lead_minutes=0,
+        )
+        store.add(reminder)
+
+        d = _make_edit_dialog(qtbot, store, scheduler_stub, clock, reminder)
+        # Bump lead to 10: event = now+3, lead=10 → firing = now-7 (past).
+        d._lead_minutes_field.setValue(10)
+
+        d.accept()
+
+        items = store.list_all()
+        assert len(items) == 1
+        assert items[0].start_at == reminder.start_at  # original preserved
+        assert items[0].lead_minutes == 0  # original preserved
+        assert d.result() == int(QDialog.DialogCode.Rejected)
+        # Lead-aware wording (not the bare past-time message).
+        assert len(calls) == 1
+        args, _kwargs = calls[0]
+        assert args[1] == _format_past_time_with_lead(10)

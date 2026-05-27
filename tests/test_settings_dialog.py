@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QSpinBox,
     QTabWidget,
@@ -39,10 +40,12 @@ from break_reminder.storage.settings import (
 )
 from break_reminder.ui import settings_dialog as settings_dialog_module
 from break_reminder.ui.settings_dialog import (
+    _DELETE_CONFIRM_TEXT_FORMAT,
+    _DELETE_CONFIRM_TITLE,
+    _DELETE_FAILED_FORMAT,
     _DIALOG_MINIMUM_WIDTH,
     _EXPIRED_LABEL,
     _FIRING_FORMAT,
-    _REMINDERS_BUTTONS_DISABLED_TOOLTIP,
     _REMINDERS_EMPTY_MESSAGE,
     SettingsDialog,
     _compose_row,
@@ -1991,46 +1994,19 @@ class TestRemindersTab:
         assert names == ["A", "B", "Far", "Zebra"]
 
     def test_edit_and_delete_disabled_by_default(self, dialog: SettingsDialog) -> None:
-        """Edit and Delete start disabled — no row selected (S-07 unblocks).
+        """Edit and Delete start disabled — freshly-built lists have no selection.
 
-        Pinned post-S-06 — the Add button is now enabled (covered by
-        ``TestRemindersAddButton`` below); the previous "all three
-        disabled" assertion would fail because Add ships in this slice.
-        Edit and Delete still wait on S-07.
+        After S-07 the buttons are no longer chronically disabled with
+        a "coming soon" wrapper — they're selection-gated by
+        ``_on_reminders_selection_changed``. A freshly-built tab has
+        no row selected, so both start disabled; they enable the
+        moment the user clicks any row. The selection-gating
+        invariant is pinned separately by
+        ``TestRemindersEditButton.test_edit_button_enables_on_selection``
+        and the Delete counterpart.
         """
         assert dialog._reminders_edit_button.isEnabled() is False
         assert dialog._reminders_delete_button.isEnabled() is False
-
-    def test_edit_delete_tooltip_lives_on_wrapper_not_on_button(
-        self, dialog: SettingsDialog
-    ) -> None:
-        """The "coming soon" tooltip lives on the wrappers around Edit/Delete only.
-
-        Per the Critical Implementation Detail: Qt 6 does not deliver
-        hover events to disabled widgets, so a tooltip set on the
-        disabled ``QPushButton`` itself would be a no-op at runtime
-        (the property reads back but the user sees nothing). The
-        workaround is a tooltip-bearing enabled wrapper ``QWidget``.
-
-        Tripwire: if a future refactor removes the wrapper and puts
-        the tooltip back on the button, this test fails — the
-        wrapper's ``toolTip()`` will be empty.
-
-        Post-S-06 the Add button no longer needs (and does not have) a
-        wrapper because it's enabled and delivers its own hover events.
-        That contract is pinned by
-        ``TestRemindersAddButton.test_add_button_has_no_wrapper_tooltip``.
-        """
-        for button in (
-            dialog._reminders_edit_button,
-            dialog._reminders_delete_button,
-        ):
-            wrapper = button.parentWidget()
-            assert wrapper is not None
-            assert wrapper.toolTip() == _REMINDERS_BUTTONS_DISABLED_TOOLTIP
-            # The wrapper MUST stay enabled so it receives the hover
-            # event Qt swallows on the disabled child.
-            assert wrapper.isEnabled() is True
 
     def test_button_labels(self, dialog: SettingsDialog) -> None:
         """Buttons carry the documented labels (ellipsis on sub-dialog openers)."""
@@ -2046,12 +2022,17 @@ class TestRemindersTab:
         reminder_store: ReminderStore,
         reminder_scheduler: StubReminderScheduler,
     ) -> None:
-        """The ``currentRowChanged`` signal is connected — S-07 will fill the body.
+        """The ``currentRowChanged`` signal is connected to the selection-gating slot.
 
-        Even though the slot body is ``pass`` in this slice, the wiring
-        must be in place so S-07 can flip the body without re-wiring
-        the signal. Tripwire: emit the signal manually and confirm the
-        slot is invoked (counted via monkeypatching).
+        S-05 wired the signal to a placeholder body so a future
+        refactor couldn't silently break the contract before the
+        button-enable logic shipped; S-07 filled the body in. This
+        test still belongs at the layer of "is the signal wired" —
+        the slot's behaviour is exercised by
+        ``TestRemindersEditButton.test_edit_button_enables_on_selection``
+        (and the Delete counterpart). Tripwire: emit the signal
+        manually and confirm the slot is invoked (counted via
+        monkeypatching).
         """
         reminder_store.add(Reminder(name="Solo", start_at=datetime(2099, 1, 1, tzinfo=UTC)))
 
@@ -2152,8 +2133,9 @@ class TestRemindersTab:
         the user has no way to discover the Add affordance from an
         empty list. The button row is part of the empty state too —
         Add is enabled (so the user can create the first reminder
-        directly from the empty state), Edit/Delete stay disabled
-        with the tooltip until S-07.
+        directly from the empty state); Edit/Delete are present but
+        start disabled because there's no list (and therefore no
+        selection) to act on.
         """
         assert dialog._reminders_add_button is not None
         assert dialog._reminders_edit_button is not None
@@ -2193,39 +2175,31 @@ class TestRemindersAddButton:
         """``Add…`` is enabled post-S-06 (no longer waiting on a future slice)."""
         assert dialog._reminders_add_button.isEnabled() is True
 
-    def test_add_button_has_no_wrapper_tooltip(self, dialog: SettingsDialog) -> None:
-        """Add's parent is the bare row container — no tooltip-bearing wrapper.
+    def test_no_button_has_a_wrapper_tooltip(self, dialog: SettingsDialog) -> None:
+        """After S-07 NO button sits inside a tooltip-bearing wrapper.
 
-        The wrapper pattern exists ONLY to surface a tooltip on disabled
-        widgets (Qt 6 swallows hover events on disabled widgets so a
-        button-level tooltip would never appear). Now that Add is
-        enabled, the wrapper is dead weight; removing it lets Add
-        deliver its own hover events.
+        Before S-07 the Edit/Delete buttons were chronically disabled
+        and Qt 6 won't deliver hover events to disabled widgets, so
+        their "coming in a future update" tooltip had to live on an
+        enabled wrapper ``QWidget``. S-07 makes the buttons
+        selection-gated rather than chronically disabled — they
+        enable on row selection and deliver their own hover events —
+        so the wrapper pattern is no longer needed.
 
-        Tripwire: ``parentWidget().toolTip() == ""``. A single-widget
-        wrapper would have inherited
-        ``_REMINDERS_BUTTONS_DISABLED_TOOLTIP`` from the disabled-pair
-        wrapper construction. The "count children of the row" alternative
-        is a tautology — the row layout has the same number of widgets
-        whether Add is wrapped or bare — so it doesn't actually pin
-        the invariant.
+        Tripwire: ``parentWidget().toolTip() == ""`` for all three
+        buttons. A regression that re-introduced a wrapper would
+        either leak the empty tooltip (the wrapper had no string
+        attached) or, worse, resurrect the deleted
+        ``_REMINDERS_BUTTONS_DISABLED_TOOLTIP`` constant.
         """
-        wrapper = dialog._reminders_add_button.parentWidget()
-        assert wrapper is not None
-        assert wrapper.toolTip() == ""
-
-    def test_edit_and_delete_buttons_remain_wrapped_and_disabled(
-        self, dialog: SettingsDialog
-    ) -> None:
-        """Edit and Delete still sit inside tooltip-bearing wrappers + disabled."""
         for button in (
+            dialog._reminders_add_button,
             dialog._reminders_edit_button,
             dialog._reminders_delete_button,
         ):
-            assert button.isEnabled() is False
             wrapper = button.parentWidget()
             assert wrapper is not None
-            assert wrapper.toolTip() == _REMINDERS_BUTTONS_DISABLED_TOOLTIP
+            assert wrapper.toolTip() == ""
 
     def test_add_button_click_opens_sub_dialog(
         self,
@@ -2372,6 +2346,49 @@ class TestRemindersAddButton:
         assert dialog._tabs.indexOf(dialog._reminders_tab) == 3
         assert dialog._tabs.count() == 4
 
+    def test_refresh_preserves_reminders_as_current_tab(self, dialog: SettingsDialog) -> None:
+        """A refresh while the user is on Reminders keeps them on Reminders.
+
+        Regression: ``QTabWidget.removeTab`` silently shifts
+        ``currentIndex`` to a neighbouring tab during the gap before
+        ``insertTab`` runs (typically to the new last tab — Lifecycle,
+        idx 2 — since the Reminders tab sits at idx 3). Without an
+        explicit restore, every Add / Edit / Delete refresh yanks the
+        user from Reminders onto Lifecycle. Discovered manually in
+        S-07 during the Delete flow (Add / Edit also hit it but the
+        sub-dialog dismissal often masks the flip visually).
+        """
+        assert dialog._reminders_tab is not None
+        idx = dialog._tabs.indexOf(dialog._reminders_tab)
+        dialog._tabs.setCurrentIndex(idx)
+        assert dialog._tabs.currentIndex() == idx
+
+        dialog._refresh_reminders_tab()
+
+        assert dialog._reminders_tab is not None
+        assert dialog._tabs.indexOf(dialog._reminders_tab) == idx
+        assert dialog._tabs.currentIndex() == idx
+
+    def test_refresh_leaves_unrelated_current_tab_alone(self, dialog: SettingsDialog) -> None:
+        """A refresh while the user is on Scheduling does NOT yank them to Reminders.
+
+        Counterpart to the regression above: the restore only fires
+        when the user was on Reminders at refresh time. If they had
+        somehow navigated away (atypical — the Add / Edit / Delete
+        buttons that trigger refresh are only reachable from the
+        Reminders tab — but possible if a refresh races a tab
+        switch), Qt's chosen current-tab stays put rather than being
+        overridden.
+        """
+        dialog._tabs.setCurrentIndex(0)  # Scheduling
+        assert dialog._tabs.currentIndex() == 0
+
+        dialog._refresh_reminders_tab()
+
+        assert dialog._reminders_tab is not None
+        # Refresh did not force-switch to Reminders.
+        assert dialog._tabs.currentIndex() != dialog._tabs.indexOf(dialog._reminders_tab)
+
     def test_refresh_disposes_old_tab_widget(self, dialog: SettingsDialog) -> None:
         """The old tab widget is scheduled for deletion (no orphan accumulation).
 
@@ -2396,3 +2413,553 @@ class TestRemindersAddButton:
         assert dialog._reminders_tab is not None
         assert dialog._reminders_tab is not old_tab
         assert dialog._tabs.indexOf(dialog._reminders_tab) == 3
+
+
+# ---------------------------------------------------------------------------
+# Reminders tab — Edit button (S-07 / FR-012)
+# ---------------------------------------------------------------------------
+
+
+def _build_populated_dialog(
+    qtbot,
+    settings: Settings,
+    voice: StubVoiceNotifier,
+    reminder_store: ReminderStore,
+    reminder_scheduler: StubReminderScheduler,
+    *,
+    seed: list[Reminder] | None = None,
+) -> SettingsDialog:
+    """Construct a ``SettingsDialog`` against a store pre-seeded with reminders.
+
+    Seeds the store before construction so the "load once at
+    construction" path picks the rows up. Defaults to two distinct
+    future reminders so selection-by-row tests can pin which item was
+    addressed without timing concerns.
+    """
+    if seed is None:
+        seed = [
+            Reminder(name="Alpha", start_at=datetime(2099, 1, 1, tzinfo=UTC)),
+            Reminder(name="Bravo", start_at=datetime(2099, 2, 1, tzinfo=UTC)),
+        ]
+    for r in seed:
+        reminder_store.add(r)
+    d = SettingsDialog(
+        settings=settings,
+        voice=voice,  # type: ignore[arg-type]
+        reminder_store=reminder_store,
+        reminder_scheduler=reminder_scheduler,  # type: ignore[arg-type]
+    )
+    qtbot.addWidget(d)
+    return d
+
+
+class TestRemindersEditButton:
+    """S-07: Edit button enable-on-selection + click → ``ReminderFormDialog`` wiring.
+
+    The form-side Edit behaviour (pre-fill, save dispatch, signal
+    selection) is exercised in ``tests/test_reminder_form_dialog.py``;
+    here we pin the wiring at the ``SettingsDialog`` boundary: the
+    button enables/disables on row selection, click constructs the
+    sub-dialog with the right ``reminder=`` kwarg, and the
+    ``reminder_updated`` signal triggers an in-place tab rebuild.
+    """
+
+    def test_edit_button_disabled_when_no_row_selected(
+        self,
+        qtbot,
+        settings: Settings,
+        voice: StubVoiceNotifier,
+        reminder_store: ReminderStore,
+        reminder_scheduler: StubReminderScheduler,
+    ) -> None:
+        """Freshly-built tab with a populated list has no selection → Edit disabled."""
+        d = _build_populated_dialog(qtbot, settings, voice, reminder_store, reminder_scheduler)
+        assert d._reminders_list is not None
+        assert d._reminders_list.currentRow() == -1
+        assert d._reminders_edit_button.isEnabled() is False
+
+    def test_edit_button_enabled_when_row_selected(
+        self,
+        qtbot,
+        settings: Settings,
+        voice: StubVoiceNotifier,
+        reminder_store: ReminderStore,
+        reminder_scheduler: StubReminderScheduler,
+    ) -> None:
+        """``setCurrentRow(0)`` fires ``currentRowChanged`` → Edit enables."""
+        d = _build_populated_dialog(qtbot, settings, voice, reminder_store, reminder_scheduler)
+        assert d._reminders_list is not None
+
+        d._reminders_list.setCurrentRow(0)
+
+        assert d._reminders_edit_button.isEnabled() is True
+
+    def test_edit_button_disabled_when_selection_clears(
+        self,
+        qtbot,
+        settings: Settings,
+        voice: StubVoiceNotifier,
+        reminder_store: ReminderStore,
+        reminder_scheduler: StubReminderScheduler,
+    ) -> None:
+        """Selecting then clearing (``setCurrentRow(-1)``) flips Edit back to disabled."""
+        d = _build_populated_dialog(qtbot, settings, voice, reminder_store, reminder_scheduler)
+        assert d._reminders_list is not None
+        d._reminders_list.setCurrentRow(0)
+        assert d._reminders_edit_button.isEnabled() is True
+
+        d._reminders_list.setCurrentRow(-1)
+
+        assert d._reminders_edit_button.isEnabled() is False
+
+    def test_edit_button_click_opens_sub_dialog_with_loaded_reminder(
+        self,
+        qtbot,
+        settings: Settings,
+        voice: StubVoiceNotifier,
+        reminder_store: ReminderStore,
+        reminder_scheduler: StubReminderScheduler,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Clicking Edit constructs ``ReminderFormDialog`` with ``reminder=`` matching selection.
+
+        Monkeypatches the form at the import site (the established
+        S-06 convention) so the test never shows a real sub-dialog.
+        The stub records the constructor kwargs the click handler
+        used.
+        """
+        d = _build_populated_dialog(qtbot, settings, voice, reminder_store, reminder_scheduler)
+        assert d._reminders_list is not None
+        d._reminders_list.setCurrentRow(0)
+        selected = d._reminders_sorted[0]
+
+        constructor_calls: list[dict] = []
+
+        class _StubSignal:
+            def connect(self, _slot: object) -> None:
+                pass
+
+        class _StubFormDialog:
+            def __init__(self, **kwargs: object) -> None:
+                constructor_calls.append(kwargs)
+                self.reminder_added = _StubSignal()
+                self.reminder_updated = _StubSignal()
+
+            def setAttribute(self, *_args: object, **_kwargs: object) -> None:
+                """No-op for ``WA_DeleteOnClose``."""
+
+            def exec(self) -> int:
+                return int(QDialog.DialogCode.Rejected)
+
+        monkeypatch.setattr(
+            "break_reminder.ui.settings_dialog.ReminderFormDialog",
+            _StubFormDialog,
+        )
+
+        d._reminders_edit_button.click()
+
+        assert len(constructor_calls) == 1
+        kwargs = constructor_calls[0]
+        assert kwargs["store"] is d._reminder_store
+        assert kwargs["scheduler"] is d._reminder_scheduler
+        assert kwargs["parent"] is d
+        # The selected reminder is forwarded as the ``reminder=`` kwarg.
+        assert kwargs["reminder"] is selected
+
+    def test_edit_button_click_passes_correct_reminder_for_row_one(
+        self,
+        qtbot,
+        settings: Settings,
+        voice: StubVoiceNotifier,
+        reminder_store: ReminderStore,
+        reminder_scheduler: StubReminderScheduler,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Selecting a non-zero row passes THAT row's reminder, not row 0.
+
+        Tripwire for the ``_reminders_sorted[currentRow()]`` indexing.
+        A regression that hard-coded index 0 would still pass the
+        row-0 test above; this catches that variant.
+        """
+        d = _build_populated_dialog(qtbot, settings, voice, reminder_store, reminder_scheduler)
+        assert d._reminders_list is not None
+        d._reminders_list.setCurrentRow(1)
+        selected = d._reminders_sorted[1]
+
+        constructor_calls: list[dict] = []
+
+        class _StubSignal:
+            def connect(self, _slot: object) -> None:
+                pass
+
+        class _StubFormDialog:
+            def __init__(self, **kwargs: object) -> None:
+                constructor_calls.append(kwargs)
+                self.reminder_added = _StubSignal()
+                self.reminder_updated = _StubSignal()
+
+            def setAttribute(self, *_args: object, **_kwargs: object) -> None:
+                """No-op."""
+
+            def exec(self) -> int:
+                return int(QDialog.DialogCode.Rejected)
+
+        monkeypatch.setattr(
+            "break_reminder.ui.settings_dialog.ReminderFormDialog",
+            _StubFormDialog,
+        )
+
+        d._reminders_edit_button.click()
+
+        assert len(constructor_calls) == 1
+        assert constructor_calls[0]["reminder"] is selected
+
+    def test_reminder_updated_signal_triggers_tab_refresh(
+        self,
+        qtbot,
+        settings: Settings,
+        voice: StubVoiceNotifier,
+        reminder_store: ReminderStore,
+        reminder_scheduler: StubReminderScheduler,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """On Edit success the Reminders tab gets rebuilt (new widget identity + updated row).
+
+        Stubs the form so its ``exec`` simulates a successful save:
+        update the row in the store + fire ``reminder_updated``. Then
+        the click handler's connected slot
+        (``_refresh_reminders_tab``) should rebuild the tab.
+        """
+        d = _build_populated_dialog(qtbot, settings, voice, reminder_store, reminder_scheduler)
+        assert d._reminders_list is not None
+        d._reminders_list.setCurrentRow(0)
+        original_selected = d._reminders_sorted[0]
+        original_tab = d._reminders_tab
+
+        from PySide6.QtCore import QObject, Signal
+
+        class _StubFormDialog(QObject):
+            reminder_added = Signal(Reminder)
+            reminder_updated = Signal(Reminder)
+
+            def __init__(self, **kwargs: object) -> None:
+                super().__init__()
+                store_kwarg = kwargs["store"]
+                assert isinstance(store_kwarg, ReminderStore)
+                reminder_kwarg = kwargs["reminder"]
+                assert isinstance(reminder_kwarg, Reminder)
+                self._store: ReminderStore = store_kwarg
+                self._loaded: Reminder = reminder_kwarg
+
+            def setAttribute(self, *_args: object, **_kwargs: object) -> None:
+                """No-op."""
+
+            def exec(self) -> int:
+                # Simulate a successful name edit + persist.
+                updated = Reminder(
+                    id=self._loaded.id,
+                    name="Renamed by stub",
+                    start_at=self._loaded.start_at,
+                    lead_minutes=self._loaded.lead_minutes,
+                )
+                self._store.update(updated)
+                self.reminder_updated.emit(updated)
+                return int(QDialog.DialogCode.Accepted)
+
+        monkeypatch.setattr(
+            "break_reminder.ui.settings_dialog.ReminderFormDialog",
+            _StubFormDialog,
+        )
+
+        d._reminders_edit_button.click()
+
+        assert d._reminders_tab is not original_tab
+        assert d._reminders_list is not None
+        rendered_names = {
+            d._reminders_list.item(i).text().split("  —  ")[0]
+            for i in range(d._reminders_list.count())
+        }
+        assert "Renamed by stub" in rendered_names
+        assert original_selected.name not in rendered_names
+
+    def test_edit_button_disabled_after_refresh_clears_prior_selection(
+        self,
+        qtbot,
+        settings: Settings,
+        voice: StubVoiceNotifier,
+        reminder_store: ReminderStore,
+        reminder_scheduler: StubReminderScheduler,
+    ) -> None:
+        """A rebuild rebuilds the button row, returning Edit to its disabled default.
+
+        Tripwire for the "rebuild reassigns the button attribute"
+        invariant: if a future refactor rebuilt the list without
+        rebuilding the button row, the old enabled button would
+        persist and ``self._reminders_sorted[currentRow()]`` with
+        ``currentRow() == -1`` would silently index the LAST element
+        of the list, editing the wrong reminder (or crashing on an
+        empty list).
+        """
+        d = _build_populated_dialog(qtbot, settings, voice, reminder_store, reminder_scheduler)
+        assert d._reminders_list is not None
+        d._reminders_list.setCurrentRow(0)
+        assert d._reminders_edit_button.isEnabled() is True
+
+        d._refresh_reminders_tab()
+
+        assert d._reminders_edit_button.isEnabled() is False
+
+
+# ---------------------------------------------------------------------------
+# Reminders tab — Delete button (S-07 / FR-012)
+# ---------------------------------------------------------------------------
+
+
+class TestRemindersDeleteButton:
+    """S-07: Delete button enable-on-selection + ``QMessageBox`` confirmation + store wiring.
+
+    Mirrors ``TestRemindersEditButton`` shape for the enable / disable
+    plumbing, then pins the confirmation dialog contract (Yes/No
+    buttons, ``No`` default) and the store + scheduler + tab-refresh
+    cascade on the Yes path. The OSError tripwire ensures a failed
+    delete leaves the store and the UI in lockstep.
+
+    ``QMessageBox.question`` is monkeypatched at the **Qt-class
+    level** (``monkeypatch.setattr(QMessageBox, "question", ...)``)
+    matching the established convention in ``tests/test_app.py``.
+    """
+
+    def _patch_question(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        return_value: QMessageBox.StandardButton,
+    ) -> list[tuple]:
+        """Replace ``QMessageBox.question`` with a recording stub.
+
+        Returns the recorder list; each entry is a ``(args, kwargs)``
+        tuple matching the call shape.
+        """
+        calls: list[tuple] = []
+
+        def _stub(*args: object, **kwargs: object) -> QMessageBox.StandardButton:
+            calls.append((args, kwargs))
+            return return_value
+
+        monkeypatch.setattr(QMessageBox, "question", _stub)
+        return calls
+
+    def test_delete_button_disabled_when_no_row_selected(
+        self,
+        qtbot,
+        settings: Settings,
+        voice: StubVoiceNotifier,
+        reminder_store: ReminderStore,
+        reminder_scheduler: StubReminderScheduler,
+    ) -> None:
+        """Freshly-built tab with a populated list has no selection → Delete disabled."""
+        d = _build_populated_dialog(qtbot, settings, voice, reminder_store, reminder_scheduler)
+        assert d._reminders_list is not None
+        assert d._reminders_list.currentRow() == -1
+        assert d._reminders_delete_button.isEnabled() is False
+
+    def test_delete_button_enabled_when_row_selected(
+        self,
+        qtbot,
+        settings: Settings,
+        voice: StubVoiceNotifier,
+        reminder_store: ReminderStore,
+        reminder_scheduler: StubReminderScheduler,
+    ) -> None:
+        """``setCurrentRow(0)`` enables Delete."""
+        d = _build_populated_dialog(qtbot, settings, voice, reminder_store, reminder_scheduler)
+        assert d._reminders_list is not None
+
+        d._reminders_list.setCurrentRow(0)
+
+        assert d._reminders_delete_button.isEnabled() is True
+
+    def test_delete_button_disabled_when_selection_clears(
+        self,
+        qtbot,
+        settings: Settings,
+        voice: StubVoiceNotifier,
+        reminder_store: ReminderStore,
+        reminder_scheduler: StubReminderScheduler,
+    ) -> None:
+        """Clearing selection flips Delete back to disabled."""
+        d = _build_populated_dialog(qtbot, settings, voice, reminder_store, reminder_scheduler)
+        assert d._reminders_list is not None
+        d._reminders_list.setCurrentRow(0)
+
+        d._reminders_list.setCurrentRow(-1)
+
+        assert d._reminders_delete_button.isEnabled() is False
+
+    def test_delete_button_click_calls_question_with_correct_args(
+        self,
+        qtbot,
+        settings: Settings,
+        voice: StubVoiceNotifier,
+        reminder_store: ReminderStore,
+        reminder_scheduler: StubReminderScheduler,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The confirm dialog is invoked with parent, title, text, buttons, default-No.
+
+        Asserts:
+
+        - Parent is the SettingsDialog.
+        - Title matches ``_DELETE_CONFIRM_TITLE``.
+        - Body contains the reminder name AND the "cannot be undone" phrase.
+        - 4th positional arg is the ``Yes|No`` combo.
+        - 5th positional arg is the ``No`` default button.
+        """
+        d = _build_populated_dialog(qtbot, settings, voice, reminder_store, reminder_scheduler)
+        assert d._reminders_list is not None
+        d._reminders_list.setCurrentRow(0)
+        selected = d._reminders_sorted[0]
+        calls = self._patch_question(monkeypatch, QMessageBox.StandardButton.No)
+
+        d._reminders_delete_button.click()
+
+        assert len(calls) == 1
+        args, _kwargs = calls[0]
+        assert args[0] is d
+        assert args[1] == _DELETE_CONFIRM_TITLE
+        # The text must mention the selected reminder by name and the
+        # "cannot be undone" disclaimer; matching against the format
+        # string makes the test robust to minor wording tweaks.
+        assert args[2] == _DELETE_CONFIRM_TEXT_FORMAT.format(name=selected.name)
+        assert selected.name in args[2]
+        assert "cannot be undone" in args[2]
+        # 4th positional: buttons combo includes both Yes and No.
+        buttons = args[3]
+        assert bool(buttons & QMessageBox.StandardButton.Yes)
+        assert bool(buttons & QMessageBox.StandardButton.No)
+        # 5th positional: default button is No.
+        assert args[4] == QMessageBox.StandardButton.No
+
+    def test_delete_confirm_no_does_not_modify_store(
+        self,
+        qtbot,
+        settings: Settings,
+        voice: StubVoiceNotifier,
+        reminder_store: ReminderStore,
+        reminder_scheduler: StubReminderScheduler,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """User clicks No (or presses Esc) → store, scheduler, and tab all unchanged."""
+        d = _build_populated_dialog(qtbot, settings, voice, reminder_store, reminder_scheduler)
+        assert d._reminders_list is not None
+        d._reminders_list.setCurrentRow(0)
+        original_tab = d._reminders_tab
+        before = reminder_store.list_all()
+        self._patch_question(monkeypatch, QMessageBox.StandardButton.No)
+
+        d._reminders_delete_button.click()
+
+        after = reminder_store.list_all()
+        assert after == before
+        assert reminder_scheduler.reload_calls == 0
+        assert d._reminders_tab is original_tab
+
+    def test_delete_confirm_yes_removes_reminder_and_refreshes(
+        self,
+        qtbot,
+        settings: Settings,
+        voice: StubVoiceNotifier,
+        reminder_store: ReminderStore,
+        reminder_scheduler: StubReminderScheduler,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """User clicks Yes → ``store.delete`` + ``scheduler.reload`` + tab rebuild fire."""
+        d = _build_populated_dialog(qtbot, settings, voice, reminder_store, reminder_scheduler)
+        assert d._reminders_list is not None
+        d._reminders_list.setCurrentRow(0)
+        selected = d._reminders_sorted[0]
+        original_tab = d._reminders_tab
+        self._patch_question(monkeypatch, QMessageBox.StandardButton.Yes)
+
+        d._reminders_delete_button.click()
+
+        # Disk reflects the deletion.
+        remaining_ids = {r.id for r in reminder_store.list_all()}
+        assert selected.id not in remaining_ids
+        # Scheduler was re-armed.
+        assert reminder_scheduler.reload_calls == 1
+        # Tab was rebuilt (new widget identity).
+        assert d._reminders_tab is not original_tab
+
+    def test_delete_button_disabled_after_refresh_clears_prior_selection(
+        self,
+        qtbot,
+        settings: Settings,
+        voice: StubVoiceNotifier,
+        reminder_store: ReminderStore,
+        reminder_scheduler: StubReminderScheduler,
+    ) -> None:
+        """Mirror of the Edit-side post-refresh tripwire for Delete.
+
+        If a future refactor rebuilt the list without rebuilding the
+        button row, the Delete button would stay enabled with no
+        selection — and a click would either delete the wrong row
+        (via ``_reminders_sorted[-1]``) or crash on an empty list.
+        """
+        d = _build_populated_dialog(qtbot, settings, voice, reminder_store, reminder_scheduler)
+        assert d._reminders_list is not None
+        d._reminders_list.setCurrentRow(0)
+        assert d._reminders_delete_button.isEnabled() is True
+
+        d._refresh_reminders_tab()
+
+        assert d._reminders_delete_button.isEnabled() is False
+
+    def test_delete_oserror_on_store_delete_keeps_list_intact(
+        self,
+        qtbot,
+        settings: Settings,
+        voice: StubVoiceNotifier,
+        reminder_store: ReminderStore,
+        reminder_scheduler: StubReminderScheduler,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """``OSError`` from ``ReminderStore.delete`` → atomic-save tripwire fires.
+
+        Specifically: scheduler is NOT reloaded, tab is NOT rebuilt
+        (same widget identity), store still shows both seeded rows
+        (the storage layer's atomic-rename leaves disk intact on
+        failure), and the user-facing tooltip surfaces with the
+        OS-level reason.
+        """
+        d = _build_populated_dialog(qtbot, settings, voice, reminder_store, reminder_scheduler)
+        assert d._reminders_list is not None
+        d._reminders_list.setCurrentRow(0)
+        original_tab = d._reminders_tab
+        before = reminder_store.list_all()
+        self._patch_question(monkeypatch, QMessageBox.StandardButton.Yes)
+
+        def _raise(_id: str) -> None:
+            raise PermissionError(13, "Permission denied")
+
+        monkeypatch.setattr(reminder_store, "delete", _raise)
+
+        tooltip_calls: list[tuple] = []
+
+        def _tooltip_stub(*args: object, **kwargs: object) -> None:
+            tooltip_calls.append((args, kwargs))
+
+        monkeypatch.setattr(
+            "break_reminder.ui.settings_dialog.QToolTip.showText",
+            _tooltip_stub,
+        )
+
+        d._reminders_delete_button.click()
+
+        after = reminder_store.list_all()
+        assert after == before
+        assert reminder_scheduler.reload_calls == 0
+        assert d._reminders_tab is original_tab
+        # Tooltip surfaced with the OS-level reason via the documented format.
+        assert len(tooltip_calls) == 1
+        args, _kwargs = tooltip_calls[0]
+        assert args[1] == _DELETE_FAILED_FORMAT.format(error="Permission denied")

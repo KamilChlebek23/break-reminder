@@ -181,7 +181,7 @@ These are wired as `Settings` keys with defaults; flipping the default doesn't r
 
 The bootstrap stops at runnable skeletons. The following are stubbed and clearly marked with `TODO(FR-xxx)`:
 
-- Custom-reminder Edit / Delete dialog wiring (FR-012). The read-only Reminders tab shipped in S-05; the `Add…` click handler shipped in S-06; `Edit…` / `Delete` are still wired no-op until S-07.
+- Custom-reminder recurrence editor (FR-014). The read-only Reminders tab shipped in S-05; Add / Edit / Delete CRUD shipped in S-06 / S-07; the daily / weekly / monthly RRULE picker is the last pending Stream B surface (S-08).
 - Focus Assist + system-mute query (US-01 acceptance).
 - Real tray-icon + window-icon resources (currently using `QStyle` defaults).
 - Snooze countdown UI affordance (the snooze action works; the countdown display in the popup is a placeholder).

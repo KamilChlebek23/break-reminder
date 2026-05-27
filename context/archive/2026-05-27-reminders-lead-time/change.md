@@ -1,10 +1,10 @@
 ---
 change_id: reminders-lead-time
 title: Add "notify N min before event" lead-time option to reminders
-status: implemented
+status: archived
 created: 2026-05-27
 updated: 2026-05-27
-archived_at: null
+archived_at: 2026-05-27T10:26:31Z
 roadmap_ref: S-06b
 prd_refs: [FR-011, FR-013]
 ---

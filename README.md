@@ -248,6 +248,48 @@ once they exceed a size threshold.
 
 Newest first. Dates are tag-push dates.
 
+### v0.6.0 — 2026-05-27
+
+S-05, S-06, S-06b, S-07. New **Reminders** tab in the settings dialog
+and the full custom-reminder CRUD surface (FR-011, FR-012, FR-013).
+Stream B (custom reminders) is now complete.
+
+- **S-05 reminders-list-view**: read-only list of every reminder saved
+  in `%APPDATA%\BreakReminder\reminders.json`. Rows render the firing
+  time + name. Add / Edit / Delete buttons are present but disabled —
+  the scaffold S-06 and S-07 fill in. Dialog gained a 520-px minimum
+  width so reminder rows don't horizontally scroll on a fresh open.
+- **S-06 reminders-add-form**: **Add** opens a modal sub-dialog with
+  Name + Date/time fields. Save persists to `reminders.json` via
+  `ReminderStore.add`, re-arms the running session via
+  `ReminderScheduler.reload`, and refreshes the list in place. At the
+  saved instant, the existing dismissable `reminder_dialog.py` fires
+  (FR-013). One-shot only — recurrence comes in S-08.
+- **S-06b reminders-lead-time**: form gains a **Notify (minutes before
+  event)** spinbox (0–60, default 0). When non-zero, the datetime
+  widget is interpreted as the event time and the saved firing time is
+  `event - lead`. The list row shows the event time + "(fires N min
+  before)" suffix when lead > 0. Storage Model A keeps the scheduler
+  unchanged — lead is round-trip metadata on the `Reminder`.
+- **S-07 reminders-edit-delete**: Edit + Delete buttons now do what
+  they say. **Edit** reopens the same form pre-filled (preserving id),
+  with a past-time-gate skip when the user changed only the name or
+  lead. **Delete** confirms with `QMessageBox.question` (default No)
+  and removes the row + JSON entry. `OSError` on either path surfaces
+  a transient tooltip and leaves the store byte-identical (atomic-save
+  invariant).
+- Storage hardening (impl-review F2 carry-in): hand-edited
+  `reminders.json` entries that drop the `+00:00` UTC suffix are
+  normalized via `_coerce_aware_utc` on load, so the Edit-mode
+  past-time-skip comparison never raises `TypeError` on tz-naive disk
+  values.
+- Form-side DST fix (impl-review F3 carry-in): replaced the
+  `datetime.now().astimezone().tzinfo` + `.replace` round-trip with a
+  single `naive_local.astimezone(UTC)` call so a DST-spanning no-op
+  Edit save doesn't falsely trip the past-time gate.
+
+Test suite: 262 → 418.
+
 ### v0.5.0 — 2026-05-26
 
 S-02 settings-autostart-toggle. New **Lifecycle** tab in the settings

@@ -29,7 +29,7 @@ BreakReminder is a Windows 11 tray-resident utility for focus-minded solo progra
 
 | ID | Change ID | Outcome (user can …) | Prerequisites | PRD refs | Status |
 |---|---|---|---|---|---|
-| S-01 | settings-break-interval | open settings from tray and edit the break interval | — | FR-005, FR-006 | ready |
+| S-01 | settings-break-interval | open settings from tray and edit the break interval | — | FR-005, FR-006 | done |
 | S-02 | settings-autostart-toggle | enable autostart-on-Windows-login from settings | S-01 | FR-003, FR-005 | done |
 | S-03 | settings-snooze-config | edit snooze duration and max snoozes from settings | S-01 | FR-005, FR-010 | done |
 | S-04 | settings-voice-toggle | enable voice notification and edit the voice phrase from settings | S-01 | FR-005, FR-007 | done |
@@ -91,7 +91,7 @@ The PRD must-have FRs and user stories below are **already shipped in v0.1.0** a
 - **Unknowns:**
   - Should the dialog be tab-based (QTabWidget) or single-pane? Tab-based costs nothing now and pre-empts the layout question for S-02..S-05. — Owner: user. Block: no.
 - **Risk:** low. The dialog is a one-field QDialog wrapping the existing `Settings.break_interval_min` getter/setter. The closest pattern in the codebase is `notifications/reminder_dialog.py` (similar simple modal). Time-to-ship is bounded by Qt-layout tinkering, which is well-known territory for the maintainer.
-- **Status:** ready
+- **Status:** done
 
 ### S-02: settings-autostart-toggle
 
@@ -185,7 +185,7 @@ The PRD must-have FRs and user stories below are **already shipped in v0.1.0** a
 
 | Roadmap ID | Change ID | Suggested issue title | Ready for `/10x-plan` | Notes |
 |---|---|---|---|---|
-| S-01 | `settings-break-interval` | Replace settings placeholder with real QDialog + break-interval edit | yes | `/10x-plan settings-break-interval` |
+| S-01 | `settings-break-interval` | Replace settings placeholder with real QDialog + break-interval edit | yes | Planned + shipped 2026-05-25 |
 | S-02 | `settings-autostart-toggle` | Wire FR-003 autostart toggle to per-user Run registry key | yes | Planned + shipped 2026-05-26 |
 | S-03 | `settings-snooze-config` | Add snooze duration + max snoozes to settings dialog | yes | Planned + shipped 2026-05-26 |
 | S-04 | `settings-voice-toggle` | Add voice on/off + phrase editor to settings dialog | yes | Planned + shipped 2026-05-25 |
@@ -218,3 +218,4 @@ The PRD must-have FRs and user stories below are **already shipped in v0.1.0** a
 
 - **S-05: user opens settings, switches to the "Reminders" tab/section, and sees a list (likely `QListView` or `QTableView`) of any custom reminders saved in `reminders.json`. List is read-only in this slice; "Add" / "Edit" / "Delete" buttons are present but disabled.** — Archived 2026-05-27 → `context/archive/2026-05-27-reminders-list-view/`. Lesson: —.
 - **S-02: user opens settings, ticks "Launch BreakReminder at Windows login", saves; the per-user Run-key registry write actually fires; on next Windows login, BreakReminder appears in the tray without manual launch. Unticking removes the Run-key entry.** — Archived 2026-05-27 → `context/archive/2026-05-26-settings-autostart-toggle/`. Lesson: prefer create-or-open winreg primitives (`CreateKeyEx` over `OpenKey`) and enumerate every raise site of any exception a helper claims to swallow — local Windows dev hides the fresh-profile / no-subkey case the windows-latest CI runner exposes (see post-merge hotfix `8ec5850`).
+- **S-01: user opens "Open settings…" from the tray menu and a real `QDialog` (not the placeholder `QMessageBox`) appears, showing the current break interval as an editable spinbox; "Save" persists to `%APPDATA%\BreakReminder\BreakReminder.ini` and closes the dialog; "Cancel" closes without saving.** — Archived 2026-05-27 → `context/archive/2026-05-25-settings-break-interval/`. Lesson: enumerate UX-side validation (silent clamp vs. visible feedback) separately from persistence-side validation, and promote shared-domain constants (range bounds) to a single source of truth in the persistence module on first cross-layer use rather than waiting for impl-review to retrofit (see retrospective plan-review F1 + F2).

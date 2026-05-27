@@ -2,9 +2,10 @@
 id: settings-break-interval
 type: slice
 roadmap_ref: S-01
-status: impl_reviewed
+status: archived
 created: 2026-05-25
 updated: 2026-05-27
+archived_at: 2026-05-27T06:23:06Z
 prd_refs: [FR-005, FR-006]
 ---
 

@@ -64,7 +64,9 @@ The save path calls `self._settings.break_interval_min = self._spinbox.value()` 
 
 ## Critical Implementation Details
 
-(Omitted — nothing about this slice needs constraints, gotchas, or ordering callouts beyond what the file paths and Intent statements convey. The mid-cycle re-arm question dissolved during research; the validation question dissolved at the widget level.)
+The mid-cycle re-arm question dissolved during research (`BreakScheduler._tick` already reads `Settings.snapshot()` each tick), and the persistence-side validation question dissolved at the widget level (`QSpinBox(1, 240)` makes the setter's `ValueError` unreachable from this dialog).
+
+**UX-side validation — silent clamping accepted.** What the user *sees* when they type an out-of-range value is a separate question from what the setter accepts. Qt's `QSpinBox` silently substitutes a valid value (clamps below-min, truncates above-max) with no visible feedback. **Decision: silent clamping is the accepted UX for FR-006 in this slice.** If feedback is later requested, the Qt-correct path is `lineEdit.textEdited` capture (pre-fixup) + an `editingFinished` slot that re-parses the captured raw text — `editingFinished` alone sees only the *post*-fixup `lineEdit.text()` value, and any comparison must use `value()` (not `cleanText()`, which is itself a post-fixup view). The `setSuffix(" min")` cosmetic also makes `lineEdit.text()` return `"60 min"` rather than `"60"` — string comparisons against `str(value())` will never match.
 
 ---
 
@@ -93,7 +95,7 @@ Stand up the `break_reminder/ui/` sub-package, write the `SettingsDialog` class,
 **Contract**:
 
 - Constructor signature: `SettingsDialog(*, settings: Settings, parent: QWidget | None = None) -> None`. Settings is keyword-only and required (matches the dependency-injection idiom used in `BreakReminderApp.__init__`).
-- The `QSpinBox` bounds are `setMinimum(1)` and `setMaximum(240)` — physical FR-006 enforcement. `setSuffix(" min")` is a UX nicety; keep it. Initial value is `settings.break_interval_min` (read once at construction).
+- The `QSpinBox` bounds are imported from `BREAK_INTERVAL_MIN_MINUTES` / `BREAK_INTERVAL_MAX_MINUTES` constants in `storage.settings` (added by this slice to centralize the FR-006 single source of truth — `Settings.break_interval_min` getter/setter switch from literal `1`/`240` to the same constants) and drive `setMinimum` / `setMaximum` for physical FR-006 enforcement. `setSuffix(" min")` is a UX nicety; keep it. Initial value is `settings.break_interval_min` (read once at construction).
 - `accept()` is overridden (or wired via `buttonBox.accepted.connect(...)`) to write `settings.break_interval_min = spinbox.value()` before the standard `QDialog.accept()` chain. `reject()` keeps the default behavior (no write).
 - Module-level docstring explains the FR-005 / FR-006 mapping and references the slice (`context/changes/settings-break-interval/plan.md`).
 - All public methods get Google-style docstrings per the team rule in `context/foundation/lessons.md`.
@@ -114,7 +116,7 @@ Stand up the `break_reminder/ui/` sub-package, write the `SettingsDialog` class,
 - (`TestSave`) The dialog can be constructed and discarded without showing — `dialog.show()` / `dialog.exec()` are NOT called in these tests; the contract is on the in-memory state transitions, not the QPA platform.
 - (`TestLayout`) The dialog contains a `QTabWidget` with exactly one tab today, whose label is "Scheduling" — tripwire if a future slice silently flattens the layout.
 
-Use `tmp_path / "BreakReminder.ini"` as the `ini_path` for every test, exactly as `tests/test_settings.py` does. Reuse the `qapp` conftest fixture; a `QApplication` must exist for any `QWidget` construction.
+Use `tmp_path / "BreakReminder.ini"` as the `ini_path` for every test, exactly as `tests/test_settings.py` does. Reuse the `qapp` and `qtbot` conftest fixtures; call `qtbot.addWidget(dialog)` after every manual `SettingsDialog` construction for pytest-qt cleanup — existing convention from `tests/test_break_dialog.py`. A `QApplication` must exist for any `QWidget` construction.
 
 #### 4. Update AGENTS.md folder layout
 
@@ -162,7 +164,7 @@ Replace the body of `BreakReminderApp._on_open_settings()` to construct and `exe
 
 **File**: `break_reminder/app.py`
 
-**Intent**: Swap the `QMessageBox.information(...)` block at lines 278-288 for `SettingsDialog(settings=self._settings).exec()`. Remove the `QMessageBox` import if it becomes unused at the module level (it is still used at line 393 for the no-tray-detected fatal — keep the import). Remove the unused private helper `_settings_path()` at lines 374-377 if no other call site references it (it is currently only used by the placeholder).
+**Intent**: Swap the `QMessageBox.information(...)` block at lines 278-288 for `SettingsDialog(settings=self._settings).exec()`. Remove the `QMessageBox` import if it becomes unused at the module level (it is still used at line 393 for the no-tray-detected fatal — keep the import). Remove the now-unused `_settings_path()` helper at lines 374-377 (verified single call site is the `QMessageBox` placeholder being replaced).
 
 **Contract**:
 

@@ -4,7 +4,7 @@ type: slice
 roadmap_ref: S-01
 status: impl_reviewed
 created: 2026-05-25
-updated: 2026-05-25
+updated: 2026-05-27
 prd_refs: [FR-005, FR-006]
 ---
 

@@ -624,7 +624,7 @@ The Phase 2.1 step list IS the manual testing surface; see Phase 2 above.
 
 - [x] 2.1 `git grep -nE 'Custom-reminder recurrence editor' AGENTS.md` returns no matches — 739cd1a
 - [x] 2.2 `git grep -nE '^\| S-08 .*proposed' context/foundation/roadmap.md` returns no matches — 739cd1a
-- [x] 2.3 `git diff context/changes/reminders-recurrence-editor/change.md` shows `status: implemented` and updated `updated:` date
+- [x] 2.3 `git diff context/changes/reminders-recurrence-editor/change.md` shows `status: implemented` and updated `updated:` date — a214189
 
 #### Manual
 

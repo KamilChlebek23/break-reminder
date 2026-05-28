@@ -84,7 +84,7 @@ import sys
 import winreg
 from datetime import UTC, datetime, timedelta, tzinfo
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -490,6 +490,24 @@ class SettingsDialog(QDialog):
     NOTIFICATIONS_TAB_LABEL = "Notifications"
     LIFECYCLE_TAB_LABEL = "Lifecycle"
     REMINDERS_TAB_LABEL = "Reminders"
+
+    # Emitted from ``accept()`` immediately BEFORE ``super().accept()``
+    # if and only if ``Settings.break_interval_min`` actually changed
+    # since the dialog was opened. Payload is the new (post-save) value
+    # in minutes. The S-09 bugfix path: ``BreakReminderApp`` connects
+    # this signal in ``_on_open_settings`` to a slot that calls
+    # ``BreakScheduler.reset_cycle()`` + ``_refresh_tooltip()`` so the
+    # tray countdown re-bases on the new threshold the moment the user
+    # clicks OK, instead of carrying over the prior cycle's
+    # sub-minute offset.
+    #
+    # Emit-before-super-accept matters for the same reason the
+    # ``ReminderFormDialog.reminder_added`` signal does: connected
+    # slots run synchronously and must see ``self.result()`` still
+    # ``Rejected`` so they get a coherent dialog state. Pinned by
+    # ``test_save_emit_runs_before_super_accept`` in
+    # ``tests/test_settings_dialog.py``.
+    break_interval_changed = Signal(int)
 
     def __init__(
         self,
@@ -1272,10 +1290,26 @@ class SettingsDialog(QDialog):
             )
             return
 
-        self._settings.break_interval_min = self._break_interval_spinbox.value()
+        # Capture the OLD break interval BEFORE the persistence write so
+        # the post-save comparison can detect whether the value actually
+        # changed (S-09 bugfix). We read it locally rather than at
+        # __init__ time so any future "external write between open and
+        # accept" path (none today) would still see the right baseline.
+        old_break_interval = self._settings.break_interval_min
+        new_break_interval = self._break_interval_spinbox.value()
+
+        self._settings.break_interval_min = new_break_interval
         self._settings.snooze_duration_min = self._snooze_duration_spinbox.value()
         self._settings.max_snoozes = self._max_snoozes_spinbox.value()
         self._settings.voice_enabled = self._voice_enabled_checkbox.isChecked()
         self._settings.voice_phrase = self._voice_phrase_edit.text()
         self._settings.autostart = autostart_enabled
+
+        # S-09: emit BEFORE super().accept() so connected slots see the
+        # dialog as still-open. Only fire on an actual change so a save
+        # that touches snooze / voice / autostart but leaves the break
+        # interval alone preserves the running cycle's accumulator.
+        if new_break_interval != old_break_interval:
+            self.break_interval_changed.emit(new_break_interval)
+
         super().accept()

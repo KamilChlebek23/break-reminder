@@ -331,13 +331,22 @@ class BreakReminderApp:
         The ``ReminderScheduler`` is threaded through so the Add
         sub-dialog can call ``reload()`` and arm the running session
         against the freshly-saved reminder.
+
+        S-09 wiring: ``dialog.break_interval_changed`` is connected to
+        ``_on_break_interval_changed`` BEFORE ``dialog.exec()`` so the
+        signal — emitted from ``accept()`` while ``exec()`` is still
+        running — is delivered. Connecting after ``exec()`` returns is
+        too late: the signal has already fired and the dialog is mid-
+        destruction.
         """
-        SettingsDialog(
+        dialog = SettingsDialog(
             settings=self._settings,
             voice=self._voice,
             reminder_store=self._reminder_store,
             reminder_scheduler=self._reminder_scheduler,
-        ).exec()
+        )
+        dialog.break_interval_changed.connect(self._on_break_interval_changed)
+        dialog.exec()
 
     def _on_check_for_updates(self) -> None:
         """Show the installed version, then optionally open GitHub Releases.
@@ -409,6 +418,31 @@ class BreakReminderApp:
             self._apply_break_taken()
         else:
             self._apply_break_snoozed()
+
+    def _on_break_interval_changed(self, new_interval: int) -> None:
+        """Re-base the break cycle when the user saves a new break interval.
+
+        Called from ``SettingsDialog.break_interval_changed``, which
+        fires from ``accept()`` only when the persisted
+        ``break_interval_min`` actually differs from the value the
+        dialog was opened with. The slot resets the active-time
+        accumulator and snooze state via
+        ``BreakScheduler.reset_cycle()`` and refreshes the tray
+        tooltip immediately so the user sees the new countdown
+        without waiting for the next 5-second ``_tooltip_timer``
+        refresh (S-09).
+
+        Args:
+            new_interval: The newly-persisted break interval in
+                minutes. Currently unused — the scheduler reads the
+                fresh threshold via ``self._settings.break_interval_min``
+                on the next tick — but the signal carries it for
+                future observers (e.g., a planned countdown overlay or
+                event-log row).
+        """
+        del new_interval  # forward-compatibility; see docstring
+        self._break_scheduler.reset_cycle()
+        self._refresh_tooltip()
 
     def _apply_break_taken(self) -> None:
         """Shared 'user took a break' handler.

@@ -159,11 +159,36 @@ class BreakScheduler(QObject):
         """Return ``True`` while ``pause()`` is in effect (FR-016)."""
         return self._paused
 
-    def on_break_taken(self) -> None:
-        """User clicked 'I'll take a break' — reset the cycle."""
+    def reset_cycle(self) -> None:
+        """Return the scheduler to a clean cycle state.
+
+        Clears the active-time accumulator (``_active_seconds``), the
+        snooze counter (``_snoozes_used``), and any in-flight snooze
+        window (``_snooze_until``). Pause state and the per-second
+        timer are left untouched — pause is independent of the cycle
+        (FR-016) and the timer is managed separately by ``start`` /
+        ``stop``.
+
+        Called from two places:
+
+        - ``on_break_taken`` — the dialog flow when the user clicks
+          "I'll take a break", and the tray Reset action that routes
+          through the same shared handler in ``app.py``
+          (``_apply_break_taken``).
+        - ``BreakReminderApp._on_break_interval_changed`` — fired from
+          ``SettingsDialog.break_interval_changed`` after the user
+          saves a new ``break_interval_min`` value. This is the
+          S-09 bugfix path: without it, ``_active_seconds`` carries
+          over from the prior cycle and the tray-tooltip seconds
+          digit appears frozen across an interval change.
+        """
         self._active_seconds = 0
         self._snoozes_used = 0
         self._snooze_until = None
+
+    def on_break_taken(self) -> None:
+        """User clicked 'I'll take a break' — reset the cycle."""
+        self.reset_cycle()
 
     def on_break_snoozed(self) -> None:
         """User clicked 'Snooze' — defer the next firing."""

@@ -72,22 +72,29 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import TYPE_CHECKING, cast
 
 from PySide6.QtCore import QDate, QDateTime, Qt, QTime, Signal
 from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QDateEdit,
     QDateTimeEdit,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
+    QHBoxLayout,
     QLineEdit,
+    QMessageBox,
+    QPushButton,
     QSpinBox,
     QToolTip,
     QVBoxLayout,
     QWidget,
 )
 
+from break_reminder.scheduler import next_firing_after
 from break_reminder.storage.reminders import Reminder, ReminderStore
 
 if TYPE_CHECKING:
@@ -152,6 +159,193 @@ _PAST_TIME_WITH_LEAD_FORMAT = "Event must be at least {lead} {unit} in the futur
 # when ``strerror`` is empty) so the user sees the OS-level reason for
 # the save failure (permission denied, disk full, etc.).
 _SAVE_FAILED_FORMAT = "Could not save reminder: {error}"
+
+# S-08 / FR-014: recurrence picker labels. Four standard items are
+# always present in the QComboBox; ``_RECURRENCE_CUSTOM_LABEL`` is
+# added conditionally in Edit mode when the loaded ``rrule_str``
+# doesn't reverse-translate to one of the four canonical strings
+# (e.g. a hand-edited ``"FREQ=WEEKLY;BYDAY=MO,WE,FR"``). The custom
+# item is never user-selectable — its presence implies the picker is
+# disabled and the loaded rule is preserved verbatim on save unless
+# the user clicks Reset and confirms.
+_RECURRENCE_NONE_LABEL = "None"
+_RECURRENCE_DAILY_LABEL = "Daily"
+_RECURRENCE_WEEKLY_LABEL = "Weekly"
+_RECURRENCE_MONTHLY_LABEL = "Monthly"
+_RECURRENCE_CUSTOM_LABEL = "(custom)"
+
+# S-08: canonical RRULE strings the picker emits on save. These are
+# the byte-stable values ``_rrule_to_picker_choice`` exact-matches
+# against on Edit pre-fill. Do NOT add normalization (uppercasing,
+# whitespace stripping, etc.) — the storage layer round-trips the
+# string verbatim and any normalization would diverge from
+# hand-edited inputs that fall through to the (custom) catch-all.
+_RRULE_DAILY = "FREQ=DAILY"
+_RRULE_WEEKLY = "FREQ=WEEKLY"
+_RRULE_MONTHLY = "FREQ=MONTHLY"
+
+# S-08: forward-translation map (picker label → RRULE string or None).
+# ``_RECURRENCE_NONE_LABEL`` maps to ``None`` so callers can lookup
+# unconditionally without a separate is-recurring branch.
+# ``_RECURRENCE_CUSTOM_LABEL`` is intentionally absent — the
+# custom-locked branch in ``accept()`` reads ``self._original_custom_rrule``
+# instead of consulting this map.
+_PICKER_TO_RRULE: dict[str, str | None] = {
+    _RECURRENCE_NONE_LABEL: None,
+    _RECURRENCE_DAILY_LABEL: _RRULE_DAILY,
+    _RECURRENCE_WEEKLY_LABEL: _RRULE_WEEKLY,
+    _RECURRENCE_MONTHLY_LABEL: _RRULE_MONTHLY,
+}
+
+# S-08: end-date row defaults. ``setCalendarPopup(True)`` + a
+# 30-day-out default pre-fill keeps the field useful without
+# requiring the user to scroll the calendar (matches the +1h-rounded
+# datetime default convention from S-06).
+_END_DATE_CHECKBOX_LABEL = "End on:"
+_END_DATE_DEFAULT_OFFSET_DAYS = 30
+
+# S-08: tooltips + confirmation strings. ``_RECURRENCE_CUSTOM_TOOLTIP``
+# surfaces on hover when the picker is locked into ``(custom)`` so
+# the user understands why the dropdown is disabled. The Reset
+# confirmation borrows the destructive-action wording convention
+# (Yes/No, default No) used by the Reminders tab's Delete confirm
+# in ``settings_dialog.py``.
+_RECURRENCE_CUSTOM_TOOLTIP = "This reminder uses an advanced rule. Click Reset to replace it."
+_RECURRENCE_RESET_BUTTON_LABEL = "Reset…"
+_RECURRENCE_RESET_CONFIRM_TITLE = "Replace recurrence rule"
+_RECURRENCE_RESET_CONFIRM_TEXT = (
+    "Replace the custom recurrence rule with one of the standard options?\nThis cannot be undone."
+)
+
+# S-08: passive tooltip surfaced on the recurrence picker when the
+# user composes a Monthly + day>28 combination. ``dateutil``'s
+# plain ``FREQ=MONTHLY`` skips months without that day-of-month
+# (Feb / Apr / Jun / Sep / Nov for day-31). The tooltip is
+# informational, not a gate — the save still succeeds.
+_MONTHLY_DAY31_TOOLTIP = "Months without that day are skipped (e.g. February)"
+
+# S-08: validation message for the recurring-branch past-time gate.
+# The recurring gate doesn't reject "start_at in the past"; it
+# rejects "no future occurrences exist" (e.g. ``end_at`` is in the
+# past, or the rule itself produces nothing after ``now``). Wording
+# diverges from ``_PAST_TIME_MESSAGE`` so the user sees a
+# rule-specific hint rather than a misleading "event must be in the
+# future" message — for a recurring reminder the event is the next
+# firing, not the start_at, and the failure mode is rule-level.
+_NO_FUTURE_OCCURRENCES_MESSAGE = "Recurring reminder has no future firings"
+_NO_FUTURE_OCCURRENCES_WITH_LEAD_FORMAT = (
+    "Recurring reminder has no future firings at least {lead} {unit} away"
+)
+
+
+def _picker_choice_to_rrule(choice: str) -> str | None:
+    """Translate a picker label to the canonical RRULE string (or ``None``).
+
+    Forward translation — used by ``ReminderFormDialog.accept`` when
+    the user clicks OK. The custom-locked path bypasses this helper
+    and writes back ``self._original_custom_rrule`` directly, so this
+    function never receives ``_RECURRENCE_CUSTOM_LABEL`` and treats
+    it as an unknown choice.
+
+    Args:
+        choice: One of ``_RECURRENCE_NONE_LABEL`` /
+            ``_RECURRENCE_DAILY_LABEL`` / ``_RECURRENCE_WEEKLY_LABEL``
+            / ``_RECURRENCE_MONTHLY_LABEL``. Other inputs raise
+            ``KeyError`` — this is intentional: the custom-locked
+            branch is the only legitimate reason to encounter an
+            unmapped value, and the caller routes around this helper
+            in that case.
+
+    Returns:
+        ``None`` for ``_RECURRENCE_NONE_LABEL``; one of the three
+        canonical RRULE strings (``"FREQ=DAILY"`` / ``"FREQ=WEEKLY"``
+        / ``"FREQ=MONTHLY"``) otherwise.
+
+    Raises:
+        KeyError: When ``choice`` is not in the standard four labels.
+    """
+    return _PICKER_TO_RRULE[choice]
+
+
+def _rrule_to_picker_choice(rrule_str: str | None) -> str:
+    """Translate an RRULE string to a picker label (catch-all → custom).
+
+    Reverse translation — used by ``ReminderFormDialog.__init__`` in
+    Edit mode to seed the picker from the loaded reminder. Exact
+    string matching is deliberate: a semantically-equivalent variant
+    like ``"FREQ=DAILY;INTERVAL=1"`` falls through to the catch-all
+    so the user sees the dialog locked into ``(custom)`` and the
+    rule is preserved verbatim on no-op save. This honors FR-015's
+    hand-edit invariant — we never silently rewrite the user's rule.
+
+    Args:
+        rrule_str: The reminder's stored ``rrule_str`` (verbatim).
+            ``None`` means one-shot; an empty / whitespace-only /
+            otherwise unmapped non-None value falls through to the
+            ``(custom)`` label.
+
+    Returns:
+        ``_RECURRENCE_NONE_LABEL`` for ``None``; one of the three
+        canonical labels for the matching RRULE string;
+        ``_RECURRENCE_CUSTOM_LABEL`` for anything else.
+    """
+    if rrule_str is None:
+        return _RECURRENCE_NONE_LABEL
+    if rrule_str == _RRULE_DAILY:
+        return _RECURRENCE_DAILY_LABEL
+    if rrule_str == _RRULE_WEEKLY:
+        return _RECURRENCE_WEEKLY_LABEL
+    if rrule_str == _RRULE_MONTHLY:
+        return _RECURRENCE_MONTHLY_LABEL
+    return _RECURRENCE_CUSTOM_LABEL
+
+
+def _local_date_to_utc_end_of_day(picked: date) -> datetime:
+    """Compose ``picked`` + ``23:59:59`` in system-local zone, return tz-aware UTC.
+
+    The end-date QDateEdit returns a naive Python ``date`` (no time,
+    no timezone). The user's mental model is "the series ends on
+    <picked date>" — i.e. it should still fire on that date but not
+    after. Composing with ``time(23, 59, 59)`` in the system-local
+    zone honors that mental model; converting to UTC produces the
+    tz-aware value the storage layer expects.
+
+    Mirrors the form's existing local→UTC dance for the datetime
+    field (``naive_local.astimezone(UTC)`` in ``accept()``); the
+    same DST-correctness rationale applies — Python's ``astimezone``
+    on a naive datetime interprets it as local-zone for **that**
+    wall-clock value, so DST-spanning end-dates land on the right
+    UTC instant.
+
+    Args:
+        picked: The naive ``datetime.date`` from
+            ``QDateEdit.date().toPython()``.
+
+    Returns:
+        A tz-aware UTC ``datetime`` representing 23:59:59 local on
+        the picked date.
+    """
+    naive_local = datetime.combine(picked, time(23, 59, 59))
+    return naive_local.astimezone(UTC)
+
+
+def _format_no_future_occurrences_with_lead(lead: int) -> str:
+    """Render the no-future-occurrences tooltip with correct minute plurality.
+
+    Mirrors ``_format_past_time_with_lead``. Pure helper so the wording
+    is observable from a test without spinning up the dialog;
+    ``lead == 1`` reads "1 minute" rather than "1 minutes".
+
+    Args:
+        lead: The current spinbox value at the time of the failed
+            save. Expected to be ``>= 1`` (callers should use
+            ``_NO_FUTURE_OCCURRENCES_MESSAGE`` for ``lead == 0``).
+
+    Returns:
+        The formatted tooltip string.
+    """
+    unit = "minute" if lead == 1 else "minutes"
+    return _NO_FUTURE_OCCURRENCES_WITH_LEAD_FORMAT.format(lead=lead, unit=unit)
 
 
 def _qdatetime_from_naive_local(naive_local: datetime) -> QDateTime:
@@ -337,6 +531,49 @@ class ReminderFormDialog(QDialog):
         self._lead_minutes_field.setSingleStep(1)
         self._lead_minutes_field.setSuffix(_LEAD_SUFFIX)
 
+        # S-08 / FR-014: recurrence picker + Reset button. The picker
+        # carries the four standard items by default; the (custom)
+        # item is added conditionally below in the Edit-mode branch
+        # when the loaded ``rrule_str`` doesn't reverse-translate.
+        # The Reset button hides on default and only surfaces in the
+        # custom-locked state.
+        self._recurrence_picker = QComboBox(self)
+        self._recurrence_picker.addItems(
+            [
+                _RECURRENCE_NONE_LABEL,
+                _RECURRENCE_DAILY_LABEL,
+                _RECURRENCE_WEEKLY_LABEL,
+                _RECURRENCE_MONTHLY_LABEL,
+            ]
+        )
+        self._recurrence_reset_button = QPushButton(_RECURRENCE_RESET_BUTTON_LABEL, self)
+        self._recurrence_reset_button.setVisible(False)
+        # Holds the verbatim ``rrule_str`` of a custom-locked Edit
+        # load. ``None`` outside the locked state. ``accept()`` reads
+        # this to preserve the rule on no-op save; ``_on_recurrence_reset_clicked``
+        # clears it on Yes confirm so subsequent saves translate from
+        # the picker instead.
+        self._original_custom_rrule: str | None = None
+
+        # S-08 / FR-014: end-date row. The QDateEdit is disabled by
+        # default and follows the checkbox's toggled state. The
+        # checkbox itself is disabled while the picker is None
+        # (one-shot reminders have no series end). Default-pre-fill
+        # is today + 30 days in system local zone — keeps the field
+        # useful without forcing the user to scroll the calendar.
+        self._end_date_checkbox = QCheckBox(_END_DATE_CHECKBOX_LABEL, self)
+        self._end_date_field = QDateEdit(self)
+        self._end_date_field.setCalendarPopup(True)
+        self._end_date_field.setDisplayFormat("yyyy-MM-dd")
+        default_end_local = (
+            self._clock().astimezone() + timedelta(days=_END_DATE_DEFAULT_OFFSET_DAYS)
+        ).date()
+        self._end_date_field.setDate(
+            QDate(default_end_local.year, default_end_local.month, default_end_local.day)
+        )
+        self._end_date_field.setEnabled(False)
+        self._end_date_checkbox.setEnabled(False)
+
         if self._editing is not None:
             # Edit mode: pre-fill from the loaded reminder. The
             # datetime widget shows the **event time** (firing instant
@@ -351,9 +588,42 @@ class ReminderFormDialog(QDialog):
             event_at_utc = self._editing.start_at + timedelta(minutes=self._editing.lead_minutes)
             naive_local = event_at_utc.astimezone().replace(tzinfo=None)
             self._datetime_field.setDateTime(_qdatetime_from_naive_local(naive_local))
+
+            # S-08: pre-fill recurrence + end-date from the loaded
+            # reminder. Custom-locked branch (unparseable rrule_str)
+            # adds the (custom) item, locks the picker, surfaces the
+            # Reset button, and stashes the original rule so save
+            # round-trips it byte-for-byte.
+            picker_choice = _rrule_to_picker_choice(self._editing.rrule_str)
+            if picker_choice == _RECURRENCE_CUSTOM_LABEL:
+                self._original_custom_rrule = self._editing.rrule_str
+                self._recurrence_picker.addItem(_RECURRENCE_CUSTOM_LABEL)
+                self._recurrence_picker.setCurrentText(_RECURRENCE_CUSTOM_LABEL)
+                self._recurrence_picker.setEnabled(False)
+                self._recurrence_picker.setToolTip(_RECURRENCE_CUSTOM_TOOLTIP)
+                self._recurrence_reset_button.setVisible(True)
+            else:
+                self._recurrence_picker.setCurrentText(picker_choice)
+
+            # End-date pre-fill: tz-aware UTC → system local → naive
+            # date. The checkbox+field cascade is reasserted by the
+            # initial ``_on_recurrence_changed`` call at the bottom
+            # of ``__init__``; for custom-locked + recurring the
+            # cascade leaves these set; for None (one-shot) the
+            # cascade unticks them — which matches reality because
+            # ``_rrule_to_picker_choice(None) == _RECURRENCE_NONE_LABEL``
+            # implies ``end_at`` should also be None (round-trip
+            # invariant — a one-shot has no series end).
+            if self._editing.end_at is not None:
+                local_date = self._editing.end_at.astimezone().date()
+                self._end_date_checkbox.setChecked(True)
+                self._end_date_field.setEnabled(True)
+                self._end_date_field.setDate(
+                    QDate(local_date.year, local_date.month, local_date.day)
+                )
         else:
             # Add mode: defaults (empty name, +1h-rounded datetime,
-            # lead=0).
+            # lead=0, recurrence None, end-date unticked).
             self._datetime_field.setDateTime(self._compute_default_datetime())
             self._lead_minutes_field.setValue(_LEAD_DEFAULT)
 
@@ -361,6 +631,27 @@ class ReminderFormDialog(QDialog):
         form.addRow("Name:", self._name_field)
         form.addRow("Date/time:", self._datetime_field)
         form.addRow("Notify (minutes before event):", self._lead_minutes_field)
+
+        # S-08: recurrence row — picker + Reset button side-by-side.
+        # The Reset button takes zero width when hidden (Qt's default
+        # for ``setVisible(False)`` widgets in a layout), so the
+        # row reads as "Recurrence: [picker]" in the common case.
+        recurrence_row = QHBoxLayout()
+        recurrence_row.setContentsMargins(0, 0, 0, 0)
+        recurrence_row.addWidget(self._recurrence_picker)
+        recurrence_row.addWidget(self._recurrence_reset_button)
+        recurrence_row.addStretch(1)
+        form.addRow("Recurrence:", recurrence_row)
+
+        # S-08: end-date row — checkbox + field side-by-side. The
+        # form-row label is empty because the checkbox carries its
+        # own "End on:" label inline.
+        end_date_row = QHBoxLayout()
+        end_date_row.setContentsMargins(0, 0, 0, 0)
+        end_date_row.addWidget(self._end_date_checkbox)
+        end_date_row.addWidget(self._end_date_field)
+        end_date_row.addStretch(1)
+        form.addRow("", end_date_row)
 
         self._buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
@@ -374,6 +665,27 @@ class ReminderFormDialog(QDialog):
         layout.setSpacing(12)
         layout.addLayout(form)
         layout.addWidget(self._buttons)
+
+        # S-08: signal wiring. The picker drives the cascade slot;
+        # the checkbox drives the date field's enabled state; the
+        # datetime field drives the Monthly-day-31 tooltip refresh
+        # (so the warning stays in sync regardless of which input
+        # the user touches last). The Reset button raises the
+        # custom-locked override confirmation.
+        self._recurrence_picker.currentTextChanged.connect(self._on_recurrence_changed)
+        self._recurrence_reset_button.clicked.connect(self._on_recurrence_reset_clicked)
+        self._end_date_checkbox.toggled.connect(self._end_date_field.setEnabled)
+        self._datetime_field.dateTimeChanged.connect(self._update_monthly_tooltip)
+
+        # S-08: initial cascade — match the end-date row's enabled
+        # state to the freshly-seeded picker. In Add mode the picker
+        # is None → cascade disables the end-date row. In Edit mode
+        # the cascade is idempotent on the pre-filled state for
+        # recurring loads, and unticks the (already-disabled) end-
+        # date for one-shot loads. The (custom) branch counts as
+        # recurring per F1 — the cascade leaves the end_at pre-fill
+        # intact so a no-op save preserves it byte-for-byte.
+        self._on_recurrence_changed(self._recurrence_picker.currentText())
 
     def _compute_default_datetime(self) -> QDateTime:
         """Seed the date/time field to ``now + 1h`` rounded up to 15-min.
@@ -410,6 +722,92 @@ class ReminderFormDialog(QDialog):
         """
         anchor = widget.mapToGlobal(widget.rect().bottomLeft())
         QToolTip.showText(anchor, message, widget, msecShowTime=3000)
+
+    def _on_recurrence_changed(self, choice: str) -> None:
+        """Cascade the recurrence picker's state onto the end-date row.
+
+        Wired to ``self._recurrence_picker.currentTextChanged``. The
+        ``(custom)`` choice counts as recurring for cascade purposes
+        (F1 fix from plan review): a loaded custom-locked reminder
+        with ``end_at`` set must keep its checkbox checked + field
+        enabled so a no-op save doesn't silently drop the user's
+        end-date. The Monthly-day-31 tooltip has its own narrower
+        guard inside ``_update_monthly_tooltip``, so the (custom)
+        choice never accidentally triggers the Monthly warning.
+
+        Args:
+            choice: The picker's current text (one of the four
+                standard labels or ``(custom)`` in the locked state).
+        """
+        is_recurring = choice != _RECURRENCE_NONE_LABEL
+        self._end_date_checkbox.setEnabled(is_recurring)
+        if not is_recurring:
+            # Unticking cascades through ``toggled`` to disable the
+            # date field too. Only fired when transitioning OUT of a
+            # recurring choice so existing pre-fill state is
+            # preserved on the recurring → recurring path.
+            self._end_date_checkbox.setChecked(False)
+        self._update_monthly_tooltip()
+
+    def _update_monthly_tooltip(self) -> None:
+        """Refresh the Monthly-day-31 tooltip on the recurrence picker.
+
+        Wired to BOTH ``self._recurrence_picker.currentTextChanged``
+        (via ``_on_recurrence_changed`` step 3) AND
+        ``self._datetime_field.dateTimeChanged`` so the warning stays
+        in sync regardless of which input the user touches last
+        (F5 fix from plan review).
+
+        The tooltip is informational, not a gate — ``dateutil``
+        naturally skips months without the chosen day-of-month
+        (Feb 31 doesn't exist; the rule fires Mar 31 instead). The
+        save still succeeds; the user sees the warning on hover.
+
+        While the picker is disabled (custom-locked state), this
+        method early-returns so it doesn't clobber the
+        ``_RECURRENCE_CUSTOM_TOOLTIP`` set in ``__init__``.
+        """
+        if not self._recurrence_picker.isEnabled():
+            return
+        if self._recurrence_picker.currentText() != _RECURRENCE_MONTHLY_LABEL:
+            self._recurrence_picker.setToolTip("")
+            return
+        naive_local = cast(datetime, self._datetime_field.dateTime().toPython())
+        if naive_local.day > 28:
+            self._recurrence_picker.setToolTip(_MONTHLY_DAY31_TOOLTIP)
+        else:
+            self._recurrence_picker.setToolTip("")
+
+    def _on_recurrence_reset_clicked(self) -> None:
+        """Override the custom-locked picker via a Yes/No confirm.
+
+        Wired to ``self._recurrence_reset_button.clicked``. Yes
+        unwinds the entire custom-locked state: drops the original
+        rule reference, removes the (custom) item from the dropdown,
+        re-enables the picker at None, clears the custom-tooltip,
+        and hides the Reset button. The picker's
+        ``currentTextChanged`` signal then cascades through
+        ``_on_recurrence_changed`` to disable the end-date row.
+
+        No is a noop — leaves the dialog exactly as it was.
+        """
+        reply = QMessageBox.question(
+            self,
+            _RECURRENCE_RESET_CONFIRM_TITLE,
+            _RECURRENCE_RESET_CONFIRM_TEXT,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        self._original_custom_rrule = None
+        custom_index = self._recurrence_picker.findText(_RECURRENCE_CUSTOM_LABEL)
+        if custom_index >= 0:
+            self._recurrence_picker.removeItem(custom_index)
+        self._recurrence_picker.setEnabled(True)
+        self._recurrence_picker.setToolTip("")
+        self._recurrence_picker.setCurrentText(_RECURRENCE_NONE_LABEL)
+        self._recurrence_reset_button.setVisible(False)
 
     def accept(self) -> None:  # type: ignore[override]
         """Validate, persist, arm, emit, then close.
@@ -481,39 +879,96 @@ class ReminderFormDialog(QDialog):
         event_at_utc = naive_local.astimezone(UTC)
         lead_minutes = self._lead_minutes_field.value()
         start_at_utc = event_at_utc - timedelta(minutes=lead_minutes)
-        # Edit-mode skip: when the firing time hasn't moved from the
-        # loaded reminder, the past-time gate is bypassed. The
-        # comparison is on tz-aware UTC datetimes so DST / zone
-        # transitions don't matter — equality at the UTC level means
-        # the firing instant is unchanged regardless of how the user
-        # composed the (event_at, lead) inputs.
-        firing_unchanged_in_edit = (
-            self._editing is not None and start_at_utc == self._editing.start_at
-        )
-        if start_at_utc <= self._clock() and not firing_unchanged_in_edit:
-            message = (
-                _format_past_time_with_lead(lead_minutes)
-                if lead_minutes > 0
-                else _PAST_TIME_MESSAGE
-            )
-            self._show_tooltip(self._datetime_field, message)
-            return
 
-        # 3. Construct one-shot reminder. In Edit mode pass the loaded
-        # ``id`` explicitly so ``store.update()`` finds the existing
-        # row; in Add mode the dataclass default-factory generates a
-        # fresh UUID.
+        # 2b. S-08: translate recurrence picker + end-date row into
+        # the proposed (rrule_str, end_at) pair. Custom-locked path
+        # bypasses the picker and writes back ``self._original_custom_rrule``
+        # verbatim so a no-op save round-trips the user's original
+        # rule byte-for-byte (FR-015 hand-edit invariant).
+        picker_choice = self._recurrence_picker.currentText()
+        if picker_choice == _RECURRENCE_CUSTOM_LABEL:
+            rrule_str_proposed = self._original_custom_rrule
+        else:
+            rrule_str_proposed = _picker_choice_to_rrule(picker_choice)
+        if rrule_str_proposed is None:
+            # One-shot: end_at is irrelevant. Defensive — checkbox
+            # should already be disabled+unchecked by the cascade,
+            # but force None here so a buggy cascade can never leak
+            # an end_at into a one-shot reminder.
+            end_at_proposed: datetime | None = None
+        elif self._end_date_checkbox.isChecked():
+            picked_date = cast(date, self._end_date_field.date().toPython())
+            end_at_proposed = _local_date_to_utc_end_of_day(picked_date)
+        else:
+            end_at_proposed = None
+
+        # 2c. Recurrence-aware past-time gate. Edit-mode skip widens
+        # to compare three fields (start_at, rrule_str, end_at): when
+        # all three match the loaded reminder, the gate yields so a
+        # rename / re-lead on an expired reminder still saves. When
+        # any one differs, the gate applies. One-shot branch keeps
+        # the existing strict-future predicate; recurring branch asks
+        # ``next_firing_after`` for at least one future occurrence.
+        firing_unchanged_in_edit = (
+            self._editing is not None
+            and start_at_utc == self._editing.start_at
+            and rrule_str_proposed == self._editing.rrule_str
+            and end_at_proposed == self._editing.end_at
+        )
+        if not firing_unchanged_in_edit:
+            if rrule_str_proposed is None:
+                if start_at_utc <= self._clock():
+                    message = (
+                        _format_past_time_with_lead(lead_minutes)
+                        if lead_minutes > 0
+                        else _PAST_TIME_MESSAGE
+                    )
+                    self._show_tooltip(self._datetime_field, message)
+                    return
+            else:
+                # Construct a tentative Reminder so ``next_firing_after``
+                # parses the rule against the proposed (start_at,
+                # end_at) pair. Constructing twice is the simplest
+                # correct shape — the dataclass is cheap (no IO, no
+                # validation), and the gate must run BEFORE the real
+                # construction in step 3 so an unparseable / exhausted
+                # rule blocks the save.
+                tentative = Reminder(
+                    name=stripped_name,
+                    start_at=start_at_utc,
+                    rrule_str=rrule_str_proposed,
+                    end_at=end_at_proposed,
+                    lead_minutes=lead_minutes,
+                )
+                if next_firing_after(tentative, self._clock()) is None:
+                    message = (
+                        _format_no_future_occurrences_with_lead(lead_minutes)
+                        if lead_minutes > 0
+                        else _NO_FUTURE_OCCURRENCES_MESSAGE
+                    )
+                    self._show_tooltip(self._datetime_field, message)
+                    return
+
+        # 3. Construct reminder. In Edit mode pass the loaded ``id``
+        # explicitly so ``store.update()`` finds the existing row; in
+        # Add mode the dataclass default-factory generates a fresh UUID.
+        # S-08: ``rrule_str`` and ``end_at`` round-trip through both
+        # branches so recurring reminders persist correctly.
         if self._editing is not None:
             reminder = Reminder(
                 id=self._editing.id,
                 name=stripped_name,
                 start_at=start_at_utc,
+                rrule_str=rrule_str_proposed,
+                end_at=end_at_proposed,
                 lead_minutes=lead_minutes,
             )
         else:
             reminder = Reminder(
                 name=stripped_name,
                 start_at=start_at_utc,
+                rrule_str=rrule_str_proposed,
+                end_at=end_at_proposed,
                 lead_minutes=lead_minutes,
             )
 

@@ -46,10 +46,15 @@ from break_reminder.ui.settings_dialog import (
     _DIALOG_MINIMUM_WIDTH,
     _EXPIRED_LABEL,
     _FIRING_FORMAT,
+    _RECURRENCE_SUFFIX_CUSTOM,
+    _RECURRENCE_SUFFIX_DAILY,
+    _RECURRENCE_SUFFIX_MONTHLY,
+    _RECURRENCE_SUFFIX_WEEKLY,
     _REMINDERS_EMPTY_MESSAGE,
     SettingsDialog,
     _compose_row,
     _format_firing,
+    _recurrence_label,
     _sort_key,
 )
 
@@ -1809,6 +1814,111 @@ class TestRemindersHelpers:
         # the expired branch fails loudly.
         assert "fires" not in row
         assert "20 min" not in row
+
+
+# ---------------------------------------------------------------------------
+# S-08 / FR-014: _compose_row recurrence suffix matrix
+# ---------------------------------------------------------------------------
+
+
+class TestComposeRowRecurrence:
+    """Recurrence suffix appended to active rows; suppressed on expired rows."""
+
+    def test_active_one_shot_no_lead_unchanged(self) -> None:
+        """One-shot active + lead=0 baseline (no recurrence suffix)."""
+        reminder = Reminder(
+            name="OneShot",
+            start_at=datetime(2099, 6, 3, 22, 0, tzinfo=UTC),
+        )
+        now = datetime(2026, 1, 1, tzinfo=UTC)
+        row = _compose_row(reminder, now, tz=timezone(timedelta(hours=-8)))
+        assert row == "OneShot  —  Wed 2099-06-03 14:00"
+
+    def test_active_recurring_daily_no_lead_appends_suffix(self) -> None:
+        """Daily active + lead=0 → ``...  (daily)`` suffix."""
+        reminder = Reminder(
+            name="Standup",
+            start_at=datetime(2099, 6, 3, 22, 0, tzinfo=UTC),
+            rrule_str="FREQ=DAILY",
+        )
+        now = datetime(2026, 1, 1, tzinfo=UTC)
+        row = _compose_row(reminder, now, tz=timezone(timedelta(hours=-8)))
+        assert row == "Standup  —  Wed 2099-06-03 14:00 (daily)"
+
+    @pytest.mark.parametrize(
+        ("rrule_str", "expected_suffix"),
+        [
+            ("FREQ=WEEKLY", _RECURRENCE_SUFFIX_WEEKLY),
+            ("FREQ=MONTHLY", _RECURRENCE_SUFFIX_MONTHLY),
+        ],
+    )
+    def test_active_recurring_weekly_and_monthly_no_lead_append_suffix(
+        self, rrule_str: str, expected_suffix: str
+    ) -> None:
+        """Weekly + Monthly active + lead=0 → matching suffix."""
+        reminder = Reminder(
+            name="Recur",
+            start_at=datetime(2099, 6, 3, 22, 0, tzinfo=UTC),
+            rrule_str=rrule_str,
+        )
+        now = datetime(2026, 1, 1, tzinfo=UTC)
+        row = _compose_row(reminder, now, tz=timezone(timedelta(hours=-8)))
+        assert row == f"Recur  —  Wed 2099-06-03 14:00 ({expected_suffix})"
+
+    def test_active_recurring_custom_appends_custom_suffix(self) -> None:
+        """Hand-edited rrule_str → ``(custom)`` suffix."""
+        reminder = Reminder(
+            name="Custom",
+            start_at=datetime(2099, 6, 3, 22, 0, tzinfo=UTC),
+            rrule_str="FREQ=WEEKLY;BYDAY=MO,WE,FR",
+        )
+        now = datetime(2026, 1, 1, tzinfo=UTC)
+        row = _compose_row(reminder, now, tz=timezone(timedelta(hours=-8)))
+        assert row == f"Custom  —  Wed 2099-06-03 14:00 ({_RECURRENCE_SUFFIX_CUSTOM})"
+
+    def test_active_recurring_with_lead_appends_combined_suffix(self) -> None:
+        """Daily + lead=15 → ``(fires 15 min before, daily)``."""
+        reminder = Reminder(
+            name="LeadDaily",
+            start_at=datetime(2099, 6, 3, 22, 0, tzinfo=UTC),
+            rrule_str="FREQ=DAILY",
+            lead_minutes=15,
+        )
+        now = datetime(2026, 1, 1, tzinfo=UTC)
+        row = _compose_row(reminder, now, tz=timezone(timedelta(hours=-8)))
+        assert row == "LeadDaily  —  Wed 2099-06-03 14:15  (fires 15 min before, daily)"
+
+    def test_expired_recurring_does_not_append_suffix(self) -> None:
+        """Recurring with end_at in the past → bare ``(expired)``, no recurrence suffix."""
+        reminder = Reminder(
+            name="ExpiredRecurring",
+            start_at=datetime(2000, 1, 1, 10, 0, tzinfo=UTC),
+            rrule_str="FREQ=DAILY",
+            end_at=datetime(2000, 12, 31, 23, 59, 59, tzinfo=UTC),
+        )
+        now = datetime(2026, 1, 1, tzinfo=UTC)
+        row = _compose_row(reminder, now)
+        assert row == "ExpiredRecurring  —  (expired)"
+        assert "daily" not in row
+        assert "(daily)" not in row
+
+    def test_recurrence_label_returns_empty_for_none(self) -> None:
+        """Pure helper: ``None`` → empty string (one-shot encoding)."""
+        assert _recurrence_label(None) == ""
+
+    @pytest.mark.parametrize(
+        ("rrule_str", "expected"),
+        [
+            ("FREQ=DAILY", _RECURRENCE_SUFFIX_DAILY),
+            ("FREQ=WEEKLY", _RECURRENCE_SUFFIX_WEEKLY),
+            ("FREQ=MONTHLY", _RECURRENCE_SUFFIX_MONTHLY),
+            ("FREQ=WEEKLY;BYDAY=MO,WE,FR", _RECURRENCE_SUFFIX_CUSTOM),
+            ("", _RECURRENCE_SUFFIX_CUSTOM),
+        ],
+    )
+    def test_recurrence_label_returns_known_strings(self, rrule_str: str, expected: str) -> None:
+        """Pure helper: canonical RRULEs map to their labels; everything else → custom."""
+        assert _recurrence_label(rrule_str) == expected
 
 
 # ---------------------------------------------------------------------------

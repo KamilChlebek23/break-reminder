@@ -229,4 +229,4 @@ No data migration. No `Settings` schema change. Existing `BreakReminder.ini` fil
 
 #### Automated
 
-- [x] 2.1 `git grep -nE 'status: implemented' context/changes/bugfix-break-cycle-reset-on-save/change.md` returns exactly one match
+- [x] 2.1 `git grep -nE 'status: implemented' context/changes/bugfix-break-cycle-reset-on-save/change.md` returns exactly one match — 692f4ac

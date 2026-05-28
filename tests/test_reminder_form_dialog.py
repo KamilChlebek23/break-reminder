@@ -31,12 +31,12 @@ are stable regardless of the runner's wall clock and system zone.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QDateTimeEdit, QDialog, QDialogButtonBox, QLineEdit
+from PySide6.QtCore import QDate, Qt
+from PySide6.QtWidgets import QDateTimeEdit, QDialog, QDialogButtonBox, QLineEdit, QMessageBox
 
 from break_reminder.scheduler import ReminderScheduler
 from break_reminder.storage.reminders import Reminder, ReminderStore
@@ -45,17 +45,33 @@ from break_reminder.ui.reminder_form_dialog import (
     _DATETIME_DISPLAY_FORMAT,
     _DEFAULT_OFFSET_HOURS,
     _DEFAULT_ROUND_MINUTES,
+    _END_DATE_DEFAULT_OFFSET_DAYS,
     _LEAD_DEFAULT,
     _LEAD_MAX_VALUE,
     _LEAD_MIN_VALUE,
     _LEAD_SUFFIX,
+    _MONTHLY_DAY31_TOOLTIP,
     _NAME_EMPTY_MESSAGE,
     _NAME_PLACEHOLDER,
+    _NO_FUTURE_OCCURRENCES_MESSAGE,
     _PAST_TIME_MESSAGE,
+    _RECURRENCE_CUSTOM_LABEL,
+    _RECURRENCE_CUSTOM_TOOLTIP,
+    _RECURRENCE_DAILY_LABEL,
+    _RECURRENCE_MONTHLY_LABEL,
+    _RECURRENCE_NONE_LABEL,
+    _RECURRENCE_WEEKLY_LABEL,
+    _RRULE_DAILY,
+    _RRULE_MONTHLY,
+    _RRULE_WEEKLY,
     ReminderFormDialog,
+    _format_no_future_occurrences_with_lead,
     _format_past_time_with_lead,
+    _local_date_to_utc_end_of_day,
+    _picker_choice_to_rrule,
     _qdatetime_from_naive_local,
     _round_up_to_minutes,
+    _rrule_to_picker_choice,
 )
 
 # ---------------------------------------------------------------------------
@@ -1626,3 +1642,833 @@ class TestReminderFormDialogEditMode:
         assert d._editing is None
         assert d._name_field.text() == ""
         assert d._lead_minutes_field.value() == _LEAD_DEFAULT
+
+
+# ---------------------------------------------------------------------------
+# S-08 / FR-014: recurrence picker + cascade
+# ---------------------------------------------------------------------------
+
+
+def _make_edit_dialog_with_reminder(
+    qtbot,
+    store: ReminderStore,
+    scheduler_stub: StubScheduler,
+    clock: Clock,
+    reminder: Reminder,
+) -> ReminderFormDialog:
+    """Build an Edit-mode ReminderFormDialog wired against fixtures."""
+    d = ReminderFormDialog(
+        store=store,
+        scheduler=scheduler_stub,  # type: ignore[arg-type]
+        clock=clock,
+        reminder=reminder,
+    )
+    qtbot.addWidget(d)
+    return d
+
+
+class TestRecurrencePicker:
+    """Picker structure + the recurrence + end-date row cascade."""
+
+    def test_picker_has_four_default_items(self, dialog: ReminderFormDialog) -> None:
+        """Add mode: picker carries exactly the four standard labels."""
+        items = [
+            dialog._recurrence_picker.itemText(i) for i in range(dialog._recurrence_picker.count())
+        ]
+        assert items == [
+            _RECURRENCE_NONE_LABEL,
+            _RECURRENCE_DAILY_LABEL,
+            _RECURRENCE_WEEKLY_LABEL,
+            _RECURRENCE_MONTHLY_LABEL,
+        ]
+
+    def test_picker_default_is_none_in_add_mode(self, dialog: ReminderFormDialog) -> None:
+        """Picker default text is ``None`` in Add mode (no kwarg)."""
+        assert dialog._recurrence_picker.currentText() == _RECURRENCE_NONE_LABEL
+
+    def test_picker_is_enabled_in_add_mode(self, dialog: ReminderFormDialog) -> None:
+        """Picker is enabled in Add mode (no custom-locked state)."""
+        assert dialog._recurrence_picker.isEnabled() is True
+
+    def test_reset_button_hidden_in_add_mode(self, dialog: ReminderFormDialog) -> None:
+        """Reset button is hidden by default; only the custom-locked path surfaces it."""
+        assert dialog._recurrence_reset_button.isVisible() is False
+
+    def test_end_date_checkbox_disabled_when_picker_is_none(
+        self, dialog: ReminderFormDialog
+    ) -> None:
+        """One-shot reminder has no series end → checkbox disabled."""
+        assert dialog._end_date_checkbox.isEnabled() is False
+
+    def test_end_date_field_disabled_when_checkbox_unchecked(
+        self, dialog: ReminderFormDialog
+    ) -> None:
+        """Date field follows the checkbox state (default unchecked)."""
+        assert dialog._end_date_field.isEnabled() is False
+
+    def test_end_date_checkbox_enables_when_picker_set_to_daily(
+        self, dialog: ReminderFormDialog
+    ) -> None:
+        """Switching to Daily enables the end-date checkbox via the cascade."""
+        dialog._recurrence_picker.setCurrentText(_RECURRENCE_DAILY_LABEL)
+        assert dialog._end_date_checkbox.isEnabled() is True
+
+    @pytest.mark.parametrize(
+        "label",
+        [_RECURRENCE_DAILY_LABEL, _RECURRENCE_WEEKLY_LABEL, _RECURRENCE_MONTHLY_LABEL],
+    )
+    def test_end_date_checkbox_enables_for_each_recurring_choice(
+        self, dialog: ReminderFormDialog, label: str
+    ) -> None:
+        """Every non-None standard choice enables the end-date checkbox."""
+        dialog._recurrence_picker.setCurrentText(label)
+        assert dialog._end_date_checkbox.isEnabled() is True
+
+    def test_end_date_field_enables_when_checkbox_ticked(self, dialog: ReminderFormDialog) -> None:
+        """Picker → Daily, tick checkbox → field enabled."""
+        dialog._recurrence_picker.setCurrentText(_RECURRENCE_DAILY_LABEL)
+        dialog._end_date_checkbox.setChecked(True)
+        assert dialog._end_date_field.isEnabled() is True
+
+    def test_picker_back_to_none_disables_end_date_row(self, dialog: ReminderFormDialog) -> None:
+        """Recurring → None → checkbox unticks AND disables; field disables."""
+        dialog._recurrence_picker.setCurrentText(_RECURRENCE_DAILY_LABEL)
+        dialog._end_date_checkbox.setChecked(True)
+        assert dialog._end_date_field.isEnabled() is True
+        dialog._recurrence_picker.setCurrentText(_RECURRENCE_NONE_LABEL)
+        assert dialog._end_date_checkbox.isChecked() is False
+        assert dialog._end_date_checkbox.isEnabled() is False
+        assert dialog._end_date_field.isEnabled() is False
+
+    def test_monthly_day31_tooltip_appears_when_start_day_above_28(
+        self, dialog: ReminderFormDialog, clock: Clock
+    ) -> None:
+        """Monthly + day-31 datetime → tooltip surfaces on the picker."""
+        local_event = (clock().astimezone() + timedelta(days=60)).replace(tzinfo=None)
+        local_event = local_event.replace(day=31, hour=10, minute=0, second=0, microsecond=0)
+        dialog._datetime_field.setDateTime(_qdatetime_from_naive_local(local_event))
+        dialog._recurrence_picker.setCurrentText(_RECURRENCE_MONTHLY_LABEL)
+        assert dialog._recurrence_picker.toolTip() == _MONTHLY_DAY31_TOOLTIP
+
+    def test_monthly_day28_or_below_does_not_show_tooltip(
+        self, dialog: ReminderFormDialog, clock: Clock
+    ) -> None:
+        """Monthly + day-15 datetime → no skip-months tooltip."""
+        local_event = (clock().astimezone() + timedelta(days=60)).replace(tzinfo=None)
+        local_event = local_event.replace(day=15, hour=10, minute=0, second=0, microsecond=0)
+        dialog._datetime_field.setDateTime(_qdatetime_from_naive_local(local_event))
+        dialog._recurrence_picker.setCurrentText(_RECURRENCE_MONTHLY_LABEL)
+        assert dialog._recurrence_picker.toolTip() == ""
+
+    def test_monthly_tooltip_clears_when_picker_changes_away_from_monthly(
+        self, dialog: ReminderFormDialog, clock: Clock
+    ) -> None:
+        """Day-31 + Monthly → Weekly clears the tooltip."""
+        local_event = (clock().astimezone() + timedelta(days=60)).replace(tzinfo=None)
+        local_event = local_event.replace(day=31, hour=10, minute=0, second=0, microsecond=0)
+        dialog._datetime_field.setDateTime(_qdatetime_from_naive_local(local_event))
+        dialog._recurrence_picker.setCurrentText(_RECURRENCE_MONTHLY_LABEL)
+        assert dialog._recurrence_picker.toolTip() == _MONTHLY_DAY31_TOOLTIP
+        dialog._recurrence_picker.setCurrentText(_RECURRENCE_WEEKLY_LABEL)
+        assert dialog._recurrence_picker.toolTip() == ""
+
+    def test_monthly_tooltip_appears_when_datetime_changes_to_day31_with_picker_on_monthly(
+        self, dialog: ReminderFormDialog, clock: Clock
+    ) -> None:
+        """F5 fix: tooltip refresh wires through the datetime change path too."""
+        local_event = (clock().astimezone() + timedelta(days=60)).replace(tzinfo=None)
+        local_event = local_event.replace(day=15, hour=10, minute=0, second=0, microsecond=0)
+        dialog._datetime_field.setDateTime(_qdatetime_from_naive_local(local_event))
+        dialog._recurrence_picker.setCurrentText(_RECURRENCE_MONTHLY_LABEL)
+        assert dialog._recurrence_picker.toolTip() == ""
+        local_event_31 = local_event.replace(day=31)
+        dialog._datetime_field.setDateTime(_qdatetime_from_naive_local(local_event_31))
+        assert dialog._recurrence_picker.toolTip() == _MONTHLY_DAY31_TOOLTIP
+
+    def test_monthly_tooltip_clears_when_datetime_drops_below_day29_with_picker_on_monthly(
+        self, dialog: ReminderFormDialog, clock: Clock
+    ) -> None:
+        """F5 fix: tooltip clears when day drops below the threshold."""
+        local_event = (clock().astimezone() + timedelta(days=60)).replace(tzinfo=None)
+        local_event = local_event.replace(day=31, hour=10, minute=0, second=0, microsecond=0)
+        dialog._datetime_field.setDateTime(_qdatetime_from_naive_local(local_event))
+        dialog._recurrence_picker.setCurrentText(_RECURRENCE_MONTHLY_LABEL)
+        assert dialog._recurrence_picker.toolTip() == _MONTHLY_DAY31_TOOLTIP
+        local_event_15 = local_event.replace(day=15)
+        dialog._datetime_field.setDateTime(_qdatetime_from_naive_local(local_event_15))
+        assert dialog._recurrence_picker.toolTip() == ""
+
+
+class TestRecurrenceTranslationHelpers:
+    """Pure-function coverage for the picker/RRULE helpers."""
+
+    def test_picker_choice_to_rrule_none_label_returns_none(self) -> None:
+        """``None`` label → ``None`` (one-shot encoding)."""
+        assert _picker_choice_to_rrule(_RECURRENCE_NONE_LABEL) is None
+
+    def test_picker_choice_to_rrule_daily_returns_freq_daily(self) -> None:
+        """``Daily`` label → canonical RRULE string."""
+        assert _picker_choice_to_rrule(_RECURRENCE_DAILY_LABEL) == _RRULE_DAILY
+
+    def test_picker_choice_to_rrule_weekly_returns_freq_weekly(self) -> None:
+        """``Weekly`` label → canonical RRULE string."""
+        assert _picker_choice_to_rrule(_RECURRENCE_WEEKLY_LABEL) == _RRULE_WEEKLY
+
+    def test_picker_choice_to_rrule_monthly_returns_freq_monthly(self) -> None:
+        """``Monthly`` label → canonical RRULE string."""
+        assert _picker_choice_to_rrule(_RECURRENCE_MONTHLY_LABEL) == _RRULE_MONTHLY
+
+    def test_picker_choice_to_rrule_unknown_raises_keyerror(self) -> None:
+        """``(custom)`` is not in the forward map (callers route around it)."""
+        with pytest.raises(KeyError):
+            _picker_choice_to_rrule(_RECURRENCE_CUSTOM_LABEL)
+
+    def test_rrule_to_picker_choice_none_returns_none_label(self) -> None:
+        """``None`` rrule_str → ``None`` picker label."""
+        assert _rrule_to_picker_choice(None) == _RECURRENCE_NONE_LABEL
+
+    @pytest.mark.parametrize(
+        ("rrule_str", "expected_label"),
+        [
+            (_RRULE_DAILY, _RECURRENCE_DAILY_LABEL),
+            (_RRULE_WEEKLY, _RECURRENCE_WEEKLY_LABEL),
+            (_RRULE_MONTHLY, _RECURRENCE_MONTHLY_LABEL),
+        ],
+    )
+    def test_rrule_to_picker_choice_canonical_round_trips(
+        self, rrule_str: str, expected_label: str
+    ) -> None:
+        """Each canonical RRULE reverse-translates to its picker label."""
+        assert _rrule_to_picker_choice(rrule_str) == expected_label
+
+    def test_rrule_to_picker_choice_advanced_falls_through_to_custom(self) -> None:
+        """Hand-edited advanced RRULEs fall through to ``(custom)``."""
+        assert _rrule_to_picker_choice("FREQ=WEEKLY;BYDAY=MO,WE,FR") == _RECURRENCE_CUSTOM_LABEL
+
+    def test_rrule_to_picker_choice_empty_string_falls_through_to_custom(self) -> None:
+        """Empty-string rrule_str falls through to ``(custom)`` (not None)."""
+        assert _rrule_to_picker_choice("") == _RECURRENCE_CUSTOM_LABEL
+
+    def test_local_date_to_utc_end_of_day_returns_aware_utc(self) -> None:
+        """Conversion produces a tz-aware UTC datetime at 23:59:59 local."""
+        picked = date(2026, 7, 31)
+        result = _local_date_to_utc_end_of_day(picked)
+        assert result.tzinfo == UTC
+        # Round-trip back to local → date and time match the inputs.
+        local = result.astimezone()
+        assert local.date() == picked
+        assert local.time() == time(23, 59, 59)
+
+    def test_format_no_future_occurrences_with_lead_singular(self) -> None:
+        """``lead == 1`` renders the singular ``"1 minute"`` form."""
+        assert (
+            _format_no_future_occurrences_with_lead(1)
+            == "Recurring reminder has no future firings at least 1 minute away"
+        )
+
+    def test_format_no_future_occurrences_with_lead_plural(self) -> None:
+        """``lead != 1`` renders the plural ``"N minutes"`` form."""
+        assert (
+            _format_no_future_occurrences_with_lead(15)
+            == "Recurring reminder has no future firings at least 15 minutes away"
+        )
+
+
+def _populate_valid_for_recurrence(
+    dialog: ReminderFormDialog, clock: Clock, *, name: str = "Test"
+) -> None:
+    """Fill the form with a valid name + a future datetime (30 min ahead)."""
+    dialog._name_field.setText(name)
+    local_future = (clock().astimezone() + timedelta(minutes=30)).replace(tzinfo=None)
+    dialog._datetime_field.setDateTime(_qdatetime_from_naive_local(local_future))
+
+
+class TestRecurrenceSave:
+    """Forward translation: picker + end-date → persisted Reminder."""
+
+    def test_save_with_picker_none_persists_rrule_str_none(
+        self, dialog: ReminderFormDialog, store: ReminderStore, clock: Clock
+    ) -> None:
+        """Picker None + checkbox unchecked → saved rrule_str/end_at are None."""
+        _populate_valid_for_recurrence(dialog, clock)
+        dialog.accept()
+        saved = store.list_all()[0]
+        assert saved.rrule_str is None
+        assert saved.end_at is None
+
+    def test_save_with_picker_daily_persists_freq_daily(
+        self, dialog: ReminderFormDialog, store: ReminderStore, clock: Clock
+    ) -> None:
+        """Picker Daily → rrule_str == ``FREQ=DAILY``."""
+        _populate_valid_for_recurrence(dialog, clock)
+        dialog._recurrence_picker.setCurrentText(_RECURRENCE_DAILY_LABEL)
+        dialog.accept()
+        saved = store.list_all()[0]
+        assert saved.rrule_str == _RRULE_DAILY
+
+    def test_save_with_picker_weekly_persists_freq_weekly(
+        self, dialog: ReminderFormDialog, store: ReminderStore, clock: Clock
+    ) -> None:
+        """Picker Weekly → rrule_str == ``FREQ=WEEKLY``."""
+        _populate_valid_for_recurrence(dialog, clock)
+        dialog._recurrence_picker.setCurrentText(_RECURRENCE_WEEKLY_LABEL)
+        dialog.accept()
+        saved = store.list_all()[0]
+        assert saved.rrule_str == _RRULE_WEEKLY
+
+    def test_save_with_picker_monthly_persists_freq_monthly(
+        self, dialog: ReminderFormDialog, store: ReminderStore, clock: Clock
+    ) -> None:
+        """Picker Monthly → rrule_str == ``FREQ=MONTHLY``."""
+        _populate_valid_for_recurrence(dialog, clock)
+        dialog._recurrence_picker.setCurrentText(_RECURRENCE_MONTHLY_LABEL)
+        dialog.accept()
+        saved = store.list_all()[0]
+        assert saved.rrule_str == _RRULE_MONTHLY
+
+    def test_save_with_end_date_unticked_persists_end_at_none(
+        self, dialog: ReminderFormDialog, store: ReminderStore, clock: Clock
+    ) -> None:
+        """Daily + checkbox unticked → end_at is None."""
+        _populate_valid_for_recurrence(dialog, clock)
+        dialog._recurrence_picker.setCurrentText(_RECURRENCE_DAILY_LABEL)
+        dialog._end_date_checkbox.setChecked(False)
+        dialog.accept()
+        saved = store.list_all()[0]
+        assert saved.end_at is None
+
+    def test_save_with_end_date_ticked_persists_end_at_at_local_eod_in_utc(
+        self, dialog: ReminderFormDialog, store: ReminderStore, clock: Clock
+    ) -> None:
+        """Daily + ticked end-date 7 days out → end_at == 23:59:59 local in UTC."""
+        _populate_valid_for_recurrence(dialog, clock)
+        dialog._recurrence_picker.setCurrentText(_RECURRENCE_DAILY_LABEL)
+        picked_local_date = (clock().astimezone() + timedelta(days=7)).date()
+        dialog._end_date_field.setDate(
+            QDate(picked_local_date.year, picked_local_date.month, picked_local_date.day)
+        )
+        dialog._end_date_checkbox.setChecked(True)
+        dialog.accept()
+        saved = store.list_all()[0]
+        assert saved.end_at is not None
+        assert saved.end_at.tzinfo == UTC
+        local = saved.end_at.astimezone()
+        assert local.date() == picked_local_date
+        assert local.time() == time(23, 59, 59)
+
+    def test_save_with_picker_none_ignores_end_date_state(
+        self,
+        dialog: ReminderFormDialog,
+        store: ReminderStore,
+        clock: Clock,
+    ) -> None:
+        """Defensive: even if checkbox is somehow checked, picker None → end_at None."""
+        _populate_valid_for_recurrence(dialog, clock)
+        # Force the checkbox into a logically-impossible state via the
+        # API (the cascade would normally clear it, but the accept()
+        # branch defends against it anyway).
+        dialog._end_date_checkbox.setEnabled(True)
+        dialog._end_date_checkbox.setChecked(True)
+        # Sanity: picker is still None.
+        assert dialog._recurrence_picker.currentText() == _RECURRENCE_NONE_LABEL
+        dialog.accept()
+        saved = store.list_all()[0]
+        assert saved.rrule_str is None
+        assert saved.end_at is None
+
+
+class TestRecurrenceEditMode:
+    """Reverse translation: loaded Reminder → pre-filled picker + end-date."""
+
+    def _seed_recurring(
+        self,
+        store: ReminderStore,
+        clock: Clock,
+        *,
+        name: str = "Loaded",
+        rrule_str: str | None = None,
+        end_at: datetime | None = None,
+        offset_hours: int = 6,
+        lead_minutes: int = 0,
+    ) -> Reminder:
+        """Persist a reminder with the requested recurrence shape."""
+        reminder = Reminder(
+            name=name,
+            start_at=clock() + timedelta(hours=offset_hours),
+            rrule_str=rrule_str,
+            end_at=end_at,
+            lead_minutes=lead_minutes,
+        )
+        store.add(reminder)
+        return reminder
+
+    def test_edit_mode_pre_fills_picker_to_none_for_one_shot(
+        self, qtbot, store: ReminderStore, scheduler_stub: StubScheduler, clock: Clock
+    ) -> None:
+        """Loaded one-shot (rrule_str=None) → picker shows ``None``."""
+        reminder = self._seed_recurring(store, clock, rrule_str=None)
+        d = _make_edit_dialog_with_reminder(qtbot, store, scheduler_stub, clock, reminder)
+        assert d._recurrence_picker.currentText() == _RECURRENCE_NONE_LABEL
+
+    def test_edit_mode_pre_fills_picker_to_daily_for_freq_daily(
+        self, qtbot, store: ReminderStore, scheduler_stub: StubScheduler, clock: Clock
+    ) -> None:
+        """``FREQ=DAILY`` → picker pre-fills to ``Daily``."""
+        reminder = self._seed_recurring(store, clock, rrule_str=_RRULE_DAILY)
+        d = _make_edit_dialog_with_reminder(qtbot, store, scheduler_stub, clock, reminder)
+        assert d._recurrence_picker.currentText() == _RECURRENCE_DAILY_LABEL
+
+    @pytest.mark.parametrize(
+        ("rrule_str", "expected_label"),
+        [
+            (_RRULE_WEEKLY, _RECURRENCE_WEEKLY_LABEL),
+            (_RRULE_MONTHLY, _RECURRENCE_MONTHLY_LABEL),
+        ],
+    )
+    def test_edit_mode_pre_fills_picker_to_weekly_and_monthly(
+        self,
+        qtbot,
+        store: ReminderStore,
+        scheduler_stub: StubScheduler,
+        clock: Clock,
+        rrule_str: str,
+        expected_label: str,
+    ) -> None:
+        """Canonical weekly + monthly RRULEs round-trip into the picker."""
+        reminder = self._seed_recurring(store, clock, rrule_str=rrule_str)
+        d = _make_edit_dialog_with_reminder(qtbot, store, scheduler_stub, clock, reminder)
+        assert d._recurrence_picker.currentText() == expected_label
+
+    def test_edit_mode_pre_fills_end_date_checkbox_when_end_at_set(
+        self, qtbot, store: ReminderStore, scheduler_stub: StubScheduler, clock: Clock
+    ) -> None:
+        """Loaded reminder with end_at → checkbox checked, field enabled with that date."""
+        end_at_local_date = (clock().astimezone() + timedelta(days=10)).date()
+        end_at_utc = _local_date_to_utc_end_of_day(end_at_local_date)
+        reminder = self._seed_recurring(store, clock, rrule_str=_RRULE_DAILY, end_at=end_at_utc)
+        d = _make_edit_dialog_with_reminder(qtbot, store, scheduler_stub, clock, reminder)
+        assert d._end_date_checkbox.isChecked() is True
+        assert d._end_date_field.isEnabled() is True
+        actual_picked = d._end_date_field.date().toPython()
+        assert actual_picked == end_at_local_date
+
+    def test_edit_mode_no_end_at_leaves_checkbox_unchecked(
+        self, qtbot, store: ReminderStore, scheduler_stub: StubScheduler, clock: Clock
+    ) -> None:
+        """Loaded reminder with end_at=None → checkbox unchecked, field disabled."""
+        reminder = self._seed_recurring(store, clock, rrule_str=_RRULE_DAILY, end_at=None)
+        d = _make_edit_dialog_with_reminder(qtbot, store, scheduler_stub, clock, reminder)
+        assert d._end_date_checkbox.isChecked() is False
+        assert d._end_date_field.isEnabled() is False
+
+    def test_edit_mode_recurrence_round_trips_through_save_load_save(
+        self, qtbot, store: ReminderStore, scheduler_stub: StubScheduler, clock: Clock
+    ) -> None:
+        """End-to-end: Add Daily + end-date → reopen Edit → no-op save preserves bytes."""
+        # First save: Add a Daily reminder with an end-date.
+        d1 = ReminderFormDialog(
+            store=store,
+            scheduler=scheduler_stub,  # type: ignore[arg-type]
+            clock=clock,
+        )
+        qtbot.addWidget(d1)
+        _populate_valid_for_recurrence(d1, clock, name="Round-trip")
+        d1._recurrence_picker.setCurrentText(_RECURRENCE_DAILY_LABEL)
+        picked_local = (clock().astimezone() + timedelta(days=10)).date()
+        d1._end_date_field.setDate(QDate(picked_local.year, picked_local.month, picked_local.day))
+        d1._end_date_checkbox.setChecked(True)
+        d1.accept()
+
+        first_saved = store.list_all()[0]
+        assert first_saved.rrule_str == _RRULE_DAILY
+        assert first_saved.end_at is not None
+
+        # Re-open in Edit mode: picker pre-fills + end-date matches.
+        d2 = _make_edit_dialog_with_reminder(qtbot, store, scheduler_stub, clock, first_saved)
+        assert d2._recurrence_picker.currentText() == _RECURRENCE_DAILY_LABEL
+        assert d2._end_date_checkbox.isChecked() is True
+        assert d2._end_date_field.date().toPython() == picked_local
+
+        # No-op save: same bytes.
+        d2.accept()
+        second_saved = store.list_all()[0]
+        assert second_saved.rrule_str == first_saved.rrule_str
+        assert second_saved.end_at == first_saved.end_at
+        assert second_saved.id == first_saved.id
+
+
+_CUSTOM_RRULE = "FREQ=WEEKLY;BYDAY=MO,WE,FR"
+
+
+def _patch_question_yes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stub QMessageBox.question so it returns Yes without showing a dialog."""
+    monkeypatch.setattr(
+        "break_reminder.ui.reminder_form_dialog.QMessageBox.question",
+        lambda *args, **kwargs: QMessageBox.StandardButton.Yes,
+    )
+
+
+def _patch_question_no(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stub QMessageBox.question so it returns No without showing a dialog."""
+    monkeypatch.setattr(
+        "break_reminder.ui.reminder_form_dialog.QMessageBox.question",
+        lambda *args, **kwargs: QMessageBox.StandardButton.No,
+    )
+
+
+class TestRecurrenceCustomLocked:
+    """Edit mode on a hand-edited rrule_str: lock + Reset flow."""
+
+    def _seed_custom(
+        self,
+        store: ReminderStore,
+        clock: Clock,
+        *,
+        rrule_str: str = _CUSTOM_RRULE,
+        end_at: datetime | None = None,
+    ) -> Reminder:
+        """Persist a reminder with a non-mappable rrule_str."""
+        reminder = Reminder(
+            name="Custom-locked",
+            start_at=clock() + timedelta(hours=6),
+            rrule_str=rrule_str,
+            end_at=end_at,
+        )
+        store.add(reminder)
+        return reminder
+
+    def test_custom_rrule_pre_fills_picker_to_custom(
+        self, qtbot, store: ReminderStore, scheduler_stub: StubScheduler, clock: Clock
+    ) -> None:
+        """Loaded custom rule → picker shows ``(custom)``, disabled, with tooltip."""
+        reminder = self._seed_custom(store, clock)
+        d = _make_edit_dialog_with_reminder(qtbot, store, scheduler_stub, clock, reminder)
+        assert d._recurrence_picker.currentText() == _RECURRENCE_CUSTOM_LABEL
+        assert d._recurrence_picker.isEnabled() is False
+        assert d._recurrence_picker.toolTip() == _RECURRENCE_CUSTOM_TOOLTIP
+
+    def test_custom_rrule_shows_reset_button(
+        self, qtbot, store: ReminderStore, scheduler_stub: StubScheduler, clock: Clock
+    ) -> None:
+        """Custom-locked load → Reset button is visible."""
+        reminder = self._seed_custom(store, clock)
+        d = _make_edit_dialog_with_reminder(qtbot, store, scheduler_stub, clock, reminder)
+        # ``isVisible`` on a never-shown dialog returns False; we
+        # assert via the explicit visibility flag instead.
+        assert d._recurrence_reset_button.isHidden() is False
+
+    def test_save_without_reset_preserves_custom_rrule_str(
+        self, qtbot, store: ReminderStore, scheduler_stub: StubScheduler, clock: Clock
+    ) -> None:
+        """No-change save on custom-locked → rrule_str byte-for-byte preserved."""
+        reminder = self._seed_custom(store, clock)
+        d = _make_edit_dialog_with_reminder(qtbot, store, scheduler_stub, clock, reminder)
+        d._name_field.setText("Renamed only")
+        d.accept()
+        saved = store.list_all()[0]
+        assert saved.rrule_str == _CUSTOM_RRULE
+        assert saved.name == "Renamed only"
+
+    def test_save_after_reset_yes_uses_picker_translation(
+        self,
+        qtbot,
+        store: ReminderStore,
+        scheduler_stub: StubScheduler,
+        clock: Clock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Reset → Yes → setCurrentText(Daily) → save persists ``FREQ=DAILY``."""
+        _patch_question_yes(monkeypatch)
+        reminder = self._seed_custom(store, clock)
+        d = _make_edit_dialog_with_reminder(qtbot, store, scheduler_stub, clock, reminder)
+        d._on_recurrence_reset_clicked()
+        # After Reset Yes, picker enabled at None.
+        assert d._recurrence_picker.isEnabled() is True
+        assert d._recurrence_picker.currentText() == _RECURRENCE_NONE_LABEL
+        # Now switch to Daily and save.
+        d._recurrence_picker.setCurrentText(_RECURRENCE_DAILY_LABEL)
+        d.accept()
+        saved = store.list_all()[0]
+        assert saved.rrule_str == _RRULE_DAILY
+
+    def test_reset_no_preserves_state(
+        self,
+        qtbot,
+        store: ReminderStore,
+        scheduler_stub: StubScheduler,
+        clock: Clock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Reset → No → state untouched; save still preserves the custom rule."""
+        _patch_question_no(monkeypatch)
+        reminder = self._seed_custom(store, clock)
+        d = _make_edit_dialog_with_reminder(qtbot, store, scheduler_stub, clock, reminder)
+        d._on_recurrence_reset_clicked()
+        assert d._recurrence_picker.currentText() == _RECURRENCE_CUSTOM_LABEL
+        assert d._recurrence_picker.isEnabled() is False
+        assert d._recurrence_reset_button.isHidden() is False
+        assert d._original_custom_rrule == _CUSTOM_RRULE
+
+    def test_reset_yes_hides_button_and_enables_picker(
+        self,
+        qtbot,
+        store: ReminderStore,
+        scheduler_stub: StubScheduler,
+        clock: Clock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Reset → Yes → Reset button hides, picker enables, original cleared."""
+        _patch_question_yes(monkeypatch)
+        reminder = self._seed_custom(store, clock)
+        d = _make_edit_dialog_with_reminder(qtbot, store, scheduler_stub, clock, reminder)
+        d._on_recurrence_reset_clicked()
+        assert d._recurrence_reset_button.isHidden() is True
+        assert d._recurrence_picker.isEnabled() is True
+        assert d._original_custom_rrule is None
+        # ``(custom)`` removed from the dropdown.
+        labels = [d._recurrence_picker.itemText(i) for i in range(d._recurrence_picker.count())]
+        assert _RECURRENCE_CUSTOM_LABEL not in labels
+
+    def test_custom_locked_with_end_at_preserves_end_at_on_no_op_save(
+        self, qtbot, store: ReminderStore, scheduler_stub: StubScheduler, clock: Clock
+    ) -> None:
+        """F1 fix: custom-locked + end_at → no-op save preserves end_at byte-for-byte."""
+        end_at_local_date = (clock().astimezone() + timedelta(days=14)).date()
+        end_at_utc = _local_date_to_utc_end_of_day(end_at_local_date)
+        reminder = self._seed_custom(store, clock, end_at=end_at_utc)
+        d = _make_edit_dialog_with_reminder(qtbot, store, scheduler_stub, clock, reminder)
+        # No-op save (no field changes).
+        d.accept()
+        saved = store.list_all()[0]
+        assert saved.end_at == end_at_utc
+        assert saved.rrule_str == _CUSTOM_RRULE
+
+    def test_custom_locked_end_date_field_remains_enabled(
+        self, qtbot, store: ReminderStore, scheduler_stub: StubScheduler, clock: Clock
+    ) -> None:
+        """F1 fix: custom-locked + end_at → cascade leaves checkbox+field enabled."""
+        end_at_local_date = (clock().astimezone() + timedelta(days=14)).date()
+        end_at_utc = _local_date_to_utc_end_of_day(end_at_local_date)
+        reminder = self._seed_custom(store, clock, end_at=end_at_utc)
+        d = _make_edit_dialog_with_reminder(qtbot, store, scheduler_stub, clock, reminder)
+        assert d._end_date_checkbox.isChecked() is True
+        assert d._end_date_checkbox.isEnabled() is True
+        assert d._end_date_field.isEnabled() is True
+
+
+class TestRecurrencePastTimeGate:
+    """Recurrence-aware past-time gate. One-shot branch unchanged."""
+
+    def test_recurring_with_past_start_but_future_occurrence_saves(
+        self, dialog: ReminderFormDialog, store: ReminderStore, clock: Clock
+    ) -> None:
+        """Daily + past start_at → save succeeds (next firing = +1 day, future)."""
+        dialog._name_field.setText("Daily past")
+        local_past = (clock().astimezone() - timedelta(days=2)).replace(tzinfo=None)
+        dialog._datetime_field.setDateTime(_qdatetime_from_naive_local(local_past))
+        dialog._recurrence_picker.setCurrentText(_RECURRENCE_DAILY_LABEL)
+        dialog.accept()
+        assert dialog.result() == int(QDialog.DialogCode.Accepted)
+        saved = store.list_all()[0]
+        assert saved.rrule_str == _RRULE_DAILY
+
+    def test_recurring_with_past_end_at_blocks_save(
+        self,
+        dialog: ReminderFormDialog,
+        store: ReminderStore,
+        clock: Clock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Daily + past start + past end_at → save blocked with no-future-firings tooltip."""
+        calls = _patch_show_text(monkeypatch)
+        dialog._name_field.setText("Doomed")
+        local_past = (clock().astimezone() - timedelta(days=5)).replace(tzinfo=None)
+        dialog._datetime_field.setDateTime(_qdatetime_from_naive_local(local_past))
+        dialog._recurrence_picker.setCurrentText(_RECURRENCE_DAILY_LABEL)
+        # End-date in the past too.
+        end_local = (clock().astimezone() - timedelta(days=1)).date()
+        dialog._end_date_field.setDate(QDate(end_local.year, end_local.month, end_local.day))
+        dialog._end_date_checkbox.setChecked(True)
+        dialog.accept()
+        assert store.list_all() == []
+        assert dialog.result() == int(QDialog.DialogCode.Rejected)
+        assert len(calls) == 1
+        args, _kwargs = calls[0]
+        assert args[1] == _NO_FUTURE_OCCURRENCES_MESSAGE
+
+    def test_one_shot_past_time_still_blocked_with_existing_message(
+        self,
+        dialog: ReminderFormDialog,
+        store: ReminderStore,
+        clock: Clock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Picker None + past datetime → existing past-time tooltip; nothing persisted."""
+        calls = _patch_show_text(monkeypatch)
+        dialog._name_field.setText("One-shot past")
+        local_past = (clock().astimezone() - timedelta(hours=1)).replace(tzinfo=None)
+        dialog._datetime_field.setDateTime(_qdatetime_from_naive_local(local_past))
+        # Picker stays at None (default).
+        dialog.accept()
+        assert store.list_all() == []
+        assert len(calls) == 1
+        args, _kwargs = calls[0]
+        assert args[1] == _PAST_TIME_MESSAGE
+
+    def test_edit_mode_skip_applies_when_all_three_unchanged(
+        self, qtbot, store: ReminderStore, scheduler_stub: StubScheduler, clock: Clock
+    ) -> None:
+        """Loaded expired one-shot, change name only → save succeeds (skip)."""
+        # Pre-seed an expired one-shot (start_at in the past relative
+        # to the clock — pre-seed the store directly so this isn't
+        # blocked by the form's own gate).
+        expired = Reminder(
+            name="Expired",
+            start_at=clock() - timedelta(hours=2),
+            rrule_str=None,
+        )
+        store.add(expired)
+        d = _make_edit_dialog_with_reminder(qtbot, store, scheduler_stub, clock, expired)
+        d._name_field.setText("Renamed expired")
+        d.accept()
+        assert d.result() == int(QDialog.DialogCode.Accepted)
+        saved = store.list_all()[0]
+        assert saved.name == "Renamed expired"
+        assert saved.start_at == expired.start_at
+
+    def test_edit_mode_skip_does_not_apply_when_rrule_changed(
+        self,
+        qtbot,
+        store: ReminderStore,
+        scheduler_stub: StubScheduler,
+        clock: Clock,
+    ) -> None:
+        """Daily reminder loaded; switch picker to Weekly → gate evaluates new rule."""
+        # Future Daily reminder — gate should pass for both Daily and
+        # Weekly because the new rule still has future occurrences.
+        # The point is to prove the gate runs (not skipped) when the
+        # rrule changes; we verify by checking the saved rrule_str.
+        reminder = Reminder(
+            name="Daily-to-weekly",
+            start_at=clock() + timedelta(hours=2),
+            rrule_str=_RRULE_DAILY,
+        )
+        store.add(reminder)
+        d = _make_edit_dialog_with_reminder(qtbot, store, scheduler_stub, clock, reminder)
+        d._recurrence_picker.setCurrentText(_RECURRENCE_WEEKLY_LABEL)
+        d.accept()
+        saved = store.list_all()[0]
+        assert saved.rrule_str == _RRULE_WEEKLY
+
+    def test_edit_mode_skip_does_not_apply_when_end_at_changed(
+        self,
+        qtbot,
+        store: ReminderStore,
+        scheduler_stub: StubScheduler,
+        clock: Clock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Loaded Daily; user moves end_at to yesterday → gate fires."""
+        calls = _patch_show_text(monkeypatch)
+        # Loaded Daily with start_at in the past (so the past-time
+        # branch would apply if the gate triggered as one-shot).
+        future_end = _local_date_to_utc_end_of_day(
+            (clock().astimezone() + timedelta(days=30)).date()
+        )
+        reminder = Reminder(
+            name="EndDateChange",
+            start_at=clock() - timedelta(days=2),
+            rrule_str=_RRULE_DAILY,
+            end_at=future_end,
+        )
+        store.add(reminder)
+        d = _make_edit_dialog_with_reminder(qtbot, store, scheduler_stub, clock, reminder)
+        # Move end_at to yesterday.
+        yesterday = (clock().astimezone() - timedelta(days=1)).date()
+        d._end_date_field.setDate(QDate(yesterday.year, yesterday.month, yesterday.day))
+        # Checkbox already checked (from pre-fill).
+        d.accept()
+        # Saved bytes unchanged from pre-state.
+        saved = store.list_all()[0]
+        assert saved.end_at == future_end  # original preserved
+        assert d.result() == int(QDialog.DialogCode.Rejected)
+        assert len(calls) == 1
+        args, _kwargs = calls[0]
+        assert args[1] == _NO_FUTURE_OCCURRENCES_MESSAGE
+
+    def test_recurring_with_lead_no_future_uses_lead_aware_message(
+        self,
+        dialog: ReminderFormDialog,
+        store: ReminderStore,
+        clock: Clock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Daily + past + past end_at + lead=15 → lead-aware tooltip."""
+        calls = _patch_show_text(monkeypatch)
+        dialog._name_field.setText("Lead doomed")
+        local_past = (clock().astimezone() - timedelta(days=5)).replace(tzinfo=None)
+        dialog._datetime_field.setDateTime(_qdatetime_from_naive_local(local_past))
+        dialog._recurrence_picker.setCurrentText(_RECURRENCE_DAILY_LABEL)
+        end_local = (clock().astimezone() - timedelta(days=1)).date()
+        dialog._end_date_field.setDate(QDate(end_local.year, end_local.month, end_local.day))
+        dialog._end_date_checkbox.setChecked(True)
+        dialog._lead_minutes_field.setValue(15)
+        dialog.accept()
+        assert store.list_all() == []
+        assert len(calls) == 1
+        args, _kwargs = calls[0]
+        assert args[1] == _format_no_future_occurrences_with_lead(15)
+        assert "15" in args[1]
+
+
+class TestRecurrenceEndDate:
+    """End-date defaults + local→UTC round-trip + storage round-trip."""
+
+    def test_end_date_field_default_offset_is_30_days(
+        self, dialog: ReminderFormDialog, clock: Clock
+    ) -> None:
+        """Add mode: end-date field default == today + 30 days in system local."""
+        expected = (clock().astimezone() + timedelta(days=_END_DATE_DEFAULT_OFFSET_DAYS)).date()
+        actual = dialog._end_date_field.date().toPython()
+        assert actual == expected
+
+    def test_end_date_local_to_utc_conversion(
+        self, dialog: ReminderFormDialog, store: ReminderStore, clock: Clock
+    ) -> None:
+        """Picked date X → saved end_at == 23:59:59 local on X, in UTC."""
+        _populate_valid_for_recurrence(dialog, clock)
+        dialog._recurrence_picker.setCurrentText(_RECURRENCE_DAILY_LABEL)
+        picked_local = (clock().astimezone() + timedelta(days=14)).date()
+        dialog._end_date_field.setDate(
+            QDate(picked_local.year, picked_local.month, picked_local.day)
+        )
+        dialog._end_date_checkbox.setChecked(True)
+        dialog.accept()
+        saved = store.list_all()[0]
+        # Recompute the expected UTC value test-side so it's correct on
+        # any CI runner zone.
+        expected_naive_local = datetime.combine(picked_local, time(23, 59, 59))
+        local_tz = datetime.now().astimezone().tzinfo
+        expected_utc = expected_naive_local.replace(tzinfo=local_tz).astimezone(UTC)
+        assert saved.end_at == expected_utc
+
+    def test_end_date_round_trips_through_storage(
+        self, qtbot, store: ReminderStore, scheduler_stub: StubScheduler, clock: Clock
+    ) -> None:
+        """Save with end-date → reopen Edit → checkbox + field match."""
+        d1 = ReminderFormDialog(
+            store=store,
+            scheduler=scheduler_stub,  # type: ignore[arg-type]
+            clock=clock,
+        )
+        qtbot.addWidget(d1)
+        _populate_valid_for_recurrence(d1, clock, name="EndDateRT")
+        d1._recurrence_picker.setCurrentText(_RECURRENCE_WEEKLY_LABEL)
+        picked_local = (clock().astimezone() + timedelta(days=21)).date()
+        d1._end_date_field.setDate(QDate(picked_local.year, picked_local.month, picked_local.day))
+        d1._end_date_checkbox.setChecked(True)
+        d1.accept()
+        first_saved = store.list_all()[0]
+        d2 = _make_edit_dialog_with_reminder(qtbot, store, scheduler_stub, clock, first_saved)
+        assert d2._end_date_checkbox.isChecked() is True
+        assert d2._end_date_field.date().toPython() == picked_local

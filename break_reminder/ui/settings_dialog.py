@@ -206,6 +206,48 @@ _EXPIRED_LABEL = "(expired)"
 _FIRING_FORMAT = "%a %Y-%m-%d %H:%M"
 _REMINDERS_EMPTY_MESSAGE = "No reminders yet — click Add to create one."
 
+# S-08 / FR-014: row suffix labels for active recurring reminders.
+# Appended to ``_compose_row`` so the user sees at a glance that a
+# row is recurring (and which frequency). Single source of truth —
+# the form module produces ``rrule_str`` strings; only this module
+# consumes the display labels. Same precedent as ``_FIRING_FORMAT``.
+_RECURRENCE_SUFFIX_DAILY = "daily"
+_RECURRENCE_SUFFIX_WEEKLY = "weekly"
+_RECURRENCE_SUFFIX_MONTHLY = "monthly"
+_RECURRENCE_SUFFIX_CUSTOM = "custom"
+
+
+def _recurrence_label(rrule_str: str | None) -> str:
+    """Map a stored ``rrule_str`` to a row-suffix label.
+
+    Reverse-translation analog of the form's ``_rrule_to_picker_choice``
+    but emitting display labels (lowercase) instead of picker labels
+    (titlecase). One-shot reminders return the empty string so the
+    row format is unchanged from the pre-S-08 baseline; any
+    non-mapped ``rrule_str`` returns ``"custom"`` so a hand-edited
+    advanced rule (e.g. ``FREQ=WEEKLY;BYDAY=MO,WE,FR``) is visible
+    in the list — the user can identify the row that corresponds to
+    the locked ``(custom)`` state in the form dialog.
+
+    Args:
+        rrule_str: The reminder's stored ``rrule_str`` (verbatim).
+
+    Returns:
+        ``""`` for ``None`` (one-shot); one of ``"daily"`` /
+        ``"weekly"`` / ``"monthly"`` for the canonical mapped
+        strings; ``"custom"`` for anything else.
+    """
+    if rrule_str is None:
+        return ""
+    if rrule_str == "FREQ=DAILY":
+        return _RECURRENCE_SUFFIX_DAILY
+    if rrule_str == "FREQ=WEEKLY":
+        return _RECURRENCE_SUFFIX_WEEKLY
+    if rrule_str == "FREQ=MONTHLY":
+        return _RECURRENCE_SUFFIX_MONTHLY
+    return _RECURRENCE_SUFFIX_CUSTOM
+
+
 # FR-012 / S-07 Delete confirm + failure strings.
 #
 # ``_DELETE_CONFIRM_TITLE`` / ``_DELETE_CONFIRM_TEXT_FORMAT`` populate
@@ -303,9 +345,17 @@ def _compose_row(reminder: Reminder, now: datetime, *, tz: tzinfo | None = None)
     because "(fires N min before)" reads as a future promise — claiming
     it for something that has already missed its window is misleading.
 
+    S-08 branching: when ``reminder.rrule_str`` is non-None and the
+    reminder is still active, a ``"(<freq>)"`` suffix is appended
+    after the lead annotation (or as the only suffix if ``lead == 0``).
+    Frequency reads ``daily`` / ``weekly`` / ``monthly`` for canonical
+    rules, ``custom`` for hand-edited advanced RRULEs. Expired rows
+    still suppress all suffixes — the bare ``"(expired)"`` carries
+    enough information.
+
     Args:
-        reminder: The reminder whose name, next firing, and (S-06b)
-            ``lead_minutes`` populate the row.
+        reminder: The reminder whose name, next firing, ``lead_minutes``,
+            and (S-08) ``rrule_str`` populate the row.
         now: Reference time forwarded to ``next_firing_after``.
         tz: Optional target timezone forwarded to ``_format_firing``;
             see that helper's docstring for the rationale behind the
@@ -313,22 +363,33 @@ def _compose_row(reminder: Reminder, now: datetime, *, tz: tzinfo | None = None)
 
     Returns:
         For an expired reminder: ``"<name>  —  (expired)"`` (no lead
-        annotation regardless of ``lead_minutes``).
-        For an active reminder with ``lead_minutes == 0``:
+        or recurrence suffix regardless of either field).
+        For an active one-shot with ``lead_minutes == 0``:
         ``"<name>  —  <next firing>"`` (unchanged from S-06).
-        For an active reminder with ``lead_minutes > 0``:
-        ``"<name>  —  <event time>  (fires N min before)"`` where the
-        event time = firing time + ``lead_minutes``.
+        For an active one-shot with ``lead_minutes > 0``:
+        ``"<name>  —  <event time>  (fires N min before)"``.
+        For an active recurring reminder with ``lead_minutes == 0``:
+        ``"<name>  —  <next firing> (<freq>)"``.
+        For an active recurring reminder with ``lead_minutes > 0``:
+        ``"<name>  —  <event time>  (fires N min before, <freq>)"``.
     """
     fire_at = next_firing_after(reminder, now)
     if fire_at is None:
         return f"{reminder.name}  —  {_format_firing(None, tz=tz)}"
+    recurrence = _recurrence_label(reminder.rrule_str)
     if reminder.lead_minutes > 0:
         event_at = fire_at + timedelta(minutes=reminder.lead_minutes)
+        if recurrence:
+            return (
+                f"{reminder.name}  —  {_format_firing(event_at, tz=tz)}"
+                f"  (fires {reminder.lead_minutes} min before, {recurrence})"
+            )
         return (
             f"{reminder.name}  —  {_format_firing(event_at, tz=tz)}"
             f"  (fires {reminder.lead_minutes} min before)"
         )
+    if recurrence:
+        return f"{reminder.name}  —  {_format_firing(fire_at, tz=tz)} ({recurrence})"
     return f"{reminder.name}  —  {_format_firing(fire_at, tz=tz)}"
 
 

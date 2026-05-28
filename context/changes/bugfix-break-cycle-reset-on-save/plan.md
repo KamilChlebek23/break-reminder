@@ -207,26 +207,26 @@ No data migration. No `Settings` schema change. Existing `BreakReminder.ini` fil
 
 #### Automated
 
-- [x] 1.1 Unit tests pass: `uv run pytest tests/test_break_scheduler.py -v` (includes new `TestResetCycle`)
-- [x] 1.2 Unit tests pass: `uv run pytest tests/test_settings_dialog.py -v` (includes new `TestBreakIntervalChangedSignal`)
-- [x] 1.3 Unit tests pass: `uv run pytest tests/test_app.py -v` (includes new `TestOnBreakIntervalChanged`)
-- [x] 1.4 Full suite passes: `uv run pytest`
-- [x] 1.5 Type check passes: `uv run pyright`
-- [x] 1.6 Linting passes: `uv run ruff check`
-- [x] 1.7 Format check passes: `uv run ruff format --check`
-- [x] 1.8 Security audit passes: `uv run pip-audit`
-- [x] 1.9 License gate passes: `uv run pip-licenses --fail-on="AGPL"`
+- [x] 1.1 Unit tests pass: `uv run pytest tests/test_break_scheduler.py -v` (includes new `TestResetCycle`) — 3c2ac39
+- [x] 1.2 Unit tests pass: `uv run pytest tests/test_settings_dialog.py -v` (includes new `TestBreakIntervalChangedSignal`) — 3c2ac39
+- [x] 1.3 Unit tests pass: `uv run pytest tests/test_app.py -v` (includes new `TestOnBreakIntervalChanged`) — 3c2ac39
+- [x] 1.4 Full suite passes: `uv run pytest` — 3c2ac39
+- [x] 1.5 Type check passes: `uv run pyright` — 3c2ac39
+- [x] 1.6 Linting passes: `uv run ruff check` — 3c2ac39
+- [x] 1.7 Format check passes: `uv run ruff format --check` — 3c2ac39
+- [x] 1.8 Security audit passes: `uv run pip-audit` — 3c2ac39
+- [x] 1.9 License gate passes: `uv run pip-licenses --fail-on="AGPL"` — 3c2ac39
 
 #### Manual
 
-- [x] 1.10 Real Windows: change break interval, tooltip reads `Nm 00s` immediately
-- [x] 1.11 Real Windows: open Settings without changing break interval, tooltip continues unchanged
-- [x] 1.12 Real Windows: change break interval mid-snooze, snooze cleared, fresh countdown
-- [x] 1.13 Real Windows: pause + change break interval, tooltip stays `paused` (priority preserved)
-- [x] 1.14 Real Windows: existing flows (Take break now, Reset, break-due dialog, custom reminders) all still work
+- [x] 1.10 Real Windows: change break interval, tooltip reads `Nm 00s` immediately — 3c2ac39
+- [x] 1.11 Real Windows: open Settings without changing break interval, tooltip continues unchanged — 3c2ac39
+- [x] 1.12 Real Windows: change break interval mid-snooze, snooze cleared, fresh countdown — 3c2ac39
+- [x] 1.13 Real Windows: pause + change break interval, tooltip stays `paused` (priority preserved) — 3c2ac39
+- [x] 1.14 Real Windows: existing flows (Take break now, Reset, break-due dialog, custom reminders) all still work — 3c2ac39
 
 ### Phase 2: Bookkeeping
 
 #### Automated
 
-- [ ] 2.1 `git grep -nE 'status: implemented' context/changes/bugfix-break-cycle-reset-on-save/change.md` returns exactly one match
+- [x] 2.1 `git grep -nE 'status: implemented' context/changes/bugfix-break-cycle-reset-on-save/change.md` returns exactly one match

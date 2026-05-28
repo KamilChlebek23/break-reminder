@@ -1,7 +1,7 @@
 ---
 change_id: bugfix-break-cycle-reset-on-save
 title: BreakScheduler resets cycle when break interval is saved (S-09)
-status: implemented
+status: impl_reviewed
 created: 2026-05-28
 updated: 2026-05-28
 archived_at: null

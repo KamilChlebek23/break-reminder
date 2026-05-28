@@ -203,6 +203,117 @@ class TestApplyBreakSnoozed:
 
 
 # ---------------------------------------------------------------------------
+# Settings-save reset — _on_break_interval_changed (S-09 bugfix)
+# ---------------------------------------------------------------------------
+
+
+class TestOnBreakIntervalChanged:
+    """The S-09 slot — re-bases the cycle when the user saves a new interval.
+
+    Pins the four observable contracts plus an end-to-end wiring
+    assertion through the (stubbed) ``SettingsDialog``:
+
+    1. Active-seconds accumulator is cleared.
+    2. Snooze state (``_snoozes_used`` and ``_snooze_until``) is cleared.
+    3. Pause state is preserved (FR-016 — pause is independent of the
+       cycle).
+    4. No event-log row is written (a settings-save is NOT a
+       ``BREAK / TAKEN`` event for FR-015 purposes).
+    5. End-to-end: opening Settings, mutating ``break_interval_min``,
+       and accepting drives the slot via the wired signal.
+    """
+
+    def test_clears_active_seconds_counter(self, app: BreakReminderApp) -> None:
+        """The slot resets the active-time counter to 0."""
+        app._break_scheduler._active_seconds = 42
+
+        app._on_break_interval_changed(7)
+
+        assert app._break_scheduler._active_seconds == 0
+
+    def test_clears_snooze_state(self, app: BreakReminderApp) -> None:
+        """The slot clears ``_snoozes_used`` and ``_snooze_until``."""
+        from datetime import UTC, datetime, timedelta
+
+        app._break_scheduler._snoozes_used = 3
+        app._break_scheduler._snooze_until = datetime.now(UTC) + timedelta(minutes=5)
+
+        app._on_break_interval_changed(7)
+
+        assert app._break_scheduler._snoozes_used == 0
+        assert app._break_scheduler._snooze_until is None
+
+    def test_refreshes_tooltip_immediately(self, app: BreakReminderApp) -> None:
+        """The slot re-bases the tray tooltip without waiting for ``_tooltip_timer``.
+
+        After save with a new interval of 7 minutes and a fresh cycle,
+        the tooltip must read ``next break in 7m 00s`` immediately —
+        otherwise the user would stare at a stale countdown for up to
+        5 seconds (the tooltip-refresh cadence).
+        """
+        app._settings.break_interval_min = 7
+        # Pre-load some accumulated time so without the eager refresh
+        # the tooltip would still show the prior seconds offset.
+        app._break_scheduler._active_seconds = 200
+
+        app._on_break_interval_changed(7)
+
+        assert "7m 00s" in app._tray.toolTip()
+
+    def test_does_not_change_pause_state(self, app: BreakReminderApp) -> None:
+        """FR-016: a settings save while paused must NOT flip the pause toggle."""
+        app._break_scheduler.pause()
+        assert app._break_scheduler.is_paused
+
+        app._on_break_interval_changed(7)
+
+        assert app._break_scheduler.is_paused
+
+    def test_does_not_record_event_log_row(self, app: BreakReminderApp, tmp_path: Path) -> None:
+        """A settings-save reset is NOT a ``break / taken`` event (FR-015)."""
+        app._on_break_interval_changed(7)
+
+        # The event log file may not even exist if no other event has
+        # been written; that's fine — the assertion is "no rows".
+        log_path = tmp_path / "events.csv"
+        if not log_path.exists():
+            return
+        rows = _read_event_rows(log_path)
+        assert rows == []
+
+    def test_end_to_end_via_settings_dialog_stub(
+        self, app: BreakReminderApp, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Opening Settings + signal-fire-from-stub drives the slot end-to-end.
+
+        Reuses ``TestOpenSettingsAction._make_stub`` (the extended
+        ``_StubSettingsDialog`` exposes a ``break_interval_changed``
+        recorder). The stub never emits — instead, after triggering
+        the action, we walk the recorded slots and call them directly,
+        which is what an emit would do.
+        """
+        captures: list[dict] = []
+        monkeypatch.setattr(
+            "break_reminder.app.SettingsDialog",
+            TestOpenSettingsAction._make_stub(captures),
+        )
+
+        app._break_scheduler._active_seconds = 99
+
+        _find_action(app, "Open settings…").trigger()
+
+        # Exactly one dialog was constructed and the slot is connected.
+        assert len(captures) == 1
+        slots = captures[0]["break_interval_slots"]
+        assert len(slots) == 1, "expected one slot wired to break_interval_changed"
+
+        # Drive the recorded slot the way an emit would.
+        slots[0](7)
+
+        assert app._break_scheduler._active_seconds == 0
+
+
+# ---------------------------------------------------------------------------
 # Tray menu — Reset action wiring
 # ---------------------------------------------------------------------------
 
@@ -302,11 +413,45 @@ class TestOpenSettingsAction:
 
     @staticmethod
     def _make_stub(captures: list[dict]) -> type:
-        """Return a stub class that records init kwargs and exec calls into ``captures``."""
+        """Return a stub class that records init kwargs, exec calls, and signal connections.
+
+        Each entry in ``captures`` is ``{"init_kwargs", "exec_called",
+        "break_interval_slots"}``. The third field captures every slot
+        connected to the stub's ``break_interval_changed`` attribute —
+        a tiny ``_StubSignal`` shim with a ``connect(slot)`` method.
+        Without this shim, ``_on_open_settings``'s
+        ``dialog.break_interval_changed.connect(...)`` call (S-09) would
+        ``AttributeError`` here because the production class is replaced
+        by this stub via ``monkeypatch.setattr``. The recorded slots
+        double as the manual-trigger surface for the end-to-end
+        ``TestOnBreakIntervalChanged`` test below.
+        """
+
+        class _StubSignal:
+            """Minimal shim with a ``connect(slot)`` method.
+
+            Recording-only; the stub never emits. Tests that need to
+            simulate the dialog firing the signal call the captured
+            slot directly.
+            """
+
+            def __init__(self, sink: list[object]) -> None:
+                self._sink = sink
+
+            def connect(self, slot: object) -> None:
+                self._sink.append(slot)
 
         class _StubSettingsDialog:
             def __init__(self, **kwargs: object) -> None:
-                captures.append({"init_kwargs": kwargs, "exec_called": False})
+                slots: list[object] = []
+                captures.append(
+                    {
+                        "init_kwargs": kwargs,
+                        "exec_called": False,
+                        "break_interval_slots": slots,
+                    }
+                )
+                self.break_interval_changed = _StubSignal(slots)
 
             def exec(self) -> int:
                 captures[-1]["exec_called"] = True

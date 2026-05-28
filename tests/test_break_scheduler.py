@@ -479,3 +479,114 @@ class TestOnBreakTaken:
         assert len(received) == 2  # second cycle fires
         # Both fires saw the default fresh max_snoozes = 1.
         assert received == [1, 1]
+
+
+# ---------------------------------------------------------------------------
+# Cycle resets — reset_cycle is the public primitive for clearing the cycle
+# ---------------------------------------------------------------------------
+
+
+class TestResetCycle:
+    """``reset_cycle()`` is the public reset primitive (S-09 bugfix path).
+
+    Mirrors ``TestOnBreakTaken``'s four observable assertions: the
+    extraction is meant to be zero-behavior-change for ``on_break_taken``
+    callers while exposing the primitive to a second caller — the
+    settings-save bugfix wired through
+    ``BreakReminderApp._on_break_interval_changed`` (see
+    ``tests/test_app.py::TestOnBreakIntervalChanged``).
+    """
+
+    def test_resets_active_seconds(
+        self,
+        scheduler: BreakScheduler,
+        activity: ActivityMonitor,
+        clock: Clock,
+    ) -> None:
+        """``reset_cycle()`` resets ``_active_seconds`` to 0."""
+        for _ in range(30):
+            activity.activity_detected.emit(clock())
+            clock.advance(1)
+            scheduler._tick()
+        assert scheduler._active_seconds == 30
+
+        scheduler.reset_cycle()
+        assert scheduler._active_seconds == 0
+
+    def test_resets_snooze_state(
+        self,
+        scheduler: BreakScheduler,
+    ) -> None:
+        """``reset_cycle()`` clears ``_snoozes_used`` and ``_snooze_until``."""
+        scheduler.on_break_snoozed()
+        scheduler.reset_cycle()
+        assert scheduler._snoozes_used == 0
+        assert scheduler._snooze_until is None
+
+    def test_does_not_change_pause_state(
+        self,
+        scheduler: BreakScheduler,
+    ) -> None:
+        """FR-016: ``reset_cycle()`` MUST NOT flip the pause toggle.
+
+        Pause is independent of the break cycle — a settings save
+        while paused must reset the accumulator but leave the user's
+        explicit pause choice intact.
+        """
+        scheduler.pause()
+        assert scheduler.is_paused
+
+        scheduler.reset_cycle()
+
+        assert scheduler.is_paused
+
+    def test_full_cycle_after_reset_starts_fresh(
+        self,
+        scheduler: BreakScheduler,
+        activity: ActivityMonitor,
+        clock: Clock,
+    ) -> None:
+        """A second cycle after ``reset_cycle()`` requires a full fresh threshold."""
+        received = _capture_break_due(scheduler)
+
+        for _ in range(60):
+            activity.activity_detected.emit(clock())
+            clock.advance(1)
+            scheduler._tick()
+        assert len(received) == 1
+        scheduler.reset_cycle()
+
+        for _ in range(59):
+            activity.activity_detected.emit(clock())
+            clock.advance(1)
+            scheduler._tick()
+        assert len(received) == 1  # not yet
+        activity.activity_detected.emit(clock())
+        clock.advance(1)
+        scheduler._tick()
+        assert len(received) == 2  # second cycle fires
+
+    def test_on_break_taken_delegates_to_reset_cycle(
+        self,
+        scheduler: BreakScheduler,
+        activity: ActivityMonitor,
+        clock: Clock,
+    ) -> None:
+        """``on_break_taken`` produces the same observable state as ``reset_cycle``.
+
+        Pinning the refactor: ``on_break_taken``'s body is now
+        ``self.reset_cycle()``. The two paths must be observationally
+        indistinguishable so existing callers (the dialog flow and
+        the tray Reset action) keep working bit-for-bit.
+        """
+        for _ in range(15):
+            activity.activity_detected.emit(clock())
+            clock.advance(1)
+            scheduler._tick()
+        scheduler.on_break_snoozed()
+
+        scheduler.on_break_taken()
+
+        assert scheduler._active_seconds == 0
+        assert scheduler._snoozes_used == 0
+        assert scheduler._snooze_until is None

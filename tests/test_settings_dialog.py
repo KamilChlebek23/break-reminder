@@ -411,6 +411,107 @@ class TestSave:
 
 
 # ---------------------------------------------------------------------------
+# break_interval_changed — emit-on-actual-change contract (S-09)
+# ---------------------------------------------------------------------------
+
+
+class TestBreakIntervalChangedSignal:
+    """``SettingsDialog.break_interval_changed`` is the S-09 bugfix path.
+
+    Pins the four observable contracts:
+
+    1. The signal fires when the spinbox value differs from the stored
+       value (the only case the bugfix needs).
+    2. The signal does NOT fire when the stored value is unchanged
+       (so a save touching only voice / autostart / snooze does not
+       reset the running cycle).
+    3. The payload is the new (post-save) value, not the old.
+    4. The emission is ordered BEFORE ``super().accept()`` so connected
+       slots see ``self.result()`` still ``Rejected`` — load-bearing
+       for any slot that wants a coherent dialog state at emit time.
+    """
+
+    def test_emits_when_value_changes(self, dialog: SettingsDialog, settings: Settings) -> None:
+        """A spinbox change followed by ``accept()`` emits exactly once."""
+        settings.break_interval_min = 5
+        # The dialog fixture was built BEFORE the line above ran, so its
+        # spinbox loaded the default value. Re-sync the spinbox to the
+        # post-set baseline; this is what "the dialog opens, user changes
+        # the value, clicks OK" looks like in production.
+        dialog._break_interval_spinbox.setValue(5)
+        received: list[int] = []
+        dialog.break_interval_changed.connect(received.append)
+
+        dialog._break_interval_spinbox.setValue(7)
+        dialog.accept()
+
+        assert received == [7]
+
+    def test_does_not_emit_when_value_unchanged(
+        self, dialog: SettingsDialog, settings: Settings
+    ) -> None:
+        """Saving without touching the spinbox does NOT emit.
+
+        FR-006 + S-09: if the user clicks OK after toggling voice,
+        flipping autostart, or tweaking the snooze duration but
+        leaves ``break_interval_min`` alone, the running cycle's
+        accumulator must be preserved. A spurious emit would reset
+        the counter mid-cycle and the user would see the tray
+        countdown jump back to ``Nm 00s``.
+        """
+        settings.break_interval_min = 5
+        dialog._break_interval_spinbox.setValue(5)
+        received: list[int] = []
+        dialog.break_interval_changed.connect(received.append)
+
+        # Touch other persisted fields so the save path is non-trivial,
+        # but leave the break interval at 5.
+        dialog._snooze_duration_spinbox.setValue(dialog._snooze_duration_spinbox.value() + 1)
+        dialog.accept()
+
+        assert received == []
+
+    def test_payload_is_the_new_value(self, dialog: SettingsDialog, settings: Settings) -> None:
+        """Payload reflects the post-save value, not the pre-save baseline."""
+        settings.break_interval_min = 10
+        dialog._break_interval_spinbox.setValue(10)
+        received: list[int] = []
+        dialog.break_interval_changed.connect(received.append)
+
+        dialog._break_interval_spinbox.setValue(42)
+        dialog.accept()
+
+        assert received == [42]
+
+    def test_emit_runs_before_super_accept(
+        self, dialog: SettingsDialog, settings: Settings
+    ) -> None:
+        """``break_interval_changed`` fires while ``result()`` is still ``Rejected``.
+
+        Mirrors the load-bearing emit-before-super-accept ordering
+        pinned by ``test_save_emits_reminder_added_before_super_accept``
+        in ``tests/test_reminder_form_dialog.py``. Captures
+        ``dialog.result()`` at emit time; if a future refactor flips
+        the order, the captured value would be ``Accepted`` and this
+        test fails.
+        """
+        settings.break_interval_min = 5
+        dialog._break_interval_spinbox.setValue(5)
+        captured_result_at_emit: list[int] = []
+
+        def _capture(_value: int) -> None:
+            captured_result_at_emit.append(dialog.result())
+
+        dialog.break_interval_changed.connect(_capture)
+        dialog._break_interval_spinbox.setValue(9)
+
+        dialog.accept()
+
+        assert captured_result_at_emit == [int(QDialog.DialogCode.Rejected)]
+        assert dialog.result() == int(QDialog.DialogCode.Accepted)
+
+
+# ---------------------------------------------------------------------------
 # Layout — Scheduling + Notifications tabs (S-01 + S-04)
 # ---------------------------------------------------------------------------
 

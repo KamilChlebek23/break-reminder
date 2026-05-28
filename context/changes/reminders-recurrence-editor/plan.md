@@ -593,44 +593,44 @@ The Phase 2.1 step list IS the manual testing surface; see Phase 2 above.
 
 #### Automated
 
-- [x] 1.1 Unit tests pass: `uv run pytest tests/test_reminder_form_dialog.py -v` (includes new `TestRecurrencePicker` + `TestRecurrenceSave` + `TestRecurrenceEditMode` + `TestRecurrenceCustomLocked` + `TestRecurrencePastTimeGate` + `TestRecurrenceEndDate`)
-- [x] 1.2 Unit tests pass: `uv run pytest tests/test_settings_dialog.py -v` (includes new `TestComposeRowRecurrence`)
-- [x] 1.3 Full suite passes: `uv run pytest`
-- [x] 1.4 Type check passes: `uv run pyright`
-- [x] 1.5 Linting passes: `uv run ruff check`
-- [x] 1.6 Format check passes: `uv run ruff format --check`
-- [x] 1.7 Security audit passes: `uv run pip-audit`
-- [x] 1.8 License gate passes: `uv run pip-licenses --fail-on="AGPL"`
+- [x] 1.1 Unit tests pass: `uv run pytest tests/test_reminder_form_dialog.py -v` (includes new `TestRecurrencePicker` + `TestRecurrenceSave` + `TestRecurrenceEditMode` + `TestRecurrenceCustomLocked` + `TestRecurrencePastTimeGate` + `TestRecurrenceEndDate`) — 3439eb3
+- [x] 1.2 Unit tests pass: `uv run pytest tests/test_settings_dialog.py -v` (includes new `TestComposeRowRecurrence`) — 3439eb3
+- [x] 1.3 Full suite passes: `uv run pytest` — 3439eb3
+- [x] 1.4 Type check passes: `uv run pyright` — 3439eb3
+- [x] 1.5 Linting passes: `uv run ruff check` — 3439eb3
+- [x] 1.6 Format check passes: `uv run ruff format --check` — 3439eb3
+- [x] 1.7 Security audit passes: `uv run pip-audit` — 3439eb3
+- [x] 1.8 License gate passes: `uv run pip-licenses --fail-on="AGPL"` — 3439eb3
 
 #### Manual
 
-- [x] 1.9 Add: dialog shows new Recurrence + End-on rows; default picker is None; end-date row disabled
-- [x] 1.10 Set picker to Daily: end-date checkbox enables; tick checkbox: field enables; defaults to today + 30 days; saved Daily reminder's row shows `(daily)` suffix
-- [x] 1.11 Edit on Daily reminder pre-fills picker to Daily and end-date if set
-- [x] 1.12 Switch to None: end-date row disables + unticks; row no longer shows `(daily)` suffix
-- [x] 1.13 Monthly + day-31 start: picker tooltip shows skip-months message
-- [x] 1.14 Recurring with past start_at + future occurrence: save succeeds; row shows `(weekly)` or similar
-- [x] 1.15 Recurring with past end_at: save blocked with `Recurring reminder has no future firings` tooltip
-- [x] 1.16 Hand-edited `FREQ=WEEKLY;BYDAY=MO,WE,FR`: picker shows `(custom)` + disabled + Reset button visible; Reset → No preserves state and rrule_str byte-for-byte on no-change save
-- [x] 1.17 Reset → Yes: picker enables + resets to None + Reset button hides
-- [x] 1.18 Daily + lead 15 min: row shows `(fires 15 min before, daily)`
-- [x] 1.19 Recurring near-future fires correctly through ReminderScheduler.reload()
-- [x] 1.20 Existing one-shot reminders still load + edit cleanly (no regressions)
-- [x] 1.21 No regressions in Scheduling / Notifications / Lifecycle tabs
+- [x] 1.9 Add: dialog shows new Recurrence + End-on rows; default picker is None; end-date row disabled — 3439eb3
+- [x] 1.10 Set picker to Daily: end-date checkbox enables; tick checkbox: field enables; defaults to today + 30 days; saved Daily reminder's row shows `(daily)` suffix — 3439eb3
+- [x] 1.11 Edit on Daily reminder pre-fills picker to Daily and end-date if set — 3439eb3
+- [x] 1.12 Switch to None: end-date row disables + unticks; row no longer shows `(daily)` suffix — 3439eb3
+- [x] 1.13 Monthly + day-31 start: picker tooltip shows skip-months message — 3439eb3
+- [x] 1.14 Recurring with past start_at + future occurrence: save succeeds; row shows `(weekly)` or similar — 3439eb3
+- [x] 1.15 Recurring with past end_at: save blocked with `Recurring reminder has no future firings` tooltip — 3439eb3
+- [x] 1.16 Hand-edited `FREQ=WEEKLY;BYDAY=MO,WE,FR`: picker shows `(custom)` + disabled + Reset button visible; Reset → No preserves state and rrule_str byte-for-byte on no-change save — 3439eb3
+- [x] 1.17 Reset → Yes: picker enables + resets to None + Reset button hides — 3439eb3
+- [x] 1.18 Daily + lead 15 min: row shows `(fires 15 min before, daily)` — 3439eb3
+- [x] 1.19 Recurring near-future fires correctly through ReminderScheduler.reload() — 3439eb3
+- [x] 1.20 Existing one-shot reminders still load + edit cleanly (no regressions) — 3439eb3
+- [x] 1.21 No regressions in Scheduling / Notifications / Lifecycle tabs — 3439eb3
 
 ### Phase 2: Manual smoke + bookkeeping
 
 #### Automated
 
-- [ ] 2.1 `git grep -nE 'Custom-reminder recurrence editor' AGENTS.md` returns no matches
-- [ ] 2.2 `git grep -nE '^\| S-08 .*proposed' context/foundation/roadmap.md` returns no matches
+- [x] 2.1 `git grep -nE 'Custom-reminder recurrence editor' AGENTS.md` returns no matches
+- [x] 2.2 `git grep -nE '^\| S-08 .*proposed' context/foundation/roadmap.md` returns no matches
 - [ ] 2.3 `git diff context/changes/reminders-recurrence-editor/change.md` shows `status: implemented` and updated `updated:` date
 
 #### Manual
 
-- [ ] 2.4 Real Windows: Daily 30-sec reminder fires + row shows `(daily)`
-- [ ] 2.5 Real Windows: switch picker Daily → Weekly → Monthly with day-31 tooltip on Monthly
-- [ ] 2.6 Real Windows: end-date round-trips through Edit
-- [ ] 2.7 Real Windows: recurring with past start_at + future occurrence saves; recurring with past end_at blocks
-- [ ] 2.8 Real Windows: hand-edited custom RRULE preserves through Edit + save without Reset; Reset Yes overrides cleanly
-- [ ] 2.9 Real Windows: no regressions; existing one-shot reminders still work
+- [x] 2.4 Real Windows: Daily 30-sec reminder fires + row shows `(daily)`
+- [x] 2.5 Real Windows: switch picker Daily → Weekly → Monthly with day-31 tooltip on Monthly
+- [x] 2.6 Real Windows: end-date round-trips through Edit
+- [x] 2.7 Real Windows: recurring with past start_at + future occurrence saves; recurring with past end_at blocks
+- [x] 2.8 Real Windows: hand-edited custom RRULE preserves through Edit + save without Reset; Reset Yes overrides cleanly
+- [x] 2.9 Real Windows: no regressions; existing one-shot reminders still work

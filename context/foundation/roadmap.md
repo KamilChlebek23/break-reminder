@@ -3,7 +3,7 @@ project: BreakReminder
 version: 1
 status: draft
 created: 2026-05-25
-updated: 2026-05-27
+updated: 2026-05-28
 prd_version: 1
 main_goal: low-complexity
 top_blocker: none
@@ -37,7 +37,7 @@ BreakReminder is a Windows 11 tray-resident utility for focus-minded solo progra
 | S-06 | reminders-add-form | add a one-shot custom reminder with a name and a date/time | S-05 | FR-011, FR-013 | done |
 | S-06b | reminders-lead-time | configure a reminder to fire N minutes (0-60) before the event | S-06 | FR-011, FR-013 | done |
 | S-07 | reminders-edit-delete | edit and delete custom reminders in the list | S-06 | FR-012 | done |
-| S-08 | reminders-recurrence-editor | configure a custom reminder to recur daily / weekly / monthly | S-06 | FR-014 | proposed |
+| S-08 | reminders-recurrence-editor | configure a custom reminder to recur daily / weekly / monthly | S-06 | FR-014 | done |
 
 ## Streams
 
@@ -46,7 +46,7 @@ Navigation aid — groups items that share a Prerequisites chain. Canonical orde
 | Stream | Theme | Chain | Note |
 |---|---|---|---|
 | A | Settings panel | `S-01` → `S-02` / `S-03` / `S-04` (parallel after S-01) | Closes the four small must-have FRs that gate on a settings UI. After S-01, the three remaining are independent — pick whichever fits the next evening. |
-| B | Custom reminders | `S-05` → `S-06` → `S-06b` / `S-07` / `S-08` (parallel after S-06) | Joins Stream A at `S-01` (the same QDialog hosts both tabs). Sequenced after Stream A's first slice but otherwise independent of S-02..S-04. |
+| B | Custom reminders | `S-05` → `S-06` → `S-06b` / `S-07` / `S-08` (all done) | Joins Stream A at `S-01` (the same QDialog hosts both tabs). Sequenced after Stream A's first slice but otherwise independent of S-02..S-04. |
 
 ## Baseline
 
@@ -192,7 +192,7 @@ The PRD must-have FRs and user stories below are **already shipped in v0.1.0** a
 - **Blockers:** —
 - **Unknowns:** —
 - **Risk:** low. The RRULE engine in `scheduler.py` is already covered by 8 unit tests (per tech-stack.md); this slice translates UI selections into the RFC 5545 RRULE strings the engine accepts. The translation is small; the test coverage already exists.
-- **Status:** proposed
+- **Status:** done
 
 ## Backlog Handoff
 
@@ -206,7 +206,7 @@ The PRD must-have FRs and user stories below are **already shipped in v0.1.0** a
 | S-06 | `reminders-add-form` | Add a one-shot custom reminder via sub-dialog | yes | Planned + shipped 2026-05-27 |
 | S-06b | `reminders-lead-time` | Add "notify N min before event" lead-time spinbox to the add form | yes | Planned + shipped 2026-05-27 |
 | S-07 | `reminders-edit-delete` | Edit and delete entries in the reminders list | yes | Planned + shipped 2026-05-27 |
-| S-08 | `reminders-recurrence-editor` | Daily / weekly / monthly recurrence in the add/edit dialog | no | Run after S-06 |
+| S-08 | `reminders-recurrence-editor` | Daily / weekly / monthly recurrence in the add/edit dialog | yes | Planned + shipped 2026-05-28 |
 
 ## Open Roadmap Questions
 

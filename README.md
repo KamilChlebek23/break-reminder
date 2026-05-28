@@ -19,13 +19,15 @@ runs at &lt; 1% CPU and &lt; 100 MB RAM at idle, and it surfaces in two ways:
   take a break" or "Snooze". The dialog deliberately does **not** steal
   the keystroke you're in the middle of typing — the in-flight character
   lands where you intended it (US-02).
-- **Custom reminders** *(planned; not shipped yet).*
-  User-defined recurring nudges — *"stand up at 11:00"*, *"drink water
-  every hour during work days"* — that will fire as light, **dismissable**
-  popups (FR-013, FR-014). Same widget, different severity, so the
-  adjacent-job reminder rides on the break-reminder app rather than a
-  second utility. See [Custom reminders](#custom-reminders) below for
-  the schema scaffolding that's already on disk.
+- **Custom reminders.** User-defined nudges — *"stand up at 11:00"*,
+  *"drink water every hour during work days"* — fire as light,
+  **dismissable** popups (FR-011, FR-012, FR-013, FR-014). Same widget,
+  different severity, so the adjacent-job reminder rides on the
+  break-reminder app rather than a second utility. Created from
+  **Settings → Reminders**: name, date/time, optional 0-60 minute lead
+  ("notify N minutes before the event"), and optional daily / weekly /
+  monthly recurrence with an optional end date. See
+  [Custom reminders](#custom-reminders) below.
 
 Both surfaces are local-only. No account, no cloud, no telemetry, no
 outbound HTTP calls during normal operation. Settings, custom reminders,
@@ -149,7 +151,7 @@ countdown tooltip.
 | **Take break now** | Show the break dialog immediately. Counts as a break when you pick "I'll take a break". |
 | **Reset** | Clears the active-time accumulator and snooze count without showing the dialog. Equivalent to "Take break now &rarr; I'll take a break", logged the same way. Does not change pause state. |
 | **Pause** / **Resume** | Pause the timer entirely (no breaks fire while paused). Pause does **not** survive a reboot — the next boot starts unpaused per FR-016. |
-| **Open settings…** | Opens the tabbed [settings dialog](#settings): Scheduling, Notifications, Lifecycle. |
+| **Open settings…** | Opens the tabbed [settings dialog](#settings): Scheduling, Notifications, Lifecycle, Reminders. |
 | **Check for updates** | Opens [Releases](#1-download) in your default browser. No HTTP call inside the app. |
 | **Quit** | Exits BreakReminder. Closing the settings window does NOT quit; only this menu item or killing the process does. |
 
@@ -179,12 +181,15 @@ distinction from Windows' native screen-time toast (FR-008).
 
 ### Settings
 
-BreakReminder's preferences live in a three-tab dialog opened via the
+BreakReminder's preferences live in a four-tab dialog opened via the
 **Open settings…** tray menu item: **Scheduling** (break interval,
 snooze duration, max snoozes), **Notifications** (voice on/off, voice
-phrase), and **Lifecycle** (autostart on Windows login). Clicking OK
-saves all fields atomically — if any field's validation or registry
-side-effect fails, none of them are written.
+phrase), **Lifecycle** (autostart on Windows login), and **Reminders**
+(custom-reminder list with Add / Edit / Delete). Clicking OK saves all
+fields on the first three tabs atomically — if any field's validation
+or registry side-effect fails, none of them are written. The Reminders
+tab persists each Add / Edit / Delete immediately on its own button
+(it does not participate in the OK save).
 
 The dialog persists to `%APPDATA%\BreakReminder\BreakReminder.ini`;
 you can also edit the file by hand and **restart BreakReminder** for
@@ -226,14 +231,30 @@ Out-of-range values are silently clamped at read time, so a typo like
 
 ### Custom reminders
 
-Beyond the break-cycle reminder, BreakReminder will support user-defined
-recurring reminders (FR-011 / FR-012) — e.g. *"stand up at 11:00"*, *"drink
-water every hour during work days"*. The data file at
-`%APPDATA%\BreakReminder\reminders.json` is initialised empty; the
-add/edit GUI is on the roadmap (Stream B — see
-[`context/foundation/roadmap.md`](context/foundation/roadmap.md)).
-Schema reference for power users who want to hand-edit JSON early:
+Beyond the break-cycle reminder, BreakReminder supports user-defined
+custom reminders (FR-011 / FR-012 / FR-014) — e.g. *"stand up at
+11:00"*, *"drink water every hour during work days"*. Manage them from
+**Settings → Reminders**: each entry has a name, a date/time, an
+optional 0–60 minute lead (fire N minutes before the event), and an
+optional recurrence (none / daily / weekly / monthly) with an optional
+end date. The list shows the next firing time per row plus a
+`(daily)` / `(weekly)` / `(monthly)` suffix when recurrence is set;
+expired one-shots sink to the bottom.
+
+When a reminder fires, a **dismissable** popup appears with the
+reminder's name and the original event time — `Esc`, the close button,
+and click-outside all dismiss it. This is deliberate (FR-013): custom
+reminders are advisory, not enforced. The non-dismissable hardening
+applies only to the break dialog (FR-009).
+
+Reminders persist to `%APPDATA%\BreakReminder\reminders.json` via
+atomic writes (rename-replace). Schema reference for power users who
+want to hand-edit the JSON:
 [`break_reminder/storage/reminders.py`](break_reminder/storage/reminders.py).
+Hand-edited custom RRULE strings (outside the picker's daily / weekly /
+monthly vocabulary) round-trip safely — the recurrence picker locks
+into a `(custom)` state with a **Reset to None** affordance until the
+user explicitly opts back into the picker's choices.
 
 ### Event log
 
@@ -247,6 +268,39 @@ once they exceed a size threshold.
 ## Release history
 
 Newest first. Dates are tag-push dates.
+
+### v0.7.0 — 2026-05-28
+
+S-08 + S-09. Daily / weekly / monthly recurrence on custom reminders
+(FR-014); break-countdown bugfix on Settings save (FR-006, FR-008).
+
+- **S-08 reminders-recurrence-editor**: the Add / Edit Reminder form
+  gains a **Recurrence** picker (`none` / `daily` / `weekly` /
+  `monthly`) and an optional **End date** field. Recurring reminders
+  fire on the configured cadence indefinitely, or until the end date,
+  via the existing RFC 5545 RRULE engine in
+  `break_reminder/scheduler.py` (`next_firing_after`). The Reminders
+  list now appends a `(daily)` / `(weekly)` / `(monthly)` suffix to the
+  firing-time column. Hand-edited custom RRULE strings outside the
+  picker's vocabulary round-trip safely: the picker locks into a
+  `(custom)` state with a **Reset to None** affordance, so a
+  power-user-authored RRULE is never silently dropped on Edit save.
+- **S-09 bugfix-break-cycle-reset-on-save**: changing the break
+  interval in **Settings → Scheduling** and clicking OK now resets the
+  active-time accumulator and clears any in-flight snooze, so the tray
+  countdown restarts cleanly from the new threshold (`Nm 00s`).
+  Previously, the seconds digit appeared frozen on the prior cycle's
+  offset because both old and new thresholds are minute-aligned, so
+  `(threshold − active_seconds) mod 60` was independent of the
+  threshold change; the next break consequently fired up to 59 seconds
+  early or late relative to the new value. Reset only fires when
+  `break_interval_min` actually changes — saving with only voice or
+  snooze edits leaves the running cycle alone. The new
+  `BreakScheduler.reset_cycle()` primitive backs both this path and
+  the existing dialog-flow / tray-Reset path; behaviour is unchanged
+  for the existing callers.
+
+Test suite: 418 → 501.
 
 ### v0.6.0 — 2026-05-27
 

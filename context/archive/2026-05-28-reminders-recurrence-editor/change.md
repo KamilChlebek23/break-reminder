@@ -1,10 +1,10 @@
 ---
 change_id: reminders-recurrence-editor
 title: Reminders recurrence editor (S-08)
-status: implemented
+status: archived
 created: 2026-05-28
 updated: 2026-05-28
-archived_at: null
+archived_at: 2026-05-28T12:36:17Z
 ---
 
 ## Notes

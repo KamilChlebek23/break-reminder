@@ -622,15 +622,15 @@ The Phase 2.1 step list IS the manual testing surface; see Phase 2 above.
 
 #### Automated
 
-- [x] 2.1 `git grep -nE 'Custom-reminder recurrence editor' AGENTS.md` returns no matches
-- [x] 2.2 `git grep -nE '^\| S-08 .*proposed' context/foundation/roadmap.md` returns no matches
-- [ ] 2.3 `git diff context/changes/reminders-recurrence-editor/change.md` shows `status: implemented` and updated `updated:` date
+- [x] 2.1 `git grep -nE 'Custom-reminder recurrence editor' AGENTS.md` returns no matches — 739cd1a
+- [x] 2.2 `git grep -nE '^\| S-08 .*proposed' context/foundation/roadmap.md` returns no matches — 739cd1a
+- [x] 2.3 `git diff context/changes/reminders-recurrence-editor/change.md` shows `status: implemented` and updated `updated:` date
 
 #### Manual
 
-- [x] 2.4 Real Windows: Daily 30-sec reminder fires + row shows `(daily)`
-- [x] 2.5 Real Windows: switch picker Daily → Weekly → Monthly with day-31 tooltip on Monthly
-- [x] 2.6 Real Windows: end-date round-trips through Edit
-- [x] 2.7 Real Windows: recurring with past start_at + future occurrence saves; recurring with past end_at blocks
-- [x] 2.8 Real Windows: hand-edited custom RRULE preserves through Edit + save without Reset; Reset Yes overrides cleanly
-- [x] 2.9 Real Windows: no regressions; existing one-shot reminders still work
+- [x] 2.4 Real Windows: Daily 30-sec reminder fires + row shows `(daily)` — 739cd1a
+- [x] 2.5 Real Windows: switch picker Daily → Weekly → Monthly with day-31 tooltip on Monthly — 739cd1a
+- [x] 2.6 Real Windows: end-date round-trips through Edit — 739cd1a
+- [x] 2.7 Real Windows: recurring with past start_at + future occurrence saves; recurring with past end_at blocks — 739cd1a
+- [x] 2.8 Real Windows: hand-edited custom RRULE preserves through Edit + save without Reset; Reset Yes overrides cleanly — 739cd1a
+- [x] 2.9 Real Windows: no regressions; existing one-shot reminders still work — 739cd1a

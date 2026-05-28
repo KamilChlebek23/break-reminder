@@ -38,6 +38,7 @@ BreakReminder is a Windows 11 tray-resident utility for focus-minded solo progra
 | S-06b | reminders-lead-time | configure a reminder to fire N minutes (0-60) before the event | S-06 | FR-011, FR-013 | done |
 | S-07 | reminders-edit-delete | edit and delete custom reminders in the list | S-06 | FR-012 | done |
 | S-08 | reminders-recurrence-editor | configure a custom reminder to recur daily / weekly / monthly | S-06 | FR-014 | done |
+| S-09 | bugfix-break-cycle-reset-on-save | have the break countdown restart cleanly after changing the break interval | — | FR-006, FR-008 | done |
 
 ## Streams
 
@@ -194,6 +195,20 @@ The PRD must-have FRs and user stories below are **already shipped in v0.1.0** a
 - **Risk:** low. The RRULE engine in `scheduler.py` is already covered by 8 unit tests (per tech-stack.md); this slice translates UI selections into the RFC 5545 RRULE strings the engine accepts. The translation is small; the test coverage already exists.
 - **Status:** done
 
+### S-09: bugfix-break-cycle-reset-on-save
+
+- **Outcome:** after the user changes the break interval and clicks Save, the active-time counter resets so the tray countdown restarts cleanly from the new threshold (e.g. `Nm 00s` rather than the stale sub-minute offset carried over from the prior cycle). Fixes the observed defect where changing the interval updates the minutes digit of `BreakReminder — next break in Xm YYs` but leaves the seconds digit frozen, and where the next break consequently fires up to 59 seconds early or late relative to the new threshold.
+- **Change ID:** `bugfix-break-cycle-reset-on-save`
+- **PRD refs:** FR-006 (break interval is configurable — today, changes don't fully apply), FR-008 (active-time accounting — the fix lives in this subsystem)
+- **Prerequisites:** — (S-01..S-04 all shipped)
+- **Parallel with:** —
+- **Blockers:** —
+- **Unknowns:**
+  - Should the reset fire on every Settings → OK click, or only when `break_interval_min` actually changed since the dialog opened? "Every Save" is simpler to implement and test; "only on change" matches the minimum-surprise principle. — Owner: user. Block: no.
+  - Should the reset also fire when only snooze duration / max snoozes change (no observable countdown bug today, but the active-time cycle is conceptually owned by the whole Scheduling tab)? — Owner: user. Block: no.
+- **Risk:** low. Two small touches: a new `BreakScheduler.reset_cycle()` method (sets `_active_seconds = 0`, clears `_snooze_until`, leaves `_snoozes_used` alone — distinct from `on_break_taken()` which also clears the snooze counter), and one signal wiring from `SettingsDialog.accept()` (or `app.py`) into the new slot. Mirrors the existing `reminder_added` / `reminder_updated` wiring pattern from `ReminderFormDialog` through `app.py`. Test surface: one new `TestBreakSchedulerResetCycle` class in `tests/test_scheduler.py` plus one signal-wiring assertion in `tests/test_settings_dialog.py`.
+- **Status:** done
+
 ## Backlog Handoff
 
 | Roadmap ID | Change ID | Suggested issue title | Ready for `/10x-plan` | Notes |
@@ -207,6 +222,7 @@ The PRD must-have FRs and user stories below are **already shipped in v0.1.0** a
 | S-06b | `reminders-lead-time` | Add "notify N min before event" lead-time spinbox to the add form | yes | Planned + shipped 2026-05-27 |
 | S-07 | `reminders-edit-delete` | Edit and delete entries in the reminders list | yes | Planned + shipped 2026-05-27 |
 | S-08 | `reminders-recurrence-editor` | Daily / weekly / monthly recurrence in the add/edit dialog | yes | Planned + shipped 2026-05-28 |
+| S-09 | `bugfix-break-cycle-reset-on-save` | Reset BreakScheduler cycle when Scheduling settings are saved | yes | Discovered 2026-05-28 from real-world use of v0.6.0 |
 
 ## Open Roadmap Questions
 
@@ -240,3 +256,4 @@ The PRD must-have FRs and user stories below are **already shipped in v0.1.0** a
 - **S-06: user clicks "Add" in the list view, a sub-dialog opens with "Name" + "Date/time" fields, "Save" persists to `reminders.json` and the list refreshes; at the saved date/time, the existing `reminder_dialog.py` fires as a dismissable popup. No recurrence yet.** — Archived 2026-05-27 → `context/archive/2026-05-27-reminders-add-form/`. Lesson: —.
 - **S-07: user clicks an existing reminder in the list and either "Edit" (opens the same dialog as S-06 pre-filled) or "Delete" (with a confirm); changes/removals are persisted to `reminders.json` and the running scheduler re-arms accordingly.** — Archived 2026-05-27 → `context/archive/2026-05-27-reminders-edit-delete/`. Lesson: —.
 - **S-08: when adding or editing a reminder, the user can pick "Recurrence: none / daily / weekly / monthly" with a sensible default and an optional end date; the saved reminder fires on the configured cadence indefinitely (or until end date), proven by `next_firing_after()` advancing across firings.** — Archived 2026-05-28 → `context/archive/2026-05-28-reminders-recurrence-editor/`. Lesson: —.
+- **S-09: after the user changes the break interval and clicks Save, the active-time counter resets so the tray countdown restarts cleanly from the new threshold (e.g. `Nm 00s` rather than the stale sub-minute offset carried over from the prior cycle). Fixes the observed defect where changing the interval updates the minutes digit of `BreakReminder — next break in Xm YYs` but leaves the seconds digit frozen, and where the next break consequently fires up to 59 seconds early or late relative to the new threshold.** — Archived 2026-05-28 → `context/archive/2026-05-28-bugfix-break-cycle-reset-on-save/`. Lesson: —.

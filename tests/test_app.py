@@ -31,8 +31,9 @@ from PySide6.QtCore import QUrl
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QApplication
 
-from break_reminder.app import BreakReminderApp
+from break_reminder.app import BreakReminderApp, _acquire_single_instance_lock
 from break_reminder.storage.event_log import EventLog
+from break_reminder.storage.paths import app_data_dir, app_lock_path
 from break_reminder.storage.reminders import ReminderStore
 from break_reminder.storage.settings import Settings
 
@@ -806,3 +807,88 @@ class TestRefreshTooltipDuringSnooze:
         assert self._REGULAR_RE.match(tooltip), (
             f"tooltip {tooltip!r} did not match regular-countdown format after take"
         )
+
+
+# ---------------------------------------------------------------------------
+# Single-instance lock (S-10).
+# ---------------------------------------------------------------------------
+
+
+class TestSingleInstanceLock:
+    r"""``_acquire_single_instance_lock`` blocks duplicate launches (S-10).
+
+    Pins four observable contracts of the helper:
+
+    1. First call against a clean lockfile path returns a held lock.
+    2. Second call against the same path while the first is in scope
+       returns ``None`` — the contention branch the production
+       ``main()`` uses to short-circuit a duplicate launch.
+    3. After the first lock is unlocked, a fresh call against the
+       same path acquires successfully — proves the lock isn't
+       permanently sticky and self-heals once the holder steps away.
+    4. ``app_lock_path()`` resolves under ``app_data_dir()`` — smoke
+       that the path helper behaves like its four siblings.
+
+    Tests use ``tmp_path`` (function-scoped, isolated) rather than the
+    real ``%APPDATA%\\BreakReminder\\app.lock`` so two tests in the
+    same suite never see each other's locks. The session-scoped
+    ``qapp`` fixture (autouse via ``conftest.py``) is in effect even
+    though ``QLockFile`` itself only requires QtCore — keeps the test
+    environment consistent with the rest of the suite.
+    """
+
+    def test_acquires_against_clean_path(self, tmp_path: Path) -> None:
+        """First call returns a held ``QLockFile``."""
+        lock = _acquire_single_instance_lock(tmp_path / "app.lock")
+
+        try:
+            assert lock is not None
+            assert lock.isLocked()
+        finally:
+            if lock is not None:
+                lock.unlock()
+
+    def test_second_acquire_returns_none_while_first_held(self, tmp_path: Path) -> None:
+        """Contention: second call returns ``None`` while first is held.
+
+        The first ``QLockFile`` is bound to ``first_lock`` for the
+        duration of the test so it is not GC'd before the second
+        acquire — mirrors the production ``main()`` lifetime contract.
+        """
+        lock_path = tmp_path / "app.lock"
+        first_lock = _acquire_single_instance_lock(lock_path)
+        assert first_lock is not None
+
+        try:
+            second_lock = _acquire_single_instance_lock(lock_path)
+            assert second_lock is None
+        finally:
+            first_lock.unlock()
+
+    def test_third_acquire_after_unlock_succeeds(self, tmp_path: Path) -> None:
+        """Re-acquire after explicit unlock works.
+
+        Proves the lock isn't permanently sticky — if the running
+        instance's ``QLockFile`` releases (via destructor or explicit
+        ``unlock()``), a fresh launch can acquire afresh without
+        manual cleanup.
+        """
+        lock_path = tmp_path / "app.lock"
+        first_lock = _acquire_single_instance_lock(lock_path)
+        assert first_lock is not None
+        first_lock.unlock()
+
+        third_lock = _acquire_single_instance_lock(lock_path)
+        try:
+            assert third_lock is not None
+            assert third_lock.isLocked()
+        finally:
+            if third_lock is not None:
+                third_lock.unlock()
+
+    def test_app_lock_path_under_app_data_dir(self) -> None:
+        """``app_lock_path()`` resolves to ``<app_data_dir>/app.lock``."""
+        path = app_lock_path()
+
+        assert path.parent == app_data_dir()
+        assert path.name == "app.lock"

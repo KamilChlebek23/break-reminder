@@ -17,8 +17,9 @@ import logging
 import math
 import sys
 from datetime import datetime
+from pathlib import Path
 
-from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, QUrl
+from PySide6.QtCore import QLockFile, QPointF, QRectF, Qt, QTimer, QUrl
 from PySide6.QtGui import QAction, QDesktopServices, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -34,7 +35,7 @@ from break_reminder.notifications.reminder_dialog import ReminderDialog
 from break_reminder.notifications.voice import VoiceNotifier
 from break_reminder.scheduler import BreakScheduler, ReminderScheduler
 from break_reminder.storage.event_log import EventLog, EventType, Outcome
-from break_reminder.storage.paths import APPLICATION_NAME
+from break_reminder.storage.paths import APPLICATION_NAME, app_lock_path
 from break_reminder.storage.reminders import ReminderStore
 from break_reminder.storage.settings import Settings
 from break_reminder.ui.settings_dialog import SettingsDialog
@@ -474,6 +475,44 @@ class BreakReminderApp:
         self._refresh_tooltip()
 
 
+def _acquire_single_instance_lock(lock_path: Path) -> QLockFile | None:
+    r"""Try to acquire the BreakReminder single-instance lock (S-10).
+
+    Constructs a ``QLockFile`` at ``lock_path`` and calls ``tryLock(0)``.
+    Returns the locked ``QLockFile`` on success — the caller MUST bind
+    the return value to a name that lives for the duration of the
+    intended hold (in production, until ``QApplication.exec()``
+    returns). Dropping the reference lets the ``QLockFile``'s
+    destructor run, which unlocks and removes the lockfile —
+    defeating the entire single-instance guard. Returns ``None`` on
+    any contention reason (lock held by a live process, lockfile
+    unreadable, parent dir unwritable). Per the planning Q&A, callers
+    treat every ``None`` identically.
+
+    ``QLockFile``'s default ``staleLockTime`` (30000 ms) plus its
+    built-in PID-liveness check together handle crashed prior
+    instances automatically: a lockfile owned by a dead PID is
+    treated as stale, removed, and reacquired on the spot. We
+    therefore do NOT touch ``setStaleLockTime``.
+
+    Args:
+        lock_path: Filesystem path where the lockfile should live.
+            In production this is ``app_lock_path()`` (resolves to
+            ``%APPDATA%\\BreakReminder\\app.lock`` on Windows). Tests
+            inject a ``tmp_path``-derived value to exercise both
+            branches in isolation without touching ``%APPDATA%``.
+
+    Returns:
+        The locked ``QLockFile`` on success, or ``None`` if another
+        live instance already holds it (or the lockfile cannot be
+        created for any reason).
+    """
+    lock = QLockFile(str(lock_path))
+    if lock.tryLock(0):
+        return lock
+    return None
+
+
 def main() -> int:
     """Process entry point — see ``__main__.py`` and ``main.py``."""
     logging.basicConfig(
@@ -485,6 +524,21 @@ def main() -> int:
     qt_app.setApplicationName(APPLICATION_NAME)
     # Tray app: closing the settings window does NOT quit the process.
     qt_app.setQuitOnLastWindowClosed(False)
+
+    # S-10: single-instance guard. The lock MUST stay bound to a local
+    # for the lifetime of qt_app.exec() — dropping the reference would
+    # let QLockFile's destructor unlock + remove the file, defeating
+    # the guard. The leading underscore documents held-for-side-effects
+    # intent; ruff's default dummy-variable-rgx exempts _* names from
+    # F841. See _acquire_single_instance_lock docstring for rationale.
+    _instance_lock = _acquire_single_instance_lock(app_lock_path())
+    if _instance_lock is None:
+        QMessageBox.information(
+            None,
+            APPLICATION_NAME,
+            f"{APPLICATION_NAME} is already running. Look for the clock icon in the system tray.",
+        )
+        return 0
 
     if not QSystemTrayIcon.isSystemTrayAvailable():
         QMessageBox.critical(

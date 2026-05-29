@@ -254,7 +254,7 @@ No data migration. No `Settings` schema change, no `reminders.json` shape change
 
 #### Automated
 
-- [x] 2.1 `git grep -nE 'status: implemented' context/changes/bugfix-single-instance-guard/change.md` returns exactly one match
-- [x] 2.2 `git grep -nE '\| S-10 \|.*\| done \|' context/foundation/roadmap.md` returns exactly one match (At a glance row, post-flip)
-- [x] 2.3 `git grep -nE '\*\*Status:\*\* done' context/foundation/roadmap.md` count increased by one vs. baseline (Slices block, post-flip)
-- [x] 2.4 `git grep -nE '\*\*S-10:' context/foundation/roadmap.md` returns at least one match (Done-section bullet)
+- [x] 2.1 `git grep -nE 'status: implemented' context/changes/bugfix-single-instance-guard/change.md` returns exactly one match — 93437bd
+- [x] 2.2 `git grep -nE '\| S-10 \|.*\| done \|' context/foundation/roadmap.md` returns exactly one match (At a glance row, post-flip) — 93437bd
+- [x] 2.3 `git grep -nE '\*\*Status:\*\* done' context/foundation/roadmap.md` count increased by one vs. baseline (Slices block, post-flip) — 93437bd
+- [x] 2.4 `git grep -nE '\*\*S-10:' context/foundation/roadmap.md` returns at least one match (Done-section bullet) — 93437bd

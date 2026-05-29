@@ -269,6 +269,27 @@ once they exceed a size threshold.
 
 Newest first. Dates are tag-push dates.
 
+### v0.7.1 — 2026-05-29
+
+Patch release. S-10 only — correctness bugfix; no new user-visible
+features.
+
+- **S-10 bugfix-single-instance-guard**: launching a second copy of
+  BreakReminder while another instance is already running now shows
+  a single info-level **"BreakReminder is already running. Look for
+  the clock icon in the system tray."** message box and exits
+  cleanly with code 0; the first instance's tray icon, schedulers,
+  and listeners are unaffected. Crashed prior instances (Task
+  Manager → End Task on `BreakReminder.exe`) are auto-recovered via
+  Qt `QLockFile`'s built-in PID-liveness check on the next launch
+  with no manual lockfile cleanup. Closes the data-corruption
+  surface where running BreakReminder N times spawned N independent
+  tray icons each with its own pynput listeners, schedulers,
+  event-log writer, and reminder-store writer (concurrent writes to
+  `events.log` and `reminders.json` could race and lose data).
+
+Test suite: 501 → 505.
+
 ### v0.7.0 — 2026-05-28
 
 S-08 + S-09. Daily / weekly / monthly recurrence on custom reminders

@@ -3,8 +3,8 @@ change_id: bugfix-single-instance-guard
 title: Prevent multiple BreakReminder instances from running concurrently (S-10)
 created: 2026-05-29
 updated: 2026-05-29
-status: impl_reviewed
-archived_at: null
+status: archived
+archived_at: 2026-05-29T09:49:33Z
 ---
 
 ## Notes

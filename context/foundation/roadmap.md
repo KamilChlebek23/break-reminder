@@ -3,7 +3,7 @@ project: BreakReminder
 version: 1
 status: draft
 created: 2026-05-25
-updated: 2026-05-28
+updated: 2026-05-29
 prd_version: 1
 main_goal: low-complexity
 top_blocker: none
@@ -39,6 +39,7 @@ BreakReminder is a Windows 11 tray-resident utility for focus-minded solo progra
 | S-07 | reminders-edit-delete | edit and delete custom reminders in the list | S-06 | FR-012 | done |
 | S-08 | reminders-recurrence-editor | configure a custom reminder to recur daily / weekly / monthly | S-06 | FR-014 | done |
 | S-09 | bugfix-break-cycle-reset-on-save | have the break countdown restart cleanly after changing the break interval | — | FR-006, FR-008 | done |
+| S-10 | bugfix-single-instance-guard | run only one BreakReminder instance at a time (duplicate launches no-op with a message) | — | FR-003, FR-015 | planned |
 
 ## Streams
 
@@ -209,6 +210,18 @@ The PRD must-have FRs and user stories below are **already shipped in v0.1.0** a
 - **Risk:** low. Two small touches: a new `BreakScheduler.reset_cycle()` method (sets `_active_seconds = 0`, clears `_snooze_until`, leaves `_snoozes_used` alone — distinct from `on_break_taken()` which also clears the snooze counter), and one signal wiring from `SettingsDialog.accept()` (or `app.py`) into the new slot. Mirrors the existing `reminder_added` / `reminder_updated` wiring pattern from `ReminderFormDialog` through `app.py`. Test surface: one new `TestBreakSchedulerResetCycle` class in `tests/test_scheduler.py` plus one signal-wiring assertion in `tests/test_settings_dialog.py`.
 - **Status:** done
 
+### S-10: bugfix-single-instance-guard
+
+- **Outcome:** launching `BreakReminder.exe` (or `python -m break_reminder`) while another copy is already running shows a single `QMessageBox.information("BreakReminder is already running. Look for the clock icon in the system tray.")` and the second process exits cleanly with code 0; the first instance is unaffected. Hard-killed prior instances (Task Manager → End Task) are auto-recovered via `QLockFile`'s built-in PID-liveness check on the next launch — no manual lockfile cleanup ever required. Fixes the observed defect where running BreakReminder N times produces N independent tray icons, each with its own pynput listeners, schedulers, event-log writer, and reminder-store writer (a correctness bug — concurrent writes to `events.log` and `reminders.json` race).
+- **Change ID:** `bugfix-single-instance-guard`
+- **PRD refs:** FR-003 (autostart-on-Windows-login is the most common trigger path because the user can't see the small tray icon and assumes the app isn't running), FR-015 (the event-log integrity surface this prevents from violating); also touches the "Settings persist across reboots and updates" guardrail (the data-corruption guardrail this prevents from violating).
+- **Prerequisites:** — (orthogonal to S-01..S-09)
+- **Parallel with:** —
+- **Blockers:** —
+- **Unknowns:** —
+- **Risk:** low. Single-file production change in `break_reminder/app.py` plus a one-line path helper in `storage/paths.py` and a four-test class in `tests/test_app.py`. Pattern is well-trodden Qt (`QLockFile` from QtCore — already in deps via PySide6, no new dependency). Test surface is small and same-process-testable because Qt uses an OS-level file lock under the hood. Mirrors S-09's bugfix shape (single phase + bookkeeping). Critical gotcha pinned in the plan: the returned `QLockFile` MUST be bound to a local in `main()` for the lifetime of `qt_app.exec()` — drop the binding and the lock GCs immediately, defeating the fix.
+- **Status:** planned
+
 ## Backlog Handoff
 
 | Roadmap ID | Change ID | Suggested issue title | Ready for `/10x-plan` | Notes |
@@ -223,6 +236,7 @@ The PRD must-have FRs and user stories below are **already shipped in v0.1.0** a
 | S-07 | `reminders-edit-delete` | Edit and delete entries in the reminders list | yes | Planned + shipped 2026-05-27 |
 | S-08 | `reminders-recurrence-editor` | Daily / weekly / monthly recurrence in the add/edit dialog | yes | Planned + shipped 2026-05-28 |
 | S-09 | `bugfix-break-cycle-reset-on-save` | Reset BreakScheduler cycle when Scheduling settings are saved | yes | Discovered 2026-05-28 from real-world use of v0.6.0 |
+| S-10 | `bugfix-single-instance-guard` | Add QLockFile-based single-instance guard so duplicate launches no-op with a message | yes | Discovered 2026-05-29 from real-world use; planned same day |
 
 ## Open Roadmap Questions
 

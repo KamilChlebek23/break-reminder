@@ -49,3 +49,8 @@ def event_log_path() -> Path:
 def reminders_json_path() -> Path:
     """Path to the custom-reminders JSON store (FR-011 / FR-012)."""
     return app_data_dir() / "reminders.json"
+
+
+def app_lock_path() -> Path:
+    """Path to the single-instance lockfile (S-10)."""
+    return app_data_dir() / "app.lock"

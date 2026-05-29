@@ -232,29 +232,29 @@ No data migration. No `Settings` schema change, no `reminders.json` shape change
 
 #### Automated
 
-- [x] 1.1 Unit tests pass: `uv run pytest tests/test_app.py -v` (includes new `TestSingleInstanceLock`)
-- [x] 1.2 Full suite passes: `uv run pytest`
-- [x] 1.3 Type check passes: `uv run pyright`
-- [x] 1.4 Linting passes: `uv run ruff check`
-- [x] 1.5 Format check passes: `uv run ruff format --check`
-- [x] 1.6 Security audit passes: `uv run pip-audit`
-- [x] 1.7 License gate passes: `uv run pip-licenses --fail-on="AGPL"`
+- [x] 1.1 Unit tests pass: `uv run pytest tests/test_app.py -v` (includes new `TestSingleInstanceLock`) — 6ac557f
+- [x] 1.2 Full suite passes: `uv run pytest` — 6ac557f
+- [x] 1.3 Type check passes: `uv run pyright` — 6ac557f
+- [x] 1.4 Linting passes: `uv run ruff check` — 6ac557f
+- [x] 1.5 Format check passes: `uv run ruff format --check` — 6ac557f
+- [x] 1.6 Security audit passes: `uv run pip-audit` — 6ac557f
+- [x] 1.7 License gate passes: `uv run pip-licenses --fail-on="AGPL"` — 6ac557f
 
 #### Manual
 
-- [x] 1.8 Real Windows: launch BreakReminder — tray icon appears
-- [x] 1.9 Real Windows: launch second copy — message box appears, second process exits cleanly, first instance unaffected
-- [x] 1.10 Real Windows: launch third copy — same behavior as second
-- [x] 1.11 Real Windows: hard-kill via Task Manager, relaunch — startup proceeds normally (stale lockfile reclaimed)
-- [x] 1.12 Real Windows: open Settings → modify break interval → OK with first instance running — works (no lock interference with in-process operation)
-- [x] 1.13 Real Windows: existing flows (Take break now, Reset, Pause/Resume, break-due dialog, custom reminders, Check for updates) all still work
-- [x] 1.14 Real Windows: bundled `.exe --self-test` while a tray instance is running — exits 0
+- [x] 1.8 Real Windows: launch BreakReminder — tray icon appears — 6ac557f
+- [x] 1.9 Real Windows: launch second copy — message box appears, second process exits cleanly, first instance unaffected — 6ac557f
+- [x] 1.10 Real Windows: launch third copy — same behavior as second — 6ac557f
+- [x] 1.11 Real Windows: hard-kill via Task Manager, relaunch — startup proceeds normally (stale lockfile reclaimed) — 6ac557f
+- [x] 1.12 Real Windows: open Settings → modify break interval → OK with first instance running — works (no lock interference with in-process operation) — 6ac557f
+- [x] 1.13 Real Windows: existing flows (Take break now, Reset, Pause/Resume, break-due dialog, custom reminders, Check for updates) all still work — 6ac557f
+- [x] 1.14 Real Windows: bundled `.exe --self-test` while a tray instance is running — exits 0 — 6ac557f
 
 ### Phase 2: Bookkeeping
 
 #### Automated
 
-- [ ] 2.1 `git grep -nE 'status: implemented' context/changes/bugfix-single-instance-guard/change.md` returns exactly one match
-- [ ] 2.2 `git grep -nE '\| S-10 \|.*\| done \|' context/foundation/roadmap.md` returns exactly one match (At a glance row, post-flip)
-- [ ] 2.3 `git grep -nE '\*\*Status:\*\* done' context/foundation/roadmap.md` count increased by one vs. baseline (Slices block, post-flip)
-- [ ] 2.4 `git grep -nE '\*\*S-10:' context/foundation/roadmap.md` returns at least one match (Done-section bullet)
+- [x] 2.1 `git grep -nE 'status: implemented' context/changes/bugfix-single-instance-guard/change.md` returns exactly one match
+- [x] 2.2 `git grep -nE '\| S-10 \|.*\| done \|' context/foundation/roadmap.md` returns exactly one match (At a glance row, post-flip)
+- [x] 2.3 `git grep -nE '\*\*Status:\*\* done' context/foundation/roadmap.md` count increased by one vs. baseline (Slices block, post-flip)
+- [x] 2.4 `git grep -nE '\*\*S-10:' context/foundation/roadmap.md` returns at least one match (Done-section bullet)

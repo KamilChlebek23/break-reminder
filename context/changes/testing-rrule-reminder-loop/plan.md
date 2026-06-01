@@ -86,6 +86,14 @@ Move the duplicated `Clock` class out of the three test files (`test_break_sched
 
 **Contract**: After the edit, the file has no local `Clock` class; the `frozen_utc` + local `clock` fixtures are unchanged in shape and epoch; every existing test in the file still passes with byte-identical observable behaviour.
 
+#### 5. Sync `tests/__init__.py` docstring with the new conftest ownership
+
+**File**: `tests/__init__.py`
+
+**Intent**: Update the package docstring so it no longer claims the `Clock` helper is "kept file-local". After the conftest extraction the old wording becomes actively misleading as a rule-for-AI artifact (a future contributor reading it might re-introduce a local `Clock` to honour the stated convention). Replace the file-local claim with the new shape: shared `Clock` class in conftest, per-file `clock` fixtures stay local because epochs diverge.
+
+**Contract**: The frontmatter docstring is the only edit; no executable code in `tests/__init__.py` changes. Captured retroactively per impl-review F1 (2026-06-01).
+
 ### Success Criteria:
 
 #### Automated Verification:
@@ -222,15 +230,15 @@ Module-level `TODO(R-1b)` block (placed at the top of the file, after the module
 
 #### Automated
 
-- [x] 1.1 All existing tests pass (collected count unchanged vs HEAD baseline): `uv run pytest`
-- [x] 1.2 Ruff lint passes on the moved Clock class + clock fixture: `uv run ruff check tests/`
-- [x] 1.3 Pyright type check passes: `uv run pyright`
+- [x] 1.1 All existing tests pass (collected count unchanged vs HEAD baseline): `uv run pytest` (1268312)
+- [x] 1.2 Ruff lint passes on the moved Clock class + clock fixture: `uv run ruff check tests/` (1268312)
+- [x] 1.3 Pyright type check passes: `uv run pyright` (1268312)
 
 #### Manual
 
-- [x] 1.4 `git diff` on the two existing test files shows only deletions (plus optionally one import line each)
-- [x] 1.5 `git diff tests/conftest.py` shows additions only (existing `_qt_app` fixture untouched)
-- [x] 1.6 Running the two existing scheduler test files in isolation reports 41 tests passing
+- [x] 1.4 `git diff` on the two existing test files shows only deletions (plus optionally one import line each) (1268312)
+- [x] 1.5 `git diff tests/conftest.py` shows additions only (existing `_qt_app` fixture untouched) (1268312)
+- [x] 1.6 Running the two existing scheduler test files in isolation reports 41 tests passing (1268312)
 
 ### Phase 2: Add recurring-reminder integration tests + refresh test-plan docs
 

@@ -73,26 +73,11 @@ from break_reminder.ui.reminder_form_dialog import (
     _round_up_to_minutes,
     _rrule_to_picker_choice,
 )
+from tests.conftest import Clock
 
 # ---------------------------------------------------------------------------
 # Fixtures + helpers
 # ---------------------------------------------------------------------------
-
-
-class Clock:
-    """Mutable, controllable time source. Returns tz-aware UTC."""
-
-    def __init__(self, start: datetime) -> None:
-        """Pin the clock at ``start``; later calls return the current ``_now``."""
-        self._now = start
-
-    def __call__(self) -> datetime:
-        """Return the clock's current ``_now`` value."""
-        return self._now
-
-    def advance(self, seconds: float) -> None:
-        """Advance the clock forward by ``seconds`` real-time seconds."""
-        self._now += timedelta(seconds=seconds)
 
 
 @pytest.fixture

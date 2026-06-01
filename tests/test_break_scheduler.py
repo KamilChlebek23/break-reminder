@@ -24,28 +24,13 @@ import pytest
 from break_reminder.activity import ActivityMonitor
 from break_reminder.scheduler import BreakScheduler
 from break_reminder.storage.settings import Settings
+from tests.conftest import Clock
 
 # ``ActivityMonitor.__init__`` is side-effect-free — pynput listeners are
 # only spun up by ``start()``, which we never call in tests. Using the
 # real class (rather than a hand-rolled fake) keeps the signal contract
 # in lockstep with production and means there's no second class to keep
 # in sync when ActivityMonitor evolves.
-
-
-class Clock:
-    """Mutable, controllable time source."""
-
-    def __init__(self, start: datetime) -> None:
-        """Pin the clock at ``start``; later calls return the current ``_now``."""
-        self._now = start
-
-    def __call__(self) -> datetime:
-        """Return the clock's current ``_now`` value."""
-        return self._now
-
-    def advance(self, seconds: float) -> None:
-        """Advance the clock forward by ``seconds`` real-time seconds."""
-        self._now += timedelta(seconds=seconds)
 
 
 @pytest.fixture

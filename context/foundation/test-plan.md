@@ -4,7 +4,7 @@ version: 1
 status: draft
 created: 2026-06-01
 rollout_phases_total: 4
-rollout_phases_complete: 0
+rollout_phases_complete: 1
 context_type: brownfield
 ---
 
@@ -52,7 +52,7 @@ The rollout schedule. Status vocabulary literals (parser-required, do not locali
 
 | # | Phase | Goal (protection this phase proves) | Risks covered | Test types | Status | Change folder | Order rationale |
 |---|---|---|---|---|---|---|---|
-| 1 | Integration-test foundation + recurring-reminder loop | Stand up the pytest-qt + virtual-clock integration harness that R-2/R-3/R-4 will reuse; land the first integration test on R-1's *fire → re-arm → fire again* loop because R-1 is the highest-impact lived worry (double-cited). | R-1 (primary); foundation for R-2/R-3/R-4 | pytest-qt integration; deterministic virtual clock; DST-boundary + 24h-cap fixtures | change opened | `testing-rrule-reminder-loop` | Without an integration harness, R-2/R-3/R-4 have no landing pad. R-1 is the most-cited lived risk. Goes first. |
+| 1 | Integration-test foundation + recurring-reminder loop | Stand up the pytest-qt + virtual-clock integration harness that R-2/R-3/R-4 will reuse; land the first integration test on R-1's *fire → re-arm → fire again* loop because R-1 is the highest-impact lived worry (double-cited). | R-1 (primary); foundation for R-2/R-3/R-4 | pytest-qt integration; deterministic virtual clock; DST-boundary + 24h-cap fixtures | complete | `testing-rrule-reminder-loop` | Without an integration harness, R-2/R-3/R-4 have no landing pad. R-1 is the most-cited lived risk. Goes first. |
 | 2 | FR-009 wedge: modal-stacking integration tests | Prove the break popup remains clickable when Settings (or the custom-reminder form, or another popup) is the topmost dialog. If research surfaces the root cause as a modality choice, the same phase ships the fix. | R-2 | pytest-qt integration with `QTest.mouseClick` on popup buttons while sibling dialogs are open | not started | — | The wedge is THE product differentiator; FR-009 silently degrading is a direct PRD violation. Built on Phase 1's harness. |
 | 3 | Storage round-trip robustness (parametrized malformed-input) | Enumerate every malformed-input class against `storage/reminders.py` + `storage/settings.py` `from_dict` / load boundaries; close the S-06b retrospective lesson into a regression net for the Notepad-editable surface. | R-5 | Parametrized pure-function unit tests; no Qt event loop | not started | — | Independent of Phase 1/2 — can run in parallel. Cheapest layer per risk; closes the only realistic abuse vector. |
 | 4 | Cross-cutting integration tests + CI tier | One integration test per top-three end-to-end flow (Add reminder → arm → fire; Save settings → cycle reset → next break fires; Pause → Resume → post-resume interval honored). Wire the integration tier into CI as a separate `pytest -m integration` step so the unit tier stays fast. | R-4 (primary); regression catchment for R-1 / R-2 / R-3 | pytest-qt integration; pytest marker + CI job split | not started | — | Cross-cutting flows are the regression net for everything Phases 1–3 added. Last because it depends on the harness + the wedge work being in place. |
@@ -140,7 +140,7 @@ Per-area patterns. Populated as rollout phases land — each phase's final sub-p
 
 | Area | Pattern (TBD until phase ships) | Owner phase |
 |---|---|---|
-| Recurring-reminder re-arm loop | TBD — Phase 1 will ship the pytest-qt + virtual-clock integration harness; future tests follow the *fire → advance clock → verify next firing → re-arm → fire again* shape captured from §2 R-1. | Phase 1 |
+| Recurring-reminder re-arm loop | `tests/test_recurring_reminder_integration.py::TestRecurringReminderReArm` — seed `Reminder(start_at, rrule_str)` → `reload` → connect recording slot to `reminder_due` → advance `Clock` past first `fire_at` → call `_on_timer()` → assert first signal → advance `Clock` past next RRULE step → call `_on_timer()` → assert second signal with `event_at = dtstart + period` (oracle from RRULE spec, NEVER from scheduler internals). Weekly with `start_at` set well past the 24h cap (the test uses 13 days out) doubles as the cap-re-entry exercise. | Phase 1 |
 | Modal-stacking / wedge survival | TBD — Phase 2 will ship the *open Settings + emit `break_due` + `QTest.mouseClick` on popup button + assert popup closed AND Settings still open* shape. | Phase 2 |
 | Storage hand-edit robustness | TBD — Phase 3 will ship parametrized fixtures enumerating malformed-input classes (string-where-int, missing key, out-of-range numeric, malformed RRULE / ISO datetime, unknown extra key) against each `from_dict` boundary. | Phase 3 |
 | Cross-cutting end-to-end flows | TBD — Phase 4 will ship one-integration-test-per-flow scoped to a single cross-module contract; reuses the Phase 1 harness. | Phase 4 |
@@ -157,6 +157,7 @@ Test surfaces this rollout explicitly **will not** invest in. Lifted from the Ph
 - **No NSIS installer UI automation.** Humans drive the NSIS UI; FR-001 acceptance is human-verified per `context/deployment/deploy-plan.md`. Automating clicks through `nsis.exe` in CI is a tarpit.
 - **No pinning of `pyttsx3` / Win32 / Qt vendor error strings.** These churn across version bumps; tests that assert on exact wording break without signal.
 - **No abuse / authZ / payments / network test surfaces.** The product has no auth, no payments, no outbound network (PRD NFR "Local-only data"). The only abuse-class risk that survives is hand-edited storage tampering, and that is R-5 in §2.
+- **No DST-drift fix for recurring firings.** Phase 1 research surfaced that recurring reminders silently drift ±1h across DST transitions because RRULE math runs in UTC space against a UTC-invariant storage layer (see `context/changes/testing-rrule-reminder-loop/research.md` §R-1b). The fix changes the `Reminder.start_at` invariant from UTC to IANA-tz-aware; it warrants its own `/10x-shape` cycle as `bugfix-reminder-dst-drift`. The `TODO(R-1b)` comment block in `tests/test_recurring_reminder_integration.py` carries the breadcrumb. Re-evaluate this entry when the bugfix change opens.
 
 ## Refresh cadence
 

@@ -1,10 +1,10 @@
 ---
 change_id: testing-rrule-reminder-loop
 title: Testing rrule reminder loop
-status: implemented
+status: archived
 created: 2026-06-01
 updated: 2026-06-01
-archived_at: null
+archived_at: 2026-06-01T19:12:17Z
 ---
 
 ## Notes

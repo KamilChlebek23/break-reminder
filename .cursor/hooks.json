@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "hooks": {
+    "afterFileEdit": [
+      {
+        "command": "powershell -NoProfile -ExecutionPolicy Bypass -File .cursor/hooks/lint-on-edit.ps1",
+        "timeout": 30
+      },
+      {
+        "command": "powershell -NoProfile -ExecutionPolicy Bypass -File .cursor/hooks/typecheck-on-edit.ps1",
+        "timeout": 60
+      }
+    ]
+  }
+}

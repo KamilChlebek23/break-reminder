@@ -244,14 +244,14 @@ Module-level `TODO(R-1b)` block (placed at the top of the file, after the module
 
 #### Automated
 
-- [x] 2.1 New + existing tests all pass (collected count = HEAD baseline + exactly 4): `uv run pytest`
-- [x] 2.2 Ruff lint passes (Google-style docstrings on 4 new test methods + module docstring): `uv run ruff check`
-- [x] 2.3 Pyright type check passes: `uv run pyright`
-- [x] 2.4 Pip-audit clean (no new deps): `uv run pip-audit`
+- [x] 2.1 New + existing tests all pass (collected count = HEAD baseline + exactly 4): `uv run pytest` (386ef94)
+- [x] 2.2 Ruff lint passes (Google-style docstrings on 4 new test methods + module docstring): `uv run ruff check` (386ef94)
+- [x] 2.3 Pyright type check passes: `uv run pyright` (386ef94)
+- [x] 2.4 Pip-audit clean (no new deps): `uv run pip-audit` (386ef94)
 
 #### Manual
 
-- [x] 2.5 Single new test runs green in isolation: `uv run pytest tests/test_recurring_reminder_integration.py::TestRecurringReminderReArm::test_daily_reminder_fires_today_and_tomorrow -v`
-- [x] 2.6 Deliberate-regression smoke (comment out the post-fire `self.reload()` at end of `_on_timer` in `scheduler.py`, re-run daily test, confirm clear failure, revert)
-- [x] 2.7 `context/foundation/test-plan.md` §3 row 1 status reads `complete` and §6 Cookbook row no longer contains "TBD"
-- [x] 2.8 `TODO(R-1b)` module comment block present in new test file and references research.md §R-1b + Open Questions
+- [x] 2.5 Single new test runs green in isolation: `uv run pytest tests/test_recurring_reminder_integration.py::TestRecurringReminderReArm::test_daily_reminder_fires_today_and_tomorrow -v` (386ef94)
+- [x] 2.6 Deliberate-regression smoke (comment out the post-fire `self.reload()` at end of `_on_timer` in `scheduler.py`, re-run daily test, confirm clear failure, revert) (386ef94)
+- [x] 2.7 `context/foundation/test-plan.md` §3 row 1 status reads `complete` and §6 Cookbook row no longer contains "TBD" (386ef94)
+- [x] 2.8 `TODO(R-1b)` module comment block present in new test file and references research.md §R-1b + Open Questions (386ef94)

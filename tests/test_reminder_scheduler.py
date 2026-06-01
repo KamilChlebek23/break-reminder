@@ -22,22 +22,7 @@ import pytest
 
 from break_reminder.scheduler import ReminderScheduler
 from break_reminder.storage.reminders import Reminder, ReminderStore
-
-
-class Clock:
-    """Mutable, controllable time source — same shape as ``test_break_scheduler.Clock``."""
-
-    def __init__(self, start: datetime) -> None:
-        """Pin the clock at ``start``; later calls return the current ``_now``."""
-        self._now = start
-
-    def __call__(self) -> datetime:
-        """Return the clock's current ``_now`` value."""
-        return self._now
-
-    def advance(self, seconds: float) -> None:
-        """Advance the clock forward by ``seconds`` real-time seconds."""
-        self._now += timedelta(seconds=seconds)
+from tests.conftest import Clock
 
 
 @pytest.fixture

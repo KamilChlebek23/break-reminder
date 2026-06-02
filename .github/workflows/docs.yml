@@ -31,9 +31,39 @@ jobs:
     name: Build pdoc site (ubuntu-latest)
     runs-on: ubuntu-latest
 
+    env:
+      # pdoc *imports* every module it documents in order to introspect
+      # signatures and docstrings. PySide6's QtGui touches Qt's QPA on
+      # import; without an offscreen platform plugin Qt would try to
+      # connect to an X display that doesn't exist on the runner and
+      # the import would still fail even after libEGL is installed.
+      QT_QPA_PLATFORM: offscreen
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Install Qt6 + pynput runtime libs (headless)
+        # PySide6 wheels dynamically link libEGL / libGL / libxkbcommon
+        # at import time, and pynput needs libX11 / libXi / libXtst.
+        # ubuntu-latest does NOT ship these by default, so pdoc's
+        # `import break_reminder.app` aborts with
+        # `ImportError: libEGL.so.1: cannot open shared object file`.
+        # The Qt6 lib set below is the conventional headless-PySide6
+        # bundle (libxcb-cursor0 is the Qt 6.5+ addition; without it
+        # the xcb platform plugin fails to load on a future code path
+        # even though offscreen is the active QPA for this build).
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 \
+            libgl1 \
+            libxkbcommon0 \
+            libdbus-1-3 \
+            libfontconfig1 \
+            libxcb-cursor0 \
+            libxi6 \
+            libxtst6
 
       - name: Install uv
         # Same pin as release.yml — see the supply-chain comment block

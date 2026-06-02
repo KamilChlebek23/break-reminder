@@ -17,6 +17,11 @@ Every dismiss path is overridden:
   WindowTitleHint`` removes the OS close button.
 * ``WA_ShowWithoutActivating`` + ``show()`` (not ``exec()``) — the window
   appears on top without stealing focus from the IDE.
+* ``setWindowModality(Qt.ApplicationModal)`` — claims the application-wide
+  input grab on construction, so when a sibling dialog (Settings,
+  ReminderFormDialog) is already ``.exec()``'d, BreakDialog still receives
+  mouse / keyboard events instead of being a Z-order-only overlay. Closes
+  the R-2 modal-stacking wedge.
 
 If you add a new way to clear the dialog (a button, a hotkey), it **must**
 set ``self._user_action = True`` before calling ``close()``. Otherwise
@@ -101,6 +106,10 @@ class BreakDialog(QDialog):
         # "the in-flight keystroke completes in the previously focused app".
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        # ApplicationModal closes R-2: a sibling .exec()-loop modal
+        # (Settings / ReminderFormDialog) cannot wedge input away from us.
+        # Orthogonal to WA_ShowWithoutActivating + Qt.NoFocus (US-02).
+        self.setWindowModality(Qt.WindowModality.ApplicationModal)
 
         self._build_ui(snooze_remaining)
 

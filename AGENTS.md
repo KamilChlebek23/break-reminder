@@ -69,6 +69,7 @@ The "non-dismissable" property is implemented by overriding **every** dismiss pa
 - `closeEvent` — `event.ignore()` unless the user clicked an action button (we set `self._user_action = True` first).
 - Window flags — `Qt.WindowStaysOnTopHint | Qt.CustomizeWindowHint | Qt.WindowTitleHint`. The `CustomizeWindowHint` removes the OS close button.
 - Focus policy — `setFocusPolicy(Qt.NoFocus)` and `setAttribute(Qt.WA_ShowWithoutActivating, True)` so US-02's "in-flight keystroke completes in the IDE" acceptance criterion holds.
+- Modality — `setWindowModality(Qt.ApplicationModal)` claims the application-wide input grab so a sibling `.exec()`-loop modal (Settings / ReminderFormDialog) cannot wedge input away from the popup. Closes R-2; see `context/archive/2026-06-02-testing-modal-stacking-wedge/`.
 
 If you add a new way to dismiss the dialog (a button, a menu, a hotkey), it **must** route through `_user_action = True` before `accept()` / `reject()`.
 

@@ -129,6 +129,7 @@ uv run pytest -q       # all tests passing
 5. Smoke-test the load-bearing FRs:
    - Tray menu shows: Take break now / Reset / Pause / Open settings… / Check for updates / Quit (FR-004).
    - Wait for or trigger a break dialog; verify Esc / Alt+F4 / click-outside / focus-loss do NOT dismiss it (FR-009 / US-02).
+   - Open Settings, then trigger "Take break now" from the tray; verify the popup's "I'll take a break" button is clickable WHILE Settings is still on screen. Then close the popup, open Settings → Reminders → "Add reminder", trigger "Take break now" again, verify the popup is clickable WHILE the reminder form is on screen (R-2 modal-stacking wedge).
 6. Uninstall via Settings → Apps → Installed apps → BreakReminder → Uninstall.
 7. Confirm `%APPDATA%\BreakReminder\` still exists with `BreakReminder.ini` after uninstall (FR-002).
 

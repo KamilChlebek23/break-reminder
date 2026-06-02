@@ -30,16 +30,6 @@ from break_reminder.scheduler import ReminderScheduler
 from break_reminder.storage.reminders import Reminder, ReminderStore
 from tests.conftest import Clock
 
-# TODO(R-1b): A failing test pinning the DST-drift defect surfaced by
-# `/10x-research` is intentionally NOT in this file — the fix requires a
-# Reminder.start_at invariant change (UTC -> IANA-tz-aware) and warrants
-# its own `/10x-shape` cycle as `bugfix-reminder-dst-drift`. See:
-#   context/changes/testing-rrule-reminder-loop/research.md  (section R-1b)
-#   context/changes/testing-rrule-reminder-loop/research.md  Open Questions #1, #2
-# When the bugfix change opens, the failing test belongs in
-# tests/test_scheduler.py (next_firing_after RRULE arithmetic across DST),
-# NOT here — DST is a pure-helper concern, not an integration concern.
-#
 # Phase 4 (R-4) note: `clock`, `store_path`, `store`, and (renamed)
 # `reminder_scheduler` previously lived as local fixtures here; they
 # were lifted to `tests/conftest.py` as part of the R-4 e2e harness

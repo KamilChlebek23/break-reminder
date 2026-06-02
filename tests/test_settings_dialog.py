@@ -1967,11 +1967,25 @@ class TestComposeRowRecurrence:
         assert row == f"Recur  —  Wed 2099-06-03 14:00 ({expected_suffix})"
 
     def test_active_recurring_custom_appends_custom_suffix(self) -> None:
-        """Hand-edited rrule_str → ``(custom)`` suffix."""
+        """Hand-edited rrule_str → ``(custom)`` suffix.
+
+        Pinned to ``tz="UTC"`` so the wall-clock assertion is
+        deterministic across CI runners — without it, the
+        default-factory captures the runner's OS-local, and a
+        ``BYDAY=MO,WE,FR`` rrule whose ``start_at`` straddles a
+        wall-clock-day boundary (22:00 UTC = early-morning-next-day
+        in CET/CEST) would resolve to a different "first matching
+        weekday" depending on the runner's tz. The R-1b fix
+        (Phase 2 of bugfix-reminder-dst-drift) makes the rrule
+        walk the IANA calendar instead of UTC, so this test now
+        states its tz intent explicitly. The suffix being tested
+        (``(custom)``) doesn't depend on the tz choice.
+        """
         reminder = Reminder(
             name="Custom",
             start_at=datetime(2099, 6, 3, 22, 0, tzinfo=UTC),
             rrule_str="FREQ=WEEKLY;BYDAY=MO,WE,FR",
+            tz="UTC",
         )
         now = datetime(2026, 1, 1, tzinfo=UTC)
         row = _compose_row(reminder, now, tz=timezone(timedelta(hours=-8)))

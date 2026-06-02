@@ -114,12 +114,17 @@ jobs:
           if-no-files-found: warn
 
       - name: Build PyInstaller bundle
+        # --collect-data tzdata is required: tzdata's .zoneinfo files are
+        # data-only and PyInstaller does not auto-discover them. Without
+        # this flag the packaged .exe raises ZoneInfoNotFoundError on
+        # every reminder load on Windows. See pyproject.toml for context.
         run: |
           uv run pyinstaller `
             --noconfirm `
             --windowed `
             --name BreakReminder `
             --collect-submodules pynput `
+            --collect-data tzdata `
             main.py
 
       - name: pynput submodule smoke test (bundled binary)

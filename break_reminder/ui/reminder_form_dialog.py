@@ -74,7 +74,9 @@ import logging
 from collections.abc import Callable
 from datetime import UTC, date, datetime, time, timedelta
 from typing import TYPE_CHECKING, cast
+from zoneinfo import ZoneInfoNotFoundError
 
+import tzlocal
 from PySide6.QtCore import QDate, QDateTime, Qt, QTime, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -858,6 +860,25 @@ class ReminderFormDialog(QDialog):
             self._show_tooltip(self._name_field, _NAME_EMPTY_MESSAGE)
             return
 
+        # R-1b Phase 3: capture the user's current OS-local IANA name
+        # at save time. Used below at every ``Reminder(...)``
+        # construction so the Phase 2 scheduler fix (which localizes
+        # RRULE math to ``reminder.tz``) actually receives a real
+        # named zone — not a UTC fixed offset. ``tzlocal`` reads
+        # the OS's local zone via platform-specific APIs; on Windows
+        # it normalizes the Registry's TimeZoneKeyName via
+        # ``tzdata``. The ``or "UTC"`` defends against the rare
+        # case where ``tzlocal`` returns an empty string on an
+        # unconfigured system; the ``try/except`` defends against
+        # the rarer case where the Registry's TimeZoneKeyName is
+        # corrupted or missing and ``tzlocal`` raises rather than
+        # returning empty — mirroring the same fallback chain in
+        # ``storage.reminders._coerce_tz`` (impl-review F1).
+        try:
+            current_tz = tzlocal.get_localzone_name() or "UTC"
+        except ZoneInfoNotFoundError:
+            current_tz = "UTC"
+
         # 2. Datetime validation (compare in UTC; widget gives naive local)
         # ``.toPython()`` returns a Python ``datetime`` at runtime but
         # the PySide6 stubs type it as ``object``. Use ``typing.cast``
@@ -933,12 +954,18 @@ class ReminderFormDialog(QDialog):
                 # validation), and the gate must run BEFORE the real
                 # construction in step 3 so an unparseable / exhausted
                 # rule blocks the save.
+                # ``tz=current_tz`` because the tentative is only built
+                # in the ``not firing_unchanged_in_edit`` branch — by
+                # definition the user has reshaped the schedule, so
+                # the gate must evaluate against the NEW wall-clock
+                # anchor (R-1b Phase 3 F2: refresh tz on firing change).
                 tentative = Reminder(
                     name=stripped_name,
                     start_at=start_at_utc,
                     rrule_str=rrule_str_proposed,
                     end_at=end_at_proposed,
                     lead_minutes=lead_minutes,
+                    tz=current_tz,
                 )
                 if next_firing_after(tentative, self._clock()) is None:
                     message = (
@@ -955,6 +982,21 @@ class ReminderFormDialog(QDialog):
         # S-08: ``rrule_str`` and ``end_at`` round-trip through both
         # branches so recurring reminders persist correctly.
         if self._editing is not None:
+            # R-1b Phase 3 F2: preserve ``self._editing.tz`` when the
+            # firing time / cadence / end date are byte-identical to
+            # the loaded reminder; otherwise refresh to current
+            # OS-local. Rationale: a pure rename or re-lead must
+            # NOT silently retag the reminder's wall-clock
+            # interpretation — a user who moved laptops from Warsaw
+            # to LA would otherwise shift every reminder by 9h just
+            # by renaming one. When they actively move the firing
+            # time, they're reshaping the schedule and the new tz
+            # becomes its anchor. The predicate reuses the same
+            # ``firing_unchanged_in_edit`` boolean that gates the
+            # past-time skip above — same conceptual question
+            # ("did anything firing-relevant move?"), one source
+            # of truth.
+            persisted_tz = self._editing.tz if firing_unchanged_in_edit else current_tz
             reminder = Reminder(
                 id=self._editing.id,
                 name=stripped_name,
@@ -962,6 +1004,7 @@ class ReminderFormDialog(QDialog):
                 rrule_str=rrule_str_proposed,
                 end_at=end_at_proposed,
                 lead_minutes=lead_minutes,
+                tz=persisted_tz,
             )
         else:
             reminder = Reminder(
@@ -970,6 +1013,7 @@ class ReminderFormDialog(QDialog):
                 rrule_str=rrule_str_proposed,
                 end_at=end_at_proposed,
                 lead_minutes=lead_minutes,
+                tz=current_tz,
             )
 
         # 4. Persist (atomic; only OSError needs guarding). Dispatch

@@ -87,3 +87,8 @@ Six F-fixes from the plan-review pass all show up in code:
 ## Summary
 
 The implementation matches the reviewed-and-fixed plan precisely. Phase 2 bookkeeping is complete. No follow-up work needed.
+
+> **NOTE 2026-06-02**: The "DST correctness" claim above was scoped only to
+> `_local_date_to_utc_end_of_day` (end-date conversion). The recurring-firing
+> DST drift (R-1b) was missed and shipped with S-08; fixed in
+> `context/archive/2026-06-02-bugfix-reminder-dst-drift/`.

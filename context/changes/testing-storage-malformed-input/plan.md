@@ -409,27 +409,27 @@ None. The `_read` fix is strictly more permissive than today's behavior (it acce
 
 #### Automated
 
-- [x] 2.1 `TestReminderStoreReadResilience` added to `tests/test_reminders.py` after `TestDefensiveBehavior`; ≥ 4 tests covering the contract in Phase 2 Changes Required #1
-- [x] 2.2 New tests FAIL RED: `uv run pytest tests/test_reminders.py::TestReminderStoreReadResilience -v` shows FAIL on every new test
-- [x] 2.3 Existing + Phase 1 tests unaffected: `uv run pytest tests/test_reminders.py -k "not TestReminderStoreReadResilience"` PASS
-- [x] 2.4 Lint / format / type / pre-commit clean on the new test class
+- [x] 2.1 `TestReminderStoreReadResilience` added to `tests/test_reminders.py` after `TestDefensiveBehavior`; ≥ 4 tests covering the contract in Phase 2 Changes Required #1 — 5468143
+- [x] 2.2 New tests FAIL RED: `uv run pytest tests/test_reminders.py::TestReminderStoreReadResilience -v` shows FAIL on every new test — 5468143
+- [x] 2.3 Existing + Phase 1 tests unaffected: `uv run pytest tests/test_reminders.py -k "not TestReminderStoreReadResilience"` PASS — 5468143
+- [x] 2.4 Lint / format / type / pre-commit clean on the new test class — 5468143
 
 #### Manual
 
-- [ ] 2.5 RED failure messages clearly indicate the expected post-fix behavior (a future reader can understand the fix from the failure alone)
-- [ ] 2.6 Tests use pytest's `caplog` fixture (not `monkeypatch`ed logging); idiomatic pattern
-- [ ] 2.7 Assertions use behavior-level oracles, not implementation-mirror oracles
+- [x] 2.5 RED failure messages clearly indicate the expected post-fix behavior (a future reader can understand the fix from the failure alone) — 5468143
+- [x] 2.6 Tests use pytest's `caplog` fixture (not `monkeypatch`ed logging); idiomatic pattern — 5468143
+- [x] 2.7 Assertions use behavior-level oracles, not implementation-mirror oracles — 5468143
 
 ### Phase 3: GREEN — apply the `_read` fix
 
 #### Automated
 
-- [ ] 3.1 `break_reminder/storage/reminders.py` modified: `import logging` added; `logger = logging.getLogger(__name__)` added at module level; `_read` body replaced per Phase 3 Changes Required #1 contract
-- [ ] 3.2 Module docstring updated to document the row-resilience (Phase 3 Changes Required #2)
-- [ ] 3.3 Phase 2 RED tests turn GREEN: `uv run pytest tests/test_reminders.py::TestReminderStoreReadResilience -v` PASS
-- [ ] 3.4 Existing tests still PASS (regression sweep): `uv run pytest tests/test_reminders.py` PASS
-- [ ] 3.5 Full suite still PASS: `uv run pytest`
-- [ ] 3.6 Lint / format / type / pre-commit clean on `reminders.py`
+- [x] 3.1 `break_reminder/storage/reminders.py` modified: `import logging` added; `logger = logging.getLogger(__name__)` added at module level; `_read` body replaced per Phase 3 Changes Required #1 contract
+- [x] 3.2 Module docstring updated to document the row-resilience (Phase 3 Changes Required #2)
+- [x] 3.3 Phase 2 RED tests turn GREEN: `uv run pytest tests/test_reminders.py::TestReminderStoreReadResilience -v` PASS
+- [x] 3.4 Existing tests still PASS (regression sweep): `uv run pytest tests/test_reminders.py` PASS
+- [x] 3.5 Full suite still PASS: `uv run pytest`
+- [x] 3.6 Lint / format / type / pre-commit clean on `reminders.py`
 
 #### Manual
 

@@ -18,5 +18,5 @@ search box top-left to jump to a specific class or function.
 - [`break_reminder.storage`](break_reminder/storage.html) — INI settings, reminders JSON, event log CSV under ``%APPDATA%\BreakReminder\``.
 """
 
-__version__ = "0.7.1"
+__version__ = "0.7.2"
 __all__ = ["__version__"]

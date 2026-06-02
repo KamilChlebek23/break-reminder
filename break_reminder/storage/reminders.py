@@ -10,11 +10,20 @@ module persists the string verbatim; computing the next firing is the
 scheduler's job (see ``break_reminder.scheduler``). Keeping the parsing out
 of the storage layer means an invalid RRULE string never blocks the file
 from loading — the scheduler can flag it instead.
+
+``ReminderStore._read`` is row-resilient on top of the file-level corrupt-JSON
+fallback: a single malformed row (missing required key, malformed ISO, wrong
+type) is dropped with a ``logger.warning`` naming the row index + exception,
+while well-formed siblings continue to load. The file-level guard (corrupt
+JSON → ``[]``) and the row-level guard (one bad row → that row dropped) are
+independent layers; together they implement FR-015's "Notepad-editable"
+stance for the reminders surface.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import threading
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -22,6 +31,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from break_reminder.storage.paths import reminders_json_path
+
+logger = logging.getLogger(__name__)
 
 # S-06b lead-time bounds enforced on disk read. These deliberately mirror
 # ``break_reminder.ui.reminder_form_dialog._LEAD_MIN_VALUE`` /
@@ -219,6 +230,10 @@ class ReminderStore:
     # ---- private --------------------------------------------------------
 
     def _read(self) -> list[Reminder]:
+        # Row-resilient on three independent layers (see module docstring's
+        # "row-resilient" paragraph for the contract): (a) file-level
+        # corrupt-JSON → []; (b) non-list top-level → [] + single WARNING;
+        # (c) per-row exception → row dropped + WARNING, siblings preserved.
         if not self._path.exists():
             return []
         try:
@@ -229,7 +244,37 @@ class ReminderStore:
             # The user will lose the broken file's contents, but the INI
             # settings and event log are unaffected.
             return []
-        return [Reminder.from_dict(item) for item in raw]
+        if not isinstance(raw, list):
+            # Top-level guard: ``json.load`` accepts any JSON type; iterating
+            # a dict yields its keys (strings) and iterating a string yields
+            # chars — both would crash inside ``from_dict`` with N spurious
+            # per-row warnings. Collapse to a single WARNING + ``[]`` so the
+            # log surface stays useful.
+            logger.warning(
+                "reminders.json top-level is not a list (got %s); ignoring",
+                type(raw).__name__,
+            )
+            return []
+        result: list[Reminder] = []
+        for index, item in enumerate(raw):
+            try:
+                result.append(Reminder.from_dict(item))
+            except (KeyError, ValueError, TypeError) as exc:
+                # FR-015 self-healing: a hand-edit that breaks one row must
+                # not nuke the well-formed siblings. Mirrors the field-level
+                # ``_coerce_lead_minutes`` / ``_coerce_aware_utc`` precedent
+                # at the row level. The exception tuple matches what
+                # ``Reminder.from_dict`` can raise: ``KeyError`` (missing
+                # required key), ``ValueError`` (malformed ISO from
+                # ``datetime.fromisoformat``), ``TypeError`` (non-dict /
+                # non-str where one was required).
+                logger.warning(
+                    "reminders.json row %d is malformed (%s: %s); dropping",
+                    index,
+                    type(exc).__name__,
+                    exc,
+                )
+        return result
 
     def _write(self, items: list[Reminder]) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)

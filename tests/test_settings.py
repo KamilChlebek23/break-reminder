@@ -496,3 +496,236 @@ class TestSnapshot:
         settings.break_interval_min = 120
         # The previously-taken snapshot must be a stable copy.
         assert snap.break_interval_min == original
+
+
+class TestSettingsIdleThresholdHandEdits:
+    """Pin ``idle_threshold_sec`` hand-edit robustness (R-5, research.md §B.4 #1).
+
+    ``idle_threshold_sec`` is the only int Settings key that escaped the
+    S-01 "clamp triple" pattern: the getter has a lower clamp
+    (``max(1, _get_int(...))`` at ``storage/settings.py:164``) but
+    **no upper clamp** and **no setter at all**. A hand-edited
+    ``BreakReminder.ini`` containing ``idle_threshold_sec = 999999``
+    propagates straight into the FR-008 active-time accounting loop.
+
+    Per /10x-plan Q2 = ``all_pin`` the surface is pinned (not fixed) in
+    this phase — picking an upper-bound value is a product decision that
+    belongs to its own change. These tests document today's behavior so
+    any future tightening (adding an upper clamp constant, adding a
+    setter, switching to a "clamp triple") trips visibly.
+    """
+
+    def test_getter_accepts_arbitrarily_high_value(self, settings: Settings) -> None:
+        """Hand-edited ``999999`` propagates unchanged through the getter — no upper clamp today."""
+        settings._qs.setValue(_Keys.IDLE_THRESHOLD_SEC, 999999)
+        settings._qs.sync()
+        assert settings.idle_threshold_sec == 999999
+
+    def test_getter_clamps_zero_to_one(self, settings: Settings) -> None:
+        """Hand-edited ``0`` clamps up to ``1`` via the lower-only clamp."""
+        settings._qs.setValue(_Keys.IDLE_THRESHOLD_SEC, 0)
+        settings._qs.sync()
+        assert settings.idle_threshold_sec == 1
+
+    def test_getter_clamps_negative_to_one(self, settings: Settings) -> None:
+        """Hand-edited negative value clamps up to ``1`` via the lower-only clamp."""
+        settings._qs.setValue(_Keys.IDLE_THRESHOLD_SEC, -50)
+        settings._qs.sync()
+        assert settings.idle_threshold_sec == 1
+
+    def test_getter_falls_back_when_value_unparseable(self, settings: Settings) -> None:
+        """A non-integer string falls back to ``DEFAULT_IDLE_THRESHOLD_SEC``.
+
+        ``_get_int``'s ``ValueError → default`` branch is exercised here
+        for the only int key whose other coverage in this file doesn't
+        already pin the same behavior (break-interval, snooze-duration,
+        max-snoozes all have their own equivalent tests).
+        """
+        settings._qs.setValue(_Keys.IDLE_THRESHOLD_SEC, "not-a-number")
+        settings._qs.sync()
+        assert settings.idle_threshold_sec == DEFAULT_IDLE_THRESHOLD_SEC
+
+    def test_no_setter_exists(self, settings: Settings) -> None:
+        """``Settings.idle_threshold_sec`` has no setter — assigning raises ``AttributeError``.
+
+        The other three int keys (break_interval_min, snooze_duration_min,
+        max_snoozes) all have validating setters that enforce their range.
+        ``idle_threshold_sec`` is asymmetric — there's no setter at all.
+        Pin this so a future "add a setter" change has to consciously
+        update this assertion.
+        """
+        # ``match`` pins the failure to the no-setter branch
+        # ("property '...' of 'Settings' object has no setter") rather
+        # than any other AttributeError that might escape Settings.
+        with pytest.raises(AttributeError, match="no setter"):
+            settings.idle_threshold_sec = 30  # type: ignore[misc]
+
+
+class TestSettingsVoicePhraseRawSetter:
+    """Pin ``voice_phrase.setter`` raw-write behavior (R-5, research.md §B.4 #2).
+
+    The setter at ``storage/settings.py:247-272`` is the only post-S-04
+    raw/unchecked boundary in this module — it writes ``phrase`` straight
+    through with no ``str(...)`` coercion. The docstring at
+    ``storage/settings.py:260-266`` explicitly documents this as
+    intentional ("the on-disk representation may surprise you").
+
+    Per /10x-plan Q2 = ``all_pin`` the surface is pinned (not fixed)
+    in this phase. The matching getter (`_get_str`) coerces via
+    ``str(value)`` so a non-string write doesn't crash the next read;
+    these tests pin both directions.
+
+    Note: custom-phrase round-trip is already covered by
+    ``TestVoiceSettersRoundTrip`` — this class focuses on the raw-write
+    contract specifically (non-str pass-through + empty-string accepted
+    at the persistence layer).
+    """
+
+    def test_setter_writes_non_str_raw_without_coercion(self, settings: Settings) -> None:
+        """The setter persists ``42`` as an ``int`` — no ``str(...)`` at the write boundary.
+
+        Pins the raw-write half of the contract documented at
+        ``storage/settings.py:260-266``. Without this, a future
+        regression that adds ``str(phrase)`` to the setter would only
+        be caught indirectly through downstream behavior changes — and
+        ``test_non_str_setter_round_trips_via_get_str_coercion`` would
+        keep passing (because the value still reads back as ``"42"``
+        either way: via setter-side coercion OR via ``_get_str``).
+        Probing ``_qs.value`` directly is the only place we can
+        observe the setter's coercion vs. raw-write decision.
+        """
+        settings.voice_phrase = 42  # type: ignore[assignment]
+        raw = settings._qs.value(_Keys.VOICE_PHRASE)
+        # If the setter had coerced via ``str(42)``, ``raw`` would be
+        # ``"42"`` (a str). The ``not isinstance(raw, str)`` check is
+        # what pins the no-coercion contract — ``raw == 42`` alone is
+        # satisfied by both the int and str shapes.
+        assert raw == 42
+        assert not isinstance(raw, str)
+
+    def test_non_str_setter_round_trips_via_get_str_coercion(self, settings: Settings) -> None:
+        """An int written via the setter reads back as its ``str(...)`` representation.
+
+        Pins the load-bearing contract documented at
+        ``storage/settings.py:260-266``: the setter is raw, but the
+        getter coerces, so the round-trip surface is safe (just not
+        identity-preserving).
+        """
+        settings.voice_phrase = 42  # type: ignore[assignment]
+        settings._qs.sync()
+        # The getter coerces via str(value); QSettings IniFormat also
+        # round-trips through strings, so both layers conspire to land
+        # the read at "42".
+        assert settings.voice_phrase == "42"
+
+    def test_setter_accepts_empty_string(self, settings: Settings) -> None:
+        """An empty phrase round-trips raw — the persistence layer does not gate it.
+
+        Plan Phase 1 #2 ``TestSettingsVoicePhraseRawSetter`` contract
+        item (b). The dialog
+        (``break_reminder.ui.settings_dialog.SettingsDialog``) enforces
+        the non-empty contract at the UI layer when ``voice_enabled``
+        is true; the storage setter is intentionally permissive so
+        direct callers (test helpers, future "reset to defaults" path)
+        own whatever string they write. Same persisted-empty-string
+        contract is also pinned from the round-trip angle by
+        ``TestVoiceSettersRoundTrip.test_voice_phrase_setter_accepts_empty_string``;
+        duplicating it here groups it with the raw-write surface so
+        the raw-setter cluster reads end-to-end without a cross-file
+        hop.
+        """
+        settings.voice_phrase = ""
+        assert settings.voice_phrase == ""
+
+
+class TestSettingsBoolCoercionSymmetry:
+    """Mirror ``TestBoolCoercion`` against ``AUTOSTART`` and ``PAUSED`` (R-5, research.md §B.4 #4).
+
+    ``TestBoolCoercion`` above pins the ``_get_bool`` matrix only against
+    ``_Keys.VOICE_ENABLED``. ``AUTOSTART`` and ``PAUSED`` both flow
+    through the same ``_get_bool`` helper, so the runtime behavior is
+    identical in principle — but no test asserts that per-key. A future
+    refactor that splits boolean coercion per key would silently regress
+    one of them without tripping a test.
+
+    These four parametrized methods close the symmetry gap. Same input
+    matrix as ``TestBoolCoercion`` (truthy spellings + non-truthy / garbage),
+    asserted against each of the two keys.
+    """
+
+    @pytest.mark.parametrize("raw", ["true", "True", "TRUE", "1", "yes", "on"])
+    def test_autostart_truthy_strings_read_as_true(self, settings: Settings, raw: str) -> None:
+        """All truthy spellings on the AUTOSTART key coerce to ``True`` via ``_get_bool``."""
+        settings._qs.setValue(_Keys.AUTOSTART, raw)
+        settings._qs.sync()
+        assert settings.autostart is True
+
+    @pytest.mark.parametrize("raw", ["false", "False", "FALSE", "0", "no", "off", "garbage"])
+    def test_autostart_non_truthy_strings_read_as_false(self, settings: Settings, raw: str) -> None:
+        """Anything not in the truthy set (incl. garbage) on AUTOSTART reads as ``False``."""
+        settings._qs.setValue(_Keys.AUTOSTART, raw)
+        settings._qs.sync()
+        assert settings.autostart is False
+
+    @pytest.mark.parametrize("raw", ["true", "True", "TRUE", "1", "yes", "on"])
+    def test_paused_truthy_strings_read_as_true(self, settings: Settings, raw: str) -> None:
+        """All truthy spellings on the PAUSED key coerce to ``True`` via ``_get_bool``."""
+        settings._qs.setValue(_Keys.PAUSED, raw)
+        settings._qs.sync()
+        assert settings.paused is True
+
+    @pytest.mark.parametrize("raw", ["false", "False", "FALSE", "0", "no", "off", "garbage"])
+    def test_paused_non_truthy_strings_read_as_false(self, settings: Settings, raw: str) -> None:
+        """Anything not in the truthy set (incl. garbage) on PAUSED reads as ``False``."""
+        settings._qs.setValue(_Keys.PAUSED, raw)
+        settings._qs.sync()
+        assert settings.paused is False
+
+
+class TestSettingsUnknownKey:
+    """Pin unknown-INI-key silently-ignored behavior (R-5, research.md §B.4 #3).
+
+    A hand-edited or forward-compat ``BreakReminder.ini`` containing a
+    key Settings doesn't know about (e.g.,
+    ``scheduling/unknown_future_setting = foo``) loads cleanly today —
+    every getter only reads the keys it knows; the unknown key is
+    neither honored nor rejected.
+
+    This is the **correct** forward-compat shape for an INI written by
+    a newer build and read by an older build. Per /10x-plan Q2 =
+    ``all_pin`` the behavior is pinned, not changed. A future tightening
+    ("raise on unknown key" validation) would have to consciously
+    update these assertions rather than silently slipping in.
+    """
+
+    def test_unknown_key_does_not_break_known_getters(self, settings: Settings) -> None:
+        """An unknown INI key leaves every documented getter at its default."""
+        settings._qs.setValue("scheduling/unknown_future_setting", "future-value")
+        settings._qs.sync()
+        # All 8 documented keys still return their defaults — no crash, no
+        # cross-talk from the unknown key.
+        assert settings.break_interval_min == DEFAULT_BREAK_INTERVAL_MIN
+        assert settings.idle_threshold_sec == DEFAULT_IDLE_THRESHOLD_SEC
+        assert settings.snooze_duration_min == DEFAULT_SNOOZE_DURATION_MIN
+        assert settings.max_snoozes == DEFAULT_MAX_SNOOZES
+        assert settings.voice_enabled == DEFAULT_VOICE_ENABLED
+        assert settings.voice_phrase == DEFAULT_VOICE_PHRASE
+        assert settings.autostart == DEFAULT_AUTOSTART
+        assert settings.paused is False
+
+    def test_unknown_key_persists_in_ini_file_across_instances(self, ini_path: Path) -> None:
+        """We don't strip unknown keys on read — a hand-edited key survives instance teardown.
+
+        Tripwire for a future "purge unknown keys" change: if Settings
+        ever starts pruning the on-disk INI to known keys only, this
+        test fails — forcing the change to be explicit.
+        """
+        first = Settings(ini_path=ini_path)
+        first._qs.setValue("scheduling/unknown_future_setting", "future-value")
+        # Touch a known key so the INI is actually flushed to disk.
+        first.break_interval_min = 45
+        first._qs.sync()
+        del first
+
+        second = Settings(ini_path=ini_path)
+        assert second._qs.value("scheduling/unknown_future_setting") == "future-value"

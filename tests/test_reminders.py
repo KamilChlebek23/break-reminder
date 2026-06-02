@@ -8,6 +8,8 @@ explicitly so a future regression there is caught loudly.
 
 from __future__ import annotations
 
+import json
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -245,6 +247,190 @@ class TestDefensiveBehavior:
         store.add(_make_reminder("test"))
         tmp_file = store_path.with_suffix(".json.tmp")
         assert not tmp_file.exists()
+
+
+class TestReminderStoreReadResilience:
+    """Row-containment invariant for ``ReminderStore._read`` (R-5, post-Phase-3 fix).
+
+    Pins the post-fix behavior so the Phase 3 GREEN fix has a precise
+    oracle. Today (pre-Phase-3) every test in this class FAILS RED — the
+    list comprehension at ``break_reminder/storage/reminders.py:232``
+    propagates per-row exceptions through ``ReminderStore.list_all()``,
+    so one bad row crashes the entire load.
+
+    Post-fix expectations (per the Phase 3 contract in
+    ``plan.md`` "Critical Implementation Details"):
+
+    1. One bad row → that row dropped, well-formed siblings preserved.
+    2. All bad rows → empty list, each one logged at WARNING level.
+    3. Non-list top-level (dict / string) → empty list + a single
+       "top-level is not a list" WARNING (no spurious per-row warnings
+       from iterating a dict's keys or a string's chars).
+
+    Logging uses Python's stdlib ``logging`` (not Qt-side); the post-fix
+    module logger is ``logging.getLogger("break_reminder.storage.reminders")``
+    and pytest's built-in ``caplog`` fixture captures it without any
+    monkey-patching — same idiomatic pattern recommended by
+    ``research.md`` §A.6 "logging surface".
+
+    Sibling cluster: extends ``TestDefensiveBehavior`` (above) from
+    "whole-file-corrupt → []" to "per-row-corrupt → drop bad + keep good".
+    """
+
+    @staticmethod
+    def _malformed_row() -> dict:
+        """A reminder-shaped dict whose ``start_at`` triggers ``ValueError``.
+
+        Useful when the test needs a "syntactically a dict but breaks
+        ``from_dict``" row — e.g. when assembling a mixed good/bad list
+        to exercise the per-row containment branch.
+        """
+        return {
+            "id": "11111111-1111-4111-8111-111111111111",
+            "name": "broken",
+            "start_at": "definitely-not-iso",
+            "rrule_str": None,
+            "end_at": None,
+            "lead_minutes": 0,
+        }
+
+    def test_one_bad_row_drops_only_bad_row(self, store_path: Path, store: ReminderStore) -> None:
+        """Post-fix: a 3-row list with the middle row malformed loads the 2 siblings.
+
+        Today (RED): the malformed middle row raises ``ValueError`` from
+        ``datetime.fromisoformat``; the list comprehension propagates;
+        ``list_all()`` raises before any reminder is returned.
+        """
+        rows = [
+            _make_reminder(name="alpha").to_dict(),
+            self._malformed_row(),
+            _make_reminder(name="omega").to_dict(),
+        ]
+        store_path.write_text(json.dumps(rows), encoding="utf-8")
+        result = store.list_all()
+        assert len(result) == 2
+        assert {r.name for r in result} == {"alpha", "omega"}
+
+    def test_bad_row_logs_warning(
+        self,
+        store_path: Path,
+        store: ReminderStore,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Post-fix: the dropped row emits a WARNING naming the row index + exception class.
+
+        Log message shape (per the Phase 3 contract):
+        ``"reminders.json row %d is malformed (%s: %s); dropping"``.
+        The test asserts on substrings — the row index (``1``, the
+        middle of a 3-element list) and the exception class name
+        (``ValueError`` from malformed-ISO) — rather than on the literal
+        format string, so a wording change that preserves the
+        load-bearing pieces doesn't break the test.
+
+        Today (RED): no logger exists in the module; the exception
+        propagates instead of being caught and logged.
+        """
+        rows = [
+            _make_reminder(name="alpha").to_dict(),
+            self._malformed_row(),
+            _make_reminder(name="omega").to_dict(),
+        ]
+        store_path.write_text(json.dumps(rows), encoding="utf-8")
+        with caplog.at_level(logging.WARNING, logger="break_reminder.storage.reminders"):
+            store.list_all()
+        warnings = [
+            r
+            for r in caplog.records
+            if r.levelno == logging.WARNING and r.name == "break_reminder.storage.reminders"
+        ]
+        assert any("row 1" in r.getMessage() for r in warnings)
+        assert any("ValueError" in r.getMessage() for r in warnings)
+
+    def test_all_bad_rows_returns_empty_list(
+        self,
+        store_path: Path,
+        store: ReminderStore,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Post-fix: a list where every row is malformed returns ``[]`` + 3 WARNINGs.
+
+        Pin the WARNING count to ``3`` so a silent "we dropped 2 of 3
+        without telling you" regression trips here. Each per-row drop
+        is independently observable; nothing is silently merged.
+
+        Today (RED): the first row's exception propagates; the remaining
+        rows are never inspected; ``list_all()`` raises.
+        """
+        rows = [self._malformed_row(), self._malformed_row(), self._malformed_row()]
+        store_path.write_text(json.dumps(rows), encoding="utf-8")
+        with caplog.at_level(logging.WARNING, logger="break_reminder.storage.reminders"):
+            result = store.list_all()
+        assert result == []
+        warnings = [
+            r
+            for r in caplog.records
+            if r.levelno == logging.WARNING and r.name == "break_reminder.storage.reminders"
+        ]
+        assert len(warnings) == 3
+
+    def test_top_level_dict_returns_empty_list_with_warning(
+        self,
+        store_path: Path,
+        store: ReminderStore,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Post-fix: a JSON object at the top level returns ``[]`` + ONE ``"not a list"`` WARNING.
+
+        Without the ``isinstance(raw, list)`` top-level guard, iterating
+        a dict yields its keys (strings), which would crash inside
+        ``from_dict`` with N spurious per-row warnings (one per key).
+        The guard collapses this to a single "top-level is not a list"
+        WARNING and an empty result — that single-WARNING contract is
+        what the assertion pins.
+
+        Today (RED): iterating the dict yields the key ``"foo"`` as a
+        ``str``; ``from_dict("foo")`` raises ``TypeError`` on
+        ``data["id"]``; ``list_all()`` raises.
+        """
+        store_path.write_text('{"foo": "bar"}', encoding="utf-8")
+        with caplog.at_level(logging.WARNING, logger="break_reminder.storage.reminders"):
+            result = store.list_all()
+        assert result == []
+        warnings = [
+            r
+            for r in caplog.records
+            if r.levelno == logging.WARNING and r.name == "break_reminder.storage.reminders"
+        ]
+        assert len(warnings) == 1
+        assert "top-level is not a list" in warnings[0].getMessage()
+
+    def test_top_level_string_returns_empty_list_with_warning(
+        self,
+        store_path: Path,
+        store: ReminderStore,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Post-fix: a JSON string at the top level matches the dict-case behavior.
+
+        Same expected shape as ``test_top_level_dict_*`` — the
+        ``isinstance(raw, list)`` guard catches the non-list cases
+        uniformly, regardless of which non-list JSON type was written.
+
+        Today (RED): iterating ``"foo"`` yields characters;
+        ``from_dict("f")`` raises ``TypeError`` on ``data["id"]``;
+        ``list_all()`` raises.
+        """
+        store_path.write_text('"foo"', encoding="utf-8")
+        with caplog.at_level(logging.WARNING, logger="break_reminder.storage.reminders"):
+            result = store.list_all()
+        assert result == []
+        warnings = [
+            r
+            for r in caplog.records
+            if r.levelno == logging.WARNING and r.name == "break_reminder.storage.reminders"
+        ]
+        assert len(warnings) == 1
+        assert "top-level is not a list" in warnings[0].getMessage()
 
 
 class TestReminderSerialization:

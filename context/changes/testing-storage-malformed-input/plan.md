@@ -393,26 +393,26 @@ None. The `_read` fix is strictly more permissive than today's behavior (it acce
 
 #### Automated
 
-- [x] 1.1 `TestMalformedReminderFromDict` added to `tests/test_reminders.py` after `TestCoerceAwareUtc`; class covers per-field malformed-input cases from research.md §A.4 not already covered (missing required keys, malformed ISO, wrong-type, unknown extra key)
-- [x] 1.2 `TestSettingsIdleThresholdHandEdits` + `TestSettingsVoicePhraseRawSetter` + `TestSettingsBoolCoercionSymmetry` + `TestSettingsUnknownKey` added to `tests/test_settings.py` after `TestSnapshot`
-- [x] 1.3 New tests PASS on landing: `uv run pytest tests/test_reminders.py tests/test_settings.py -v`
-- [x] 1.4 Full suite PASS: `uv run pytest`
-- [x] 1.5 Lint / format / type / pre-commit clean on the two test files
+- [x] 1.1 `TestMalformedReminderFromDict` added to `tests/test_reminders.py` after `TestCoerceAwareUtc`; class covers per-field malformed-input cases from research.md §A.4 not already covered (missing required keys, malformed ISO, wrong-type, unknown extra key) — 97f87dd
+- [x] 1.2 `TestSettingsIdleThresholdHandEdits` + `TestSettingsVoicePhraseRawSetter` + `TestSettingsBoolCoercionSymmetry` + `TestSettingsUnknownKey` added to `tests/test_settings.py` after `TestSnapshot` — 97f87dd
+- [x] 1.3 New tests PASS on landing: `uv run pytest tests/test_reminders.py tests/test_settings.py -v` — 97f87dd
+- [x] 1.4 Full suite PASS: `uv run pytest` — 97f87dd
+- [x] 1.5 Lint / format / type / pre-commit clean on the two test files — 97f87dd
 
 #### Manual
 
-- [ ] 1.6 Each new class docstring names invariants concretely (tied to research.md §A.5 / §B.4); not vague "covers malformed input" prose
-- [ ] 1.7 Representative test bodies use precise oracles (e.g. `pytest.raises(KeyError)` not `pytest.raises(Exception)`)
-- [ ] 1.8 New classes are positioned in the correct files at the correct insertion points
+- [x] 1.6 Each new class docstring names invariants concretely (tied to research.md §A.5 / §B.4); not vague "covers malformed input" prose — 97f87dd
+- [x] 1.7 Representative test bodies use precise oracles (e.g. `pytest.raises(KeyError)` not `pytest.raises(Exception)`) — 97f87dd
+- [x] 1.8 New classes are positioned in the correct files at the correct insertion points — 97f87dd
 
 ### Phase 2: RED — `_read` row-containment failing tests
 
 #### Automated
 
-- [ ] 2.1 `TestReminderStoreReadResilience` added to `tests/test_reminders.py` after `TestDefensiveBehavior`; ≥ 4 tests covering the contract in Phase 2 Changes Required #1
-- [ ] 2.2 New tests FAIL RED: `uv run pytest tests/test_reminders.py::TestReminderStoreReadResilience -v` shows FAIL on every new test
-- [ ] 2.3 Existing + Phase 1 tests unaffected: `uv run pytest tests/test_reminders.py -k "not TestReminderStoreReadResilience"` PASS
-- [ ] 2.4 Lint / format / type / pre-commit clean on the new test class
+- [x] 2.1 `TestReminderStoreReadResilience` added to `tests/test_reminders.py` after `TestDefensiveBehavior`; ≥ 4 tests covering the contract in Phase 2 Changes Required #1
+- [x] 2.2 New tests FAIL RED: `uv run pytest tests/test_reminders.py::TestReminderStoreReadResilience -v` shows FAIL on every new test
+- [x] 2.3 Existing + Phase 1 tests unaffected: `uv run pytest tests/test_reminders.py -k "not TestReminderStoreReadResilience"` PASS
+- [x] 2.4 Lint / format / type / pre-commit clean on the new test class
 
 #### Manual
 

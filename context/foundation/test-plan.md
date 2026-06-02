@@ -74,7 +74,7 @@ The rollout schedule. Status vocabulary literals (parser-required, do not locali
 | Win32           | pywin32                          | `>=311` (`sys_platform == 'win32'`)         | Focus Assist + system mute (stubbed today)                                             |
 | Project tooling | uv                               | system-installed                            | All commands run via `uv run …`                                                        |
 | Linter          | ruff                             | `>=0.6` (locked at `0.15.13`)               | `E F W I B UP SIM D`; pydocstyle Google convention enforced                            |
-| Type checker    | pyright                          | `>=1.1.380`                                 | `typeCheckingMode = "standard"`, `pythonPlatform = "Windows"`                          |
+| Type checker    | pyright                          | `>=1.1.410`                                 | `typeCheckingMode = "standard"`, `pythonPlatform = "Windows"`                          |
 | Test runner     | pytest                           | `>=8.3`                                     | `[tool.pytest.ini_options] testpaths = ["tests"]`; `addopts = "-q"`                    |
 | Qt test layer   | pytest-qt                        | `>=4.4`                                     | Session-scoped autouse `QApplication` in `tests/conftest.py`                           |
 | Security audit  | pip-audit                        | `>=2.7`                                     | CI fails on any known CVE                                                              |

@@ -405,14 +405,23 @@ def _resolve_zone(name: str) -> ZoneInfo:
     via ``from_dict`` should always carry a valid IANA name. But
     in-memory ``Reminder`` instances bypassing ``from_dict`` — notably
     test fixtures and the form-dialog save path before its own
-    coercion runs — could still slip through with a typo. Returning
+    coercion runs — could still slip through with a typo or a
+    malformed key (``""``, ``"../etc/passwd"``). Returning
     ``ZoneInfo("UTC")`` on failure keeps the scheduler making forward
     progress (the reminder fires at the wrong wall-clock, but at
     least it fires) and logs a WARNING so the operator can correct
     the data.
+
+    The except tuple mirrors ``storage.reminders._coerce_tz``: both
+    ``ZoneInfoNotFoundError`` (unknown zone) and ``ValueError``
+    (malformed key — ``zoneinfo`` validates path normalization
+    independently of zone existence). Plan-review F1 widened the
+    storage helper to catch both; impl-review F2 propagates that
+    same widening here so every ``ZoneInfo(name)`` call site is
+    defended consistently.
     """
     try:
         return ZoneInfo(name)
-    except ZoneInfoNotFoundError:
-        logger.warning("unknown IANA timezone %r; falling back to UTC", name)
+    except (ZoneInfoNotFoundError, ValueError):
+        logger.warning("invalid IANA timezone %r; falling back to UTC", name)
         return ZoneInfo("UTC")

@@ -74,6 +74,7 @@ import logging
 from collections.abc import Callable
 from datetime import UTC, date, datetime, time, timedelta
 from typing import TYPE_CHECKING, cast
+from zoneinfo import ZoneInfoNotFoundError
 
 import tzlocal
 from PySide6.QtCore import QDate, QDateTime, Qt, QTime, Signal
@@ -868,9 +869,15 @@ class ReminderFormDialog(QDialog):
         # it normalizes the Registry's TimeZoneKeyName via
         # ``tzdata``. The ``or "UTC"`` defends against the rare
         # case where ``tzlocal`` returns an empty string on an
-        # unconfigured system — mirroring the same fallback in
-        # ``storage.reminders._coerce_tz``.
-        current_tz = tzlocal.get_localzone_name() or "UTC"
+        # unconfigured system; the ``try/except`` defends against
+        # the rarer case where the Registry's TimeZoneKeyName is
+        # corrupted or missing and ``tzlocal`` raises rather than
+        # returning empty — mirroring the same fallback chain in
+        # ``storage.reminders._coerce_tz`` (impl-review F1).
+        try:
+            current_tz = tzlocal.get_localzone_name() or "UTC"
+        except ZoneInfoNotFoundError:
+            current_tz = "UTC"
 
         # 2. Datetime validation (compare in UTC; widget gives naive local)
         # ``.toPython()`` returns a Python ``datetime`` at runtime but

@@ -500,23 +500,25 @@ For each phase, after automated verification passes:
 - [x] 3.10 Confirm the test asserts the dialog DOES appear within 300 iterations AND DOES NOT appear before iteration ~295
 - [x] 3.11 Confirm the test would fail if either `app.py:349` or `app.py:277` connect lines were commented out
 
+**Phase 3 commit: `afd72be`**
+
 ### Phase 4: Flow D e2e — Tray Reset → TAKEN logged + cycle re-arms → next break_due fires → BreakDialog
 
 #### Automated
 
-- [ ] 4.1 New test file passes: `uv run pytest tests/test_tray_reset_e2e.py -m e2e`
-- [ ] 4.2 Whole suite still green: `uv run pytest`
-- [ ] 4.3 All three e2e tests visible: `uv run pytest -m e2e --collect-only` lists Flow A/B/D files
-- [ ] 4.4 Lint: `uv run ruff check tests/test_tray_reset_e2e.py`
-- [ ] 4.5 Format: `uv run ruff format --check tests/test_tray_reset_e2e.py`
-- [ ] 4.6 Type check: `uv run pyright`
+- [x] 4.1 New test file passes: `uv run pytest tests/test_tray_reset_e2e.py -m e2e`
+- [x] 4.2 Whole suite still green: `uv run pytest` (566 passed)
+- [x] 4.3 All three e2e tests visible: `uv run pytest -m e2e --collect-only` lists Flow A/B/D files
+- [x] 4.4 Lint: `uv run ruff check tests/test_tray_reset_e2e.py`
+- [x] 4.5 Format: `uv run ruff format --check tests/test_tray_reset_e2e.py`
+- [x] 4.6 Type check: `uv run pyright`
 
 #### Manual
 
-- [ ] 4.7 Read `tests/test_tray_reset_e2e.py` and confirm it uses `QAction.trigger()` (NOT `QTest.mouseClick`), uses `_tick()` directly (NOT `qtbot.wait()`), oracles on `(event_type, outcome)` tuple (NOT on `timestamp_iso`)
-- [ ] 4.8 Confirm the test uses the `break_reminder_app` fixture from conftest (exercising P1 `clock=` kwarg propagation)
-- [ ] 4.9 Confirm the test asserts the dialog DOES NOT appear at iteration ~60 (would fire there if re-arm started from pre-Reset `_active_seconds = 120`)
-- [ ] 4.10 Confirm the test would fail if `app.py:461` `_break_scheduler.start()` were removed
+- [x] 4.7 Read `tests/test_tray_reset_e2e.py` and confirm it uses `QAction.trigger()` (NOT `QTest.mouseClick`), uses `_tick()` directly (NOT `qtbot.wait()`), oracles on `(event_type, outcome)` tuple (NOT on `timestamp_iso`)
+- [x] 4.8 Confirm the test uses the `break_reminder_app` fixture from conftest (exercising P1 `clock=` kwarg propagation)
+- [x] 4.9 Confirm the test asserts the dialog DOES NOT appear at iteration ~60 (would fire there if re-arm started from pre-Reset `_active_seconds = 120`) — also caught by `_active_seconds == 0` precondition; mutation tested
+- [x] 4.10 Confirm the test would fail if `app.py:461` `_break_scheduler.start()` were removed — original design bypassed the timer via direct `_tick()`; FIXED by adding `_timer.isActive()` precondition; mutation tested (caught with targeted diagnostic)
 
 ### Phase 5: Docs + CI workflow split + status flip
 

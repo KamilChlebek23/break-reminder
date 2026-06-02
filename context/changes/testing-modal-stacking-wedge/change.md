@@ -1,7 +1,7 @@
 ---
 change_id: testing-modal-stacking-wedge
 title: Testing modal stacking wedge
-status: new
+status: preparing
 created: 2026-06-02
 updated: 2026-06-02
 archived_at: null

@@ -485,20 +485,20 @@ For each phase, after automated verification passes:
 
 #### Automated
 
-- [x] 3.1 New test file passes: `uv run pytest tests/test_save_settings_interval_e2e.py -m e2e`
-- [x] 3.2 Whole suite still green: `uv run pytest`
-- [x] 3.3 Marker correctly applied: `uv run pytest -m e2e --collect-only` lists both Flow A and Flow B tests
-- [x] 3.4 Lint: `uv run ruff check tests/test_save_settings_interval_e2e.py`
-- [x] 3.5 Format: `uv run ruff format --check tests/test_save_settings_interval_e2e.py`
-- [x] 3.6 Type check: `uv run pyright`
+- [x] 3.1 New test file passes: `uv run pytest tests/test_save_settings_interval_e2e.py -m e2e` — afd72be
+- [x] 3.2 Whole suite still green: `uv run pytest` — afd72be
+- [x] 3.3 Marker correctly applied: `uv run pytest -m e2e --collect-only` lists both Flow A and Flow B tests — afd72be
+- [x] 3.4 Lint: `uv run ruff check tests/test_save_settings_interval_e2e.py` — afd72be
+- [x] 3.5 Format: `uv run ruff format --check tests/test_save_settings_interval_e2e.py` — afd72be
+- [x] 3.6 Type check: `uv run pyright` — afd72be
 
 #### Manual
 
-- [x] 3.7 Read `tests/test_save_settings_interval_e2e.py` and confirm NO `_StubSignal` shim, NO `slots[0](5)`-style slot capture-and-invoke
-- [x] 3.8 Confirm the test calls `dialog.accept()` directly (NOT `dialog.exec()`)
-- [x] 3.9 Confirm the test uses `break_scheduler._tick()` directly (NOT `qtbot.wait()` / `qtbot.waitSignal()`)
-- [x] 3.10 Confirm the test asserts the dialog DOES appear within 300 iterations AND DOES NOT appear before iteration ~295
-- [x] 3.11 Confirm the test would fail if either `app.py:349` or `app.py:277` connect lines were commented out
+- [x] 3.7 Read `tests/test_save_settings_interval_e2e.py` and confirm NO `_StubSignal` shim, NO `slots[0](5)`-style slot capture-and-invoke — afd72be
+- [x] 3.8 Confirm the test calls `dialog.accept()` directly (NOT `dialog.exec()`) — afd72be
+- [x] 3.9 Confirm the test uses `break_scheduler._tick()` directly (NOT `qtbot.wait()` / `qtbot.waitSignal()`) — afd72be
+- [x] 3.10 Confirm the test asserts the dialog DOES appear within 300 iterations AND DOES NOT appear before iteration ~295 — afd72be
+- [x] 3.11 Confirm the test would fail if either `app.py:349` or `app.py:277` connect lines were commented out — afd72be
 
 **Phase 3 commit: `afd72be`**
 
@@ -506,19 +506,19 @@ For each phase, after automated verification passes:
 
 #### Automated
 
-- [x] 4.1 New test file passes: `uv run pytest tests/test_tray_reset_e2e.py -m e2e`
-- [x] 4.2 Whole suite still green: `uv run pytest` (566 passed)
-- [x] 4.3 All three e2e tests visible: `uv run pytest -m e2e --collect-only` lists Flow A/B/D files
-- [x] 4.4 Lint: `uv run ruff check tests/test_tray_reset_e2e.py`
-- [x] 4.5 Format: `uv run ruff format --check tests/test_tray_reset_e2e.py`
-- [x] 4.6 Type check: `uv run pyright`
+- [x] 4.1 New test file passes: `uv run pytest tests/test_tray_reset_e2e.py -m e2e` — a420407
+- [x] 4.2 Whole suite still green: `uv run pytest` (566 passed) — a420407
+- [x] 4.3 All three e2e tests visible: `uv run pytest -m e2e --collect-only` lists Flow A/B/D files — a420407
+- [x] 4.4 Lint: `uv run ruff check tests/test_tray_reset_e2e.py` — a420407
+- [x] 4.5 Format: `uv run ruff format --check tests/test_tray_reset_e2e.py` — a420407
+- [x] 4.6 Type check: `uv run pyright` — a420407
 
 #### Manual
 
-- [x] 4.7 Read `tests/test_tray_reset_e2e.py` and confirm it uses `QAction.trigger()` (NOT `QTest.mouseClick`), uses `_tick()` directly (NOT `qtbot.wait()`), oracles on `(event_type, outcome)` tuple (NOT on `timestamp_iso`)
-- [x] 4.8 Confirm the test uses the `break_reminder_app` fixture from conftest (exercising P1 `clock=` kwarg propagation)
-- [x] 4.9 Confirm the test asserts the dialog DOES NOT appear at iteration ~60 (would fire there if re-arm started from pre-Reset `_active_seconds = 120`) — also caught by `_active_seconds == 0` precondition; mutation tested
-- [x] 4.10 Confirm the test would fail if `app.py:461` `_break_scheduler.start()` were removed — original design bypassed the timer via direct `_tick()`; FIXED by adding `_timer.isActive()` precondition; mutation tested (caught with targeted diagnostic)
+- [x] 4.7 Read `tests/test_tray_reset_e2e.py` and confirm it uses `QAction.trigger()` (NOT `QTest.mouseClick`), uses `_tick()` directly (NOT `qtbot.wait()`), oracles on `(event_type, outcome)` tuple (NOT on `timestamp_iso`) — a420407
+- [x] 4.8 Confirm the test uses the `break_reminder_app` fixture from conftest (exercising P1 `clock=` kwarg propagation) — a420407
+- [x] 4.9 Confirm the test asserts the dialog DOES NOT appear at iteration ~60 (would fire there if re-arm started from pre-Reset `_active_seconds = 120`); also caught by `_active_seconds == 0` precondition; mutation tested — a420407
+- [x] 4.10 Confirm the test would fail if `app.py:461` `_break_scheduler.start()` were removed; original design bypassed the timer via direct `_tick()`; FIXED by adding `_timer.isActive()` precondition; mutation tested (caught with targeted diagnostic) — a420407
 
 **Phase 4 commit: `a420407`**
 
@@ -526,24 +526,24 @@ For each phase, after automated verification passes:
 
 #### Automated
 
-- [x] 5.1 `pytest -m "not e2e"` passes: `uv run pytest -m "not e2e"` (563 passed, 3 deselected)
-- [x] 5.2 `pytest -m e2e` passes (3 tests now non-empty): `uv run pytest -m e2e` (3 passed, 563 deselected)
-- [x] 5.3 Whole suite still green: `uv run pytest` (566 passed)
-- [x] 5.4 Lint: `uv run ruff check`
-- [x] 5.5 Format: `uv run ruff format --check`
-- [x] 5.6 Type check: `uv run pyright`
-- [x] 5.7 pip-audit: `uv run pip-audit` (No known vulnerabilities found)
-- [x] 5.8 `release.yml` parses as valid YAML
+- [x] 5.1 `pytest -m "not e2e"` passes: `uv run pytest -m "not e2e"` (563 passed, 3 deselected) — d7cb18f
+- [x] 5.2 `pytest -m e2e` passes (3 tests now non-empty): `uv run pytest -m e2e` (3 passed, 563 deselected) — d7cb18f
+- [x] 5.3 Whole suite still green: `uv run pytest` (566 passed) — d7cb18f
+- [x] 5.4 Lint: `uv run ruff check` — d7cb18f
+- [x] 5.5 Format: `uv run ruff format --check` — d7cb18f
+- [x] 5.6 Type check: `uv run pyright` — d7cb18f
+- [x] 5.7 pip-audit: `uv run pip-audit` (No known vulnerabilities found) — d7cb18f
+- [x] 5.8 `release.yml` parses as valid YAML — d7cb18f
 
 #### Manual
 
-- [x] 5.9 Read `.github/workflows/release.yml` and confirm two sequential `run:` steps with correct `-m` flags (`Test (unit)` @ :58 `pytest -m "not e2e"`; `Test (e2e)` @ :66 `pytest -m e2e`)
-- [x] 5.10 Read `AGENTS.md § Threading rules` new bullet and confirm stylistic coherence with existing bullets (matches bold-lead + explanation pattern)
-- [x] 5.11 Read `context/foundation/test-plan.md §6` cookbook row and confirm it matches the verbosity + structure of the Phase 3 "Storage hand-edit robustness" row (file list + load-bearing assertion shape + R-4 hops closed + anti-patterns avoided + fixture dependencies + CI integration)
-- [x] 5.12 Read `context/foundation/lessons.md` new entry and confirm it follows the 4-field convention (Context / Problem / Rule / Applies to)
-- [x] 5.13 Read `context/foundation/test-plan.md` frontmatter (rollout_phases_complete: 4) + §3 row 4 status (complete)
-- [x] 5.14 Read `context/changes/testing-top-three-e2e-flows/change.md` and confirm `status: implemented` + `updated: 2026-06-02`
-- [x] 5.15 Push branch to GitHub and confirm `build` job shows TWO test check marks (Test (unit) + Test (e2e)) — verified on the PR after `4ea2811` (`fix(ci): correct release.yml branch trigger to master`); both steps green
+- [x] 5.9 Read `.github/workflows/release.yml` and confirm two sequential `run:` steps with correct `-m` flags (`Test (unit)` @ :58 `pytest -m "not e2e"`; `Test (e2e)` @ :66 `pytest -m e2e`) — d7cb18f
+- [x] 5.10 Read `AGENTS.md § Threading rules` new bullet and confirm stylistic coherence with existing bullets (matches bold-lead + explanation pattern) — d7cb18f
+- [x] 5.11 Read `context/foundation/test-plan.md §6` cookbook row and confirm it matches the verbosity + structure of the Phase 3 "Storage hand-edit robustness" row (file list + load-bearing assertion shape + R-4 hops closed + anti-patterns avoided + fixture dependencies + CI integration) — d7cb18f
+- [x] 5.12 Read `context/foundation/lessons.md` new entry and confirm it follows the 4-field convention (Context / Problem / Rule / Applies to) — d7cb18f
+- [x] 5.13 Read `context/foundation/test-plan.md` frontmatter (rollout_phases_complete: 4) + §3 row 4 status (complete) — d7cb18f
+- [x] 5.14 Read `context/changes/testing-top-three-e2e-flows/change.md` and confirm `status: implemented` + `updated: 2026-06-02` — d7cb18f
+- [x] 5.15 Push branch to GitHub and confirm `build` job shows TWO test check marks (Test (unit) + Test (e2e)); verified on the PR after `fix(ci): correct release.yml branch trigger to master`; both steps green — 4ea2811
 
 **Phase 5 commit: `d7cb18f`**
 **Out-of-scope CI trigger fix surfaced by 5.15: `4ea2811`**

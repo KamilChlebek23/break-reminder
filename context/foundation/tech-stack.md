@@ -13,7 +13,9 @@
 | Project tooling | `uv` | (system-installed) |
 | Activity hooks | `pynput` (global keyboard/mouse listeners) | `>=1.8.2` |
 | Voice | `pyttsx3` (synchronous; runs on a worker thread) | `>=2.99` |
-| Recurrence | `python-dateutil` (RFC 5545 RRULE) | `2.9.0.post0` |
+| Recurrence | `python-dateutil` (RFC 5545 RRULE; localized to the reminder's IANA timezone before math — see `scheduler._resolve_zone`) | `2.9.0.post0` |
+| Timezone DB | `tzdata` (IANA zone files for stdlib `zoneinfo` on Windows; **PyInstaller needs `--collect-data tzdata`** because data-only packages aren't auto-discovered) | `>=2024.1` |
+| OS-local TZ detection | `tzlocal` (reads Windows Registry `TimeZoneKeyName`; used by the Add / Edit Reminder form to capture the user's wall-clock zone at save time) | `>=5.0` |
 | Win32 specifics | `pywin32` (Focus Assist, system mute) | `>=311` (`sys_platform == 'win32'`) |
 | Build (binary) | PyInstaller (one-folder bundle) | `6.20.0` |
 | Build (installer) | NSIS (`.nsi` script wraps the PyInstaller `dist/BreakReminder/`) | system-installed |

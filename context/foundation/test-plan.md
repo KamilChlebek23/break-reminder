@@ -10,7 +10,7 @@ context_type: brownfield
 
 # BreakReminder — Test Plan
 
-> Phased rollout strategy that turns BreakReminder's zero-integration-test gap into a four-phase test program. The `## Phased rollout` table in §3 is the orchestrator's state machine — re-run `/10x-test-plan` and it reads §3 to figure out where the rollout is and what to hand off next. Sections §1, §2, §4, §5, §7 are frozen until `/10x-test-plan --refresh`; §3 status cells and §6 cookbook patterns evolve as phases land.
+> Phased rollout strategy that turns BreakReminder's zero-integration-test gap into a four-phase test program. The `## Phased rollout` table in §3 is the orchestrator's state machine — re-run `/10x-test-plan` and it reads §3 to figure out where the rollout is and what to hand off next. Sections §1, §2, §4, §5, §7 are frozen until `/10x-test-plan --refresh`; §3 status cells and §6 cookbook patterns evolve as phases land. **Exception**: an existing §7 entry may be stamped in-place with a `RESOLVED <date> — <one-line>` block when the parked surface ships outside the rollout (e.g. via a discovered-defect bugfix landing as its own change). This is an evolution of an existing entry, not the addition of new negative space — adding genuinely new entries to §7 still requires `--refresh`. See L174 for the canonical RESOLVED-stamp example (`bugfix-reminder-dst-drift`).
 
 ## §1. Strategy
 

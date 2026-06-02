@@ -284,6 +284,39 @@ package's public API only.
 
 Newest first. Dates are tag-push dates.
 
+### v0.7.2 — 2026-06-02
+
+Patch release. Bugfix only — no new user-visible features.
+
+- **bugfix-reminder-dst-drift**: recurring custom reminders
+  (FR-014) with a daily / weekly / monthly cadence now respect DST
+  transitions. Previously the RRULE engine ran arithmetic against
+  a UTC-anchored `dtstart`, so a "Daily 9:00 Warsaw" reminder
+  shifted to firing at 10:00 Warsaw on the first post-DST day —
+  the UTC instant stayed the same but the wall-clock interpretation
+  drifted by the DST offset. The scheduler now localizes `dtstart`
+  and `now` to a new `Reminder.tz` IANA field
+  (e.g. `"Europe/Warsaw"`) before handing them to `rrulestr`, so
+  RRULE walks the IANA calendar and the user's wall-clock intent
+  survives DST. The Add / Edit Reminder form captures
+  `tzlocal.get_localzone_name()` at save time; existing
+  `reminders.json` files lazy-migrate to OS-local at load (no
+  manual migration needed). Hand-edited typos in the `tz` field
+  are dropped via row-containment with a WARNING; sibling
+  reminders are unaffected. AGENTS.md's "RRULE handles DST
+  correctly" claim was scoped to "when `dtstart` carries an
+  IANA-named timezone" — the original unconditional claim was the
+  reason the bug shipped undetected.
+- New runtime dependencies: `tzdata` (IANA database read by stdlib
+  `zoneinfo` on Windows) and `tzlocal` (cross-platform OS-local
+  IANA detection). The release-build PyInstaller invocation now
+  carries `--collect-data tzdata`; see [Build a Windows installer
+  locally](#build-a-windows-installer-locally) for the local
+  equivalent.
+
+Test suite: 505 → 586 (+20 from this bugfix; the rest from
+unreleased work merged to `master` since v0.7.1).
+
 ### v0.7.1 — 2026-05-29
 
 Patch release. S-10 only — correctness bugfix; no new user-visible
@@ -500,9 +533,16 @@ uv run ruff format
 
 ```powershell
 uv run pyinstaller --noconfirm --windowed --name BreakReminder `
-                   --collect-submodules pynput main.py
+                   --collect-submodules pynput `
+                   --collect-data tzdata main.py
 makensis installer\break-reminder.nsi
 ```
+
+`--collect-data tzdata` is required: `tzdata` is a data-only package
+whose `.zoneinfo` files PyInstaller doesn't auto-discover. Without
+it, the packaged `.exe` raises `ZoneInfoNotFoundError` on every
+reminder load — local dev + CI tests don't catch this because
+`uv sync` installs `tzdata` into the venv directly.
 
 The installer lands at `installer\BreakReminder-Setup-<version>.exe`.
 

@@ -29,6 +29,9 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+import tzlocal
 
 from break_reminder.storage.paths import reminders_json_path
 
@@ -122,20 +125,97 @@ def _coerce_aware_utc(value: datetime | None) -> datetime | None:
     return value.replace(tzinfo=UTC)
 
 
+class InvalidTimezoneError(ValueError):
+    """Raised by ``_coerce_tz`` when a hand-edited tz value cannot be resolved.
+
+    Subclass of ``ValueError`` so ``ReminderStore._read``'s existing
+    ``(KeyError, ValueError, TypeError)`` exception tuple catches it
+    without modification — the row-containment guarantee in the module
+    docstring extends seamlessly to the tz failure mode. Plan-review F3
+    chose loud-drop over silent-fallback so a typo'd Warsaw doesn't
+    silently become OS-local Tokyo and fire at the wrong wall-clock.
+    """
+
+
+def _coerce_tz(raw: object) -> str:
+    """Coerce a hand-editable JSON ``tz`` field into a valid IANA name.
+
+    Mirrors the ``_coerce_lead_minutes`` / ``_coerce_aware_utc``
+    storage-boundary pattern. Per plan-review F3, the helper
+    distinguishes two failure modes:
+
+    * **Missing field** (``raw is None``) — older ``reminders.json`` files
+      predating R-1b lack the key entirely. Legitimate lazy-migration
+      case: substitute OS-local silently via
+      ``tzlocal.get_localzone_name()``. Pre-fix files keep loading.
+    * **Invalid value** (typo'd IANA name, empty string, path traversal,
+      wrong type) — the user explicitly typed something that doesn't
+      resolve. Raise ``InvalidTimezoneError`` so ``_read``'s
+      row-containment drops the whole row with a WARNING (lessons.md
+      storage-boundary rule, row-level guard). Silent fallback to
+      OS-local on a typo would mask the error and fire at the wrong
+      wall-clock for days; the loud-drop is preferable.
+
+    Plan-review F1 surfaced that ``zoneinfo.ZoneInfo("")`` and
+    ``ZoneInfo("../etc/passwd")`` raise ``ValueError`` (not
+    ``ZoneInfoNotFoundError``) — zoneinfo validates path normalization
+    independently of zone existence. Both exception classes must be
+    caught in the ``str`` branch.
+
+    Args:
+        raw: The value pulled from ``data.get("tz")``. ``None`` when the
+            key is missing on disk; otherwise whatever the hand-edit
+            produced (string, int, list — input is effectively ``object``).
+
+    Returns:
+        A valid IANA timezone name. ``"UTC"`` if ``tzlocal`` itself
+        fails on the missing-field path (rare on Windows 11; paranoid
+        last-resort fallback).
+
+    Raises:
+        InvalidTimezoneError: When ``raw`` is a non-``None`` value that
+            doesn't resolve to a ``ZoneInfo``. Caught by ``_read`` at
+            the row level via the existing
+            ``(KeyError, ValueError, TypeError)`` tuple.
+    """
+    if raw is None:
+        try:
+            name = tzlocal.get_localzone_name()
+        except ZoneInfoNotFoundError:
+            return "UTC"
+        return name or "UTC"
+    if isinstance(raw, str):
+        try:
+            ZoneInfo(raw)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise InvalidTimezoneError(f"reminder tz {raw!r} is not a valid IANA name") from exc
+        return raw
+    raise InvalidTimezoneError(f"reminder tz field has unexpected type {type(raw).__name__}")
+
+
 @dataclass
 class Reminder:
     """A user-created custom reminder (FR-011).
 
-    Invariant: ``start_at`` and ``end_at`` (when set) are always
-    **tz-aware UTC** ``datetime`` instances. Every constructing code
-    path — ``ReminderFormDialog.accept``, the scheduler's recurrence
-    math, and the storage layer's ``from_dict`` — produces tz-aware
-    UTC values. Downstream consumers (especially the Edit-mode
-    past-time skip predicate in ``ReminderFormDialog``) rely on this
-    so that ``start_at_utc == self._editing.start_at`` is a valid
-    comparison rather than a ``TypeError`` source. Hand-edits to
-    ``reminders.json`` that drop the ``+00:00`` suffix are normalized
-    back to UTC-aware via ``_coerce_aware_utc`` at load time.
+    Invariants:
+
+    * ``start_at`` and ``end_at`` (when set) are always **tz-aware UTC**
+      ``datetime`` instances. Every constructing code path —
+      ``ReminderFormDialog.accept``, the scheduler's recurrence math,
+      and the storage layer's ``from_dict`` — produces tz-aware UTC
+      values. Downstream consumers (especially the Edit-mode past-time
+      skip predicate in ``ReminderFormDialog``) rely on this so that
+      ``start_at_utc == self._editing.start_at`` is a valid comparison
+      rather than a ``TypeError`` source. Hand-edits to
+      ``reminders.json`` that drop the ``+00:00`` suffix are normalized
+      back to UTC-aware via ``_coerce_aware_utc`` at load time.
+    * ``tz`` is the IANA timezone name used by ``scheduler.next_firing_after``
+      to localize ``start_at`` before handing it to ``dateutil.rrulestr``.
+      RRULE's DST handling activates only when ``dtstart`` carries a
+      named zone (R-1b fix). Together, ``start_at`` (UTC instant) and
+      ``tz`` (named zone) preserve the user's wall-clock intent across
+      DST transitions: a "9:00 Warsaw daily" reminder stays at 9:00
+      Warsaw on both sides of the spring-forward.
     """
 
     name: str
@@ -149,6 +229,11 @@ class Reminder:
     # Default 0 keeps every pre-S-06b ``reminders.json`` entry loading
     # with identical firing behavior.
     lead_minutes: int = 0
+    # R-1b: IANA timezone name to localize ``start_at`` to before RRULE
+    # math. Default-factory routes through ``_coerce_tz(None)`` so the
+    # 55+ existing call sites that don't pass ``tz=`` get OS-local for
+    # free — single source of truth for "what is OS-local?".
+    tz: str = field(default_factory=lambda: _coerce_tz(None))
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
 
     def to_dict(self) -> dict:
@@ -167,7 +252,11 @@ class Reminder:
                 optional ``rrule_str``, optional ``end_at`` (ISO 8601),
                 optional ``lead_minutes`` (int, defaults to 0 — pre-S-06b
                 files lack the key entirely; out-of-range or non-coercible
-                values are coerced by ``_coerce_lead_minutes``).
+                values are coerced by ``_coerce_lead_minutes``), optional
+                ``tz`` (IANA name, defaults to OS-local via ``_coerce_tz`` —
+                pre-R-1b files lack the key entirely; invalid values
+                raise ``InvalidTimezoneError`` which ``_read`` catches
+                at the row level to drop the bad row).
 
         Returns:
             A populated ``Reminder`` instance.
@@ -187,6 +276,7 @@ class Reminder:
                 else None
             ),
             lead_minutes=_coerce_lead_minutes(data.get("lead_minutes", 0)),
+            tz=_coerce_tz(data.get("tz")),
         )
 
 

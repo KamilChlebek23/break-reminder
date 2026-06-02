@@ -12,16 +12,19 @@ import json
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
 from break_reminder.storage.reminders import (
     _LEAD_MAX_VALUE,
     _LEAD_MIN_VALUE,
+    InvalidTimezoneError,
     Reminder,
     ReminderStore,
     _coerce_aware_utc,
     _coerce_lead_minutes,
+    _coerce_tz,
 )
 
 UTC = UTC
@@ -812,3 +815,282 @@ class TestMalformedReminderFromDict:
         recovered = Reminder.from_dict(valid_reminder_dict)
         assert recovered.name == "valid"
         assert not hasattr(recovered, "future_setting")
+
+
+class TestCoerceTz:
+    """Pin the ``_coerce_tz`` storage-boundary helper contract (R-1b, plan F1/F3).
+
+    Mirrors ``TestCoerceAwareUtc``: the helper is invoked at every load
+    boundary so its three-way split — missing field → OS-local; valid
+    IANA → preserved; invalid → ``InvalidTimezoneError`` — is what keeps
+    the storage layer honest. Tests pin both halves of plan-review F3:
+    a missing field is lazy-migrated silently (older files predating the
+    fix are fine), but an invalid value (typo, empty, path-traversal,
+    wrong type) raises ``InvalidTimezoneError`` so ``_read``'s
+    row-containment drops the row with a WARNING. Silent fallback on
+    invalid values would swap a typo'd Warsaw for OS-local Tokyo and
+    fire at the wrong wall-clock for days; the loud-drop is preferable.
+
+    Plan-review F1 surfaced that ``zoneinfo.ZoneInfo("")`` raises
+    ``ValueError`` (not ``ZoneInfoNotFoundError``) and so the implementer
+    must catch both exception classes; both shapes are tested below.
+    """
+
+    def test_invalid_timezone_error_is_value_error_subclass(self) -> None:
+        """``InvalidTimezoneError`` is a ``ValueError`` subclass.
+
+        Subclass-of-``ValueError`` is the contract that lets
+        ``ReminderStore._read``'s existing ``(KeyError, ValueError,
+        TypeError)`` tuple catch ``InvalidTimezoneError`` without
+        widening — pinned so a future refactor that breaks the
+        subclass relationship trips here.
+        """
+        assert issubclass(InvalidTimezoneError, ValueError)
+
+    def test_none_returns_os_local(self) -> None:
+        """``raw is None`` (missing field on disk) → OS-local IANA name.
+
+        Lazy-migration path: pre-fix ``reminders.json`` files lack the
+        ``tz`` key entirely; they must load successfully without
+        intervention by routing through ``tzlocal.get_localzone_name``.
+        """
+        with patch(
+            "break_reminder.storage.reminders.tzlocal.get_localzone_name",
+            return_value="Europe/Warsaw",
+        ):
+            assert _coerce_tz(None) == "Europe/Warsaw"
+
+    def test_valid_iana_name_passes_through(self) -> None:
+        """A well-formed IANA name resolves to itself unchanged.
+
+        Identity on the happy path — the helper validates by
+        constructing ``ZoneInfo(raw)`` and discarding the result; the
+        return value is the input string verbatim so the on-disk
+        representation round-trips.
+        """
+        assert _coerce_tz("Europe/Warsaw") == "Europe/Warsaw"
+
+    def test_typo_iana_raises_invalid_timezone_error(self) -> None:
+        """A typo'd IANA name raises ``InvalidTimezoneError``.
+
+        Resolves to ``ZoneInfoNotFoundError`` inside ``ZoneInfo`` — the
+        row is dropped at the ``_read`` level rather than silently
+        swapped to OS-local.
+        """
+        with pytest.raises(InvalidTimezoneError, match="Europe/Warsaaw"):
+            _coerce_tz("Europe/Warsaaw")
+
+    def test_empty_string_raises_invalid_timezone_error(self) -> None:
+        """The empty string raises ``InvalidTimezoneError`` (not ``ValueError``).
+
+        ``ZoneInfo("")`` raises ``ValueError`` ("keys must be normalized
+        relative paths"), NOT ``ZoneInfoNotFoundError``. Plan-review F1
+        surfaced this — the implementer must catch both exception
+        classes in the ``str`` branch. This test ensures the helper
+        never leaks a raw ``ValueError`` upstream for the empty-string
+        input.
+        """
+        with pytest.raises(InvalidTimezoneError):
+            _coerce_tz("")
+
+    def test_path_traversal_raises_invalid_timezone_error(self) -> None:
+        """A path-traversal string raises ``InvalidTimezoneError``.
+
+        ``ZoneInfo("../etc/passwd")`` raises ``ValueError`` from
+        ``zoneinfo``'s path-normalization guard. Pinned explicitly so
+        an implementer who only catches ``ZoneInfoNotFoundError`` trips
+        here — both ``ValueError`` and ``ZoneInfoNotFoundError`` shapes
+        have to be funnelled into ``InvalidTimezoneError`` for the
+        storage-boundary contract.
+        """
+        with pytest.raises(InvalidTimezoneError):
+            _coerce_tz("../etc/passwd")
+
+    def test_wrong_type_raises_invalid_timezone_error(self) -> None:
+        """Non-str inputs raise ``InvalidTimezoneError`` naming the type.
+
+        Hand-edits that produce an int, list, or dict (instead of a
+        string) get a clean error message naming the unexpected type
+        rather than crashing inside ``ZoneInfo`` with a confusing trace.
+        """
+        with pytest.raises(InvalidTimezoneError, match="unexpected type"):
+            _coerce_tz(123)
+
+
+class TestReminderTzField:
+    """Pin the ``Reminder.tz`` field default-factory + serialization contract.
+
+    The field carries the IANA name to localize ``start_at`` to before
+    RRULE math (R-1b fix). Three invariants:
+
+    1. Default-factory routes through ``_coerce_tz(None)`` so the 55+
+       existing test sites and 5+ production construction sites that
+       don't pass ``tz=`` continue to work — they get OS-local
+       automatically. Lazy-migration story for in-memory construction.
+    2. ``to_dict`` round-trips the field via ``asdict``. No explicit
+       wiring needed — but pinned so a refactor that replaces ``asdict``
+       with manual construction trips here.
+    3. ``from_dict`` loads explicit ``tz`` verbatim and supplies OS-local
+       when the key is absent (older files). Both halves of plan F3's
+       missing-vs-invalid split are exercised; the invalid-value half
+       lives in ``TestCoerceTz`` and ``TestRowContainmentForInvalidTz``.
+    """
+
+    def test_default_factory_uses_os_local(self) -> None:
+        """Reminder without ``tz=`` argument picks up OS-local.
+
+        The default factory routes through ``_coerce_tz(None)`` — the
+        55+ existing call sites depend on this working without an
+        explicit ``tz=`` argument.
+        """
+        with patch(
+            "break_reminder.storage.reminders.tzlocal.get_localzone_name",
+            return_value="Europe/Warsaw",
+        ):
+            r = Reminder(
+                name="default-tz",
+                start_at=datetime(2026, 6, 1, 9, 0, tzinfo=UTC),
+            )
+        assert r.tz == "Europe/Warsaw"
+
+    def test_explicit_tz_argument_overrides_default(self) -> None:
+        """An explicit ``tz=`` argument overrides the default factory.
+
+        Form-dialog integration (Phase 3) will pass the user's OS-local
+        tz captured at ``accept()`` time; this test pins that the
+        argument lands on the field unchanged.
+        """
+        r = Reminder(
+            name="explicit",
+            start_at=datetime(2026, 6, 1, 9, 0, tzinfo=UTC),
+            tz="Asia/Tokyo",
+        )
+        assert r.tz == "Asia/Tokyo"
+
+    def test_to_dict_includes_tz(self) -> None:
+        """``to_dict`` round-trips the ``tz`` field via ``asdict``.
+
+        No explicit wiring in ``to_dict`` — but pinned so a refactor
+        that replaces ``asdict`` with a manual dict construction (and
+        forgets the new field) trips here.
+        """
+        r = Reminder(
+            name="round-trip",
+            start_at=datetime(2026, 6, 1, 9, 0, tzinfo=UTC),
+            tz="Europe/Warsaw",
+        )
+        assert r.to_dict()["tz"] == "Europe/Warsaw"
+
+    def test_from_dict_preserves_explicit_tz(self, valid_reminder_dict: dict) -> None:
+        """An on-disk row with an explicit ``"tz"`` key round-trips unchanged."""
+        valid_reminder_dict["tz"] = "Europe/Warsaw"
+        recovered = Reminder.from_dict(valid_reminder_dict)
+        assert recovered.tz == "Europe/Warsaw"
+
+    def test_from_dict_missing_tz_uses_os_local(self, valid_reminder_dict: dict) -> None:
+        """An on-disk row missing the ``"tz"`` key loads with OS-local.
+
+        The lazy-migration story for older (pre-R-1b) files.
+        ``valid_reminder_dict`` deliberately omits ``"tz"`` to keep all
+        existing tests in the suite untouched (they construct
+        ``valid_reminder_dict`` without ``tz`` and would have to thread
+        an explicit value through every call otherwise). This test pins
+        that the missing-key path defaults to OS-local via
+        ``_coerce_tz(None)``.
+        """
+        assert "tz" not in valid_reminder_dict
+        with patch(
+            "break_reminder.storage.reminders.tzlocal.get_localzone_name",
+            return_value="Europe/Warsaw",
+        ):
+            recovered = Reminder.from_dict(valid_reminder_dict)
+        assert recovered.tz == "Europe/Warsaw"
+
+
+class TestRowContainmentForInvalidTz:
+    """Extend ``TestRowContainment``'s contract to the R-1b tz failure mode.
+
+    Plan-review F3 chose loud-drop (raise ``InvalidTimezoneError``) over
+    silent-fallback (swap typo → OS-local) precisely so the row-containment
+    surface catches it. ``InvalidTimezoneError`` subclasses ``ValueError``
+    so ``ReminderStore._read``'s existing
+    ``(KeyError, ValueError, TypeError)`` exception tuple catches it
+    without modification — the contract pinned here is the cross-cutting
+    integration between the load-boundary helper and the row-containment
+    guard.
+
+    Sibling tests in ``TestRowContainment`` cover the existing failure
+    modes (malformed ISO, missing keys, wrong types); this class
+    extends the matrix to the tz-failure mode introduced by R-1b. A
+    future refactor that narrows ``_read``'s exception tuple (e.g.
+    ``except (KeyError, TypeError)`` without ``ValueError``) would trip
+    here AND in ``TestRowContainment.test_one_bad_row_drops_only_bad_row``,
+    so the regression is doubly anchored.
+    """
+
+    @staticmethod
+    def _row_with_bad_tz(name: str = "broken-tz") -> dict:
+        """A reminder-shaped dict whose ``tz`` triggers ``InvalidTimezoneError``.
+
+        Uses ``"Europe/Warsaaw"`` (a typo of ``"Europe/Warsaw"``) which
+        resolves to ``ZoneInfoNotFoundError`` inside ``_coerce_tz`` and
+        funnels into ``InvalidTimezoneError``. The well-formed fields
+        (``id``, ``name``, ``start_at``) confirm the drop is caused by
+        the tz field specifically, not by a sibling-field validation
+        failure.
+        """
+        return {
+            "id": "22222222-2222-4222-8222-222222222222",
+            "name": name,
+            "start_at": datetime(2026, 6, 1, 9, 0, tzinfo=UTC).isoformat(),
+            "rrule_str": None,
+            "end_at": None,
+            "lead_minutes": 0,
+            "tz": "Europe/Warsaaw",  # typo: extra "a"
+        }
+
+    def test_bad_tz_row_drops_only_bad_row(self, store_path: Path, store: ReminderStore) -> None:
+        """A 2-row list with row 0 carrying a typo'd tz loads only row 1.
+
+        Pins F3's loud-drop choice: the typo doesn't silently swap
+        to OS-local Warsaw; it drops the row and the user sees a
+        missing reminder + log warning instead of a silently wrong-tz
+        firing.
+        """
+        rows = [
+            self._row_with_bad_tz(name="alpha-bad"),
+            _make_reminder(name="omega-good").to_dict(),
+        ]
+        store_path.write_text(json.dumps(rows), encoding="utf-8")
+        result = store.list_all()
+        assert len(result) == 1
+        assert result[0].name == "omega-good"
+
+    def test_bad_tz_row_logs_warning_naming_invalid_timezone_error(
+        self,
+        store_path: Path,
+        store: ReminderStore,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """The dropped row's WARNING names the row index + ``InvalidTimezoneError``.
+
+        Same message shape as the existing ``TestRowContainment`` family:
+        ``"reminders.json row %d is malformed (%s: %s); dropping"``. The
+        class name in the message proves the catch went through the
+        ``ValueError`` branch via the subclass relationship — a future
+        refactor that catches ``InvalidTimezoneError`` separately would
+        change the class name surfaced in the log and trip this test.
+        """
+        rows = [
+            self._row_with_bad_tz(),
+            _make_reminder(name="omega").to_dict(),
+        ]
+        store_path.write_text(json.dumps(rows), encoding="utf-8")
+        with caplog.at_level(logging.WARNING, logger="break_reminder.storage.reminders"):
+            store.list_all()
+        warnings = [
+            r.getMessage()
+            for r in caplog.records
+            if r.levelno == logging.WARNING and r.name == "break_reminder.storage.reminders"
+        ]
+        assert any("row 0" in m and "InvalidTimezoneError" in m for m in warnings)

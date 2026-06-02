@@ -13,6 +13,8 @@ dependencies = [
     "python-dateutil>=2.9.0",
     "pyttsx3>=2.99",
     "pywin32>=311; sys_platform == 'win32'",
+    "tzdata>=2024.1",
+    "tzlocal>=5.0",
 ]
 
 [dependency-groups]
@@ -89,5 +91,14 @@ reportMissingTypeStubs = "none"
 # PyInstaller produces dist/BreakReminder/ — see installer/break-reminder.nsi.
 # Build it with:
 #   uv run pyinstaller --noconfirm --windowed --name BreakReminder \
-#                      --collect-submodules pynput main.py
+#                      --collect-submodules pynput \
+#                      --collect-data tzdata main.py
+#
+# --collect-data tzdata is REQUIRED: tzdata is a data-only package whose
+# .zoneinfo files PyInstaller does NOT auto-discover. Without it, the
+# packaged .exe raises ZoneInfoNotFoundError on every reminder load on
+# Windows (zoneinfo falls back to tzdata when the OS lacks system IANA
+# data). Local dev + CI both pass without this flag because uv sync
+# installs tzdata into the venv; only the first packaged installer build
+# after the bugfix-reminder-dst-drift change would hit the failure.
 # ---------------------------------------------------------------------------

@@ -313,31 +313,31 @@ None. The fix is purely additive at the construction site. No persisted state, n
 
 #### Automated
 
-- [x] 2.1 Phase 1 tests now PASS: `uv run pytest tests/test_modal_stacking_integration.py` reports `2 passed`
-- [x] 2.2 Existing 20 BreakDialog tests STILL PASS: `uv run pytest tests/test_break_dialog.py` reports `20 passed`
-- [x] 2.3 Full test suite passes — no regressions in any other test file: `uv run pytest` (511 passed)
-- [x] 2.4 Lint passes: `uv run ruff check break_reminder/notifications/break_dialog.py`
-- [x] 2.5 Type check passes on the full project: `uv run pyright`
-- [x] 2.6 Pre-commit passes against the staged file: `uv run pre-commit run --files break_reminder/notifications/break_dialog.py`
+- [x] 2.1 Phase 1 tests now PASS: `uv run pytest tests/test_modal_stacking_integration.py` reports `2 passed` — 863dfd9
+- [x] 2.2 Existing 20 BreakDialog tests STILL PASS: `uv run pytest tests/test_break_dialog.py` reports `20 passed` — 863dfd9
+- [x] 2.3 Full test suite passes — no regressions in any other test file: `uv run pytest` (511 passed) — 863dfd9
+- [x] 2.4 Lint passes: `uv run ruff check break_reminder/notifications/break_dialog.py` — 863dfd9
+- [x] 2.5 Type check passes on the full project: `uv run pyright` — 863dfd9
+- [x] 2.6 Pre-commit passes against the staged file: `uv run pre-commit run --files break_reminder/notifications/break_dialog.py` — 863dfd9
 
 #### Manual
 
-- [x] 2.7 Q2 lived-incident fix verified: launch app, open Settings, trigger 'Take break now' from tray, click 'I'll take a break' — popup closes
-- [x] 2.8 ReminderFormDialog regime fix verified: open Settings → Reminders → 'Add reminder', trigger 'Take break now' from tray — popup clickable
-- [x] 2.9 US-02 in-flight-keystroke regression check passes: type in an editor, trigger 'Take break now', in-flight keystroke continues to land in the editor (popup did NOT steal activation)
+- [x] 2.7 Q2 lived-incident fix verified: launch app, open Settings, trigger 'Take break now' from tray, click 'I'll take a break' — popup closes — 863dfd9
+- [x] 2.8 ReminderFormDialog regime fix verified: open Settings → Reminders → 'Add reminder', trigger 'Take break now' from tray — popup clickable — 863dfd9
+- [x] 2.9 US-02 in-flight-keystroke regression check passes: type in an editor, trigger 'Take break now', in-flight keystroke continues to land in the editor (popup did NOT steal activation) — 863dfd9
 
 ### Phase 3: Docs sync — close the change
 
 #### Automated
 
-- [ ] 3.1 All three files modified: `git diff --name-only` from the Phase 3 commit shows `context/deployment/deploy-plan.md`, `context/foundation/test-plan.md`, and `AGENTS.md`
-- [ ] 3.2 Sanity check that the docs commit didn't touch any code: `git diff --stat` shows zero `.py` diffs
-- [ ] 3.3 Full test suite still PASS: `uv run pytest`
+- [x] 3.1 All three files modified: `git diff --name-only` from the Phase 3 commit shows `context/deployment/deploy-plan.md`, `context/foundation/test-plan.md`, and `AGENTS.md`
+- [x] 3.2 Sanity check that the docs commit didn't touch any code: `git diff --stat` shows zero `.py` diffs
+- [x] 3.3 Full test suite still PASS: `uv run pytest` (511 passed)
 
 #### Manual
 
-- [ ] 3.4 `context/foundation/test-plan.md` §3 row 2 Status reads `complete`
-- [ ] 3.5 `context/foundation/test-plan.md` §6 'Modal-stacking / wedge survival' row names `tests/test_modal_stacking_integration.py::TestModalStackingWedge` and the structural invariants
-- [ ] 3.6 `context/foundation/test-plan.md` §2 R-2 'Anti-pattern to avoid' warns about the `QTest.mouseClick` false negative AND references `research.md` §3
-- [ ] 3.7 `context/deployment/deploy-plan.md` around line 131 smoke step lists 'Open Settings first, then trigger break dialog'
-- [ ] 3.8 `AGENTS.md` FR-009 section fifth bullet mentions `setWindowModality(Qt.ApplicationModal)`
+- [x] 3.4 `context/foundation/test-plan.md` §3 row 2 Status reads `complete`
+- [x] 3.5 `context/foundation/test-plan.md` §6 'Modal-stacking / wedge survival' row names `tests/test_modal_stacking_integration.py::TestModalStackingWedge` and the structural invariants
+- [x] 3.6 `context/foundation/test-plan.md` §2 R-2 'Anti-pattern to avoid' warns about the `QTest.mouseClick` false negative AND references `research.md` §3
+- [x] 3.7 `context/deployment/deploy-plan.md` around line 131 smoke step lists 'Open Settings first, then trigger break dialog'
+- [x] 3.8 `AGENTS.md` FR-009 section fifth bullet mentions `setWindowModality(Qt.ApplicationModal)`

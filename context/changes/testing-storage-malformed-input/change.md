@@ -1,7 +1,7 @@
 ---
 change_id: testing-storage-malformed-input
 title: Testing storage malformed input
-status: implementing
+status: implemented
 created: 2026-06-02
 updated: 2026-06-02
 archived_at: null

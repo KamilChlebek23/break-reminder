@@ -424,31 +424,31 @@ None. The `_read` fix is strictly more permissive than today's behavior (it acce
 
 #### Automated
 
-- [x] 3.1 `break_reminder/storage/reminders.py` modified: `import logging` added; `logger = logging.getLogger(__name__)` added at module level; `_read` body replaced per Phase 3 Changes Required #1 contract
-- [x] 3.2 Module docstring updated to document the row-resilience (Phase 3 Changes Required #2)
-- [x] 3.3 Phase 2 RED tests turn GREEN: `uv run pytest tests/test_reminders.py::TestReminderStoreReadResilience -v` PASS
-- [x] 3.4 Existing tests still PASS (regression sweep): `uv run pytest tests/test_reminders.py` PASS
-- [x] 3.5 Full suite still PASS: `uv run pytest`
-- [x] 3.6 Lint / format / type / pre-commit clean on `reminders.py`
+- [x] 3.1 `break_reminder/storage/reminders.py` modified: `import logging` added; `logger = logging.getLogger(__name__)` added at module level; `_read` body replaced per Phase 3 Changes Required #1 contract — 2bab8e9
+- [x] 3.2 Module docstring updated to document the row-resilience (Phase 3 Changes Required #2) — 2bab8e9
+- [x] 3.3 Phase 2 RED tests turn GREEN: `uv run pytest tests/test_reminders.py::TestReminderStoreReadResilience -v` PASS — 2bab8e9
+- [x] 3.4 Existing tests still PASS (regression sweep): `uv run pytest tests/test_reminders.py` PASS — 2bab8e9
+- [x] 3.5 Full suite still PASS: `uv run pytest` — 2bab8e9
+- [x] 3.6 Lint / format / type / pre-commit clean on `reminders.py` — 2bab8e9
 
 #### Manual
 
-- [ ] 3.7 `git diff break_reminder/storage/reminders.py` shows ~10 LoC of production change concentrated in `_read` + 2 import-level lines + ~2 docstring lines; no drive-by edits
-- [ ] 3.8 Log message shape (`row %d is malformed (%s: %s); dropping`) matches what Phase 2 caplog tests assert on
-- [ ] 3.9 End-to-end smoke: edit a real `reminders.json` with one bad row; launch app; well-formed reminders appear; bad row silently dropped; no panic dialog; WARNING in app log
+- [x] 3.7 `git diff break_reminder/storage/reminders.py` shows ~10 LoC of production change concentrated in `_read` + 2 import-level lines + ~2 docstring lines; no drive-by edits — 2bab8e9
+- [x] 3.8 Log message shape (`row %d is malformed (%s: %s); dropping`) matches what Phase 2 caplog tests assert on — 2bab8e9
+- [x] 3.9 End-to-end smoke: edit a real `reminders.json` with one bad row; launch app; well-formed reminders appear; bad row silently dropped; no panic dialog; WARNING in app log — 2bab8e9
 
 ### Phase 4: Docs sync — close the rollout phase
 
 #### Automated
 
-- [ ] 4.1 `git diff --name-only` for the Phase 4 commit shows exactly `context/foundation/test-plan.md` + `context/foundation/lessons.md`; no `.py` files
-- [ ] 4.2 `git diff --stat` shows zero Python file changes
-- [ ] 4.3 Full suite PASS (regression sanity): `uv run pytest`
+- [x] 4.1 `git diff --name-only` for the Phase 4 commit shows exactly `context/foundation/test-plan.md` + `context/foundation/lessons.md`; no `.py` files (+ trailing Phase 3 SHA writeback in `plan.md`)
+- [x] 4.2 `git diff --stat` shows zero Python file changes
+- [x] 4.3 Full suite PASS (regression sanity): `uv run pytest` — 562 passed
 
 #### Manual
 
-- [ ] 4.4 `context/foundation/test-plan.md` §3 row 3 Status reads `complete`; frontmatter `rollout_phases_complete: 3`
-- [ ] 4.5 §2 R-5 Risk Response Guidance "Must challenge" cell rewritten per Phase 4 Changes Required #1 contract (a)-(d); no remaining "since S-06b" / "since S-04" framing
-- [ ] 4.6 §6 Cookbook "Storage hand-edit robustness" row names all three test class targets + post-Phase-3 `_read` fix; no remaining "TBD"
-- [ ] 4.7 `context/foundation/lessons.md` carries a new entry following the existing template; rule wording is concrete (names files, names patterns)
-- [ ] 4.8 Source path typo (`impl-review.md` → `impl-review-phase-1.md`) and S-04 → S-01 naming corrections both applied if applicable to any §2 R-5 cells
+- [x] 4.4 `context/foundation/test-plan.md` §3 row 3 Status reads `complete`; frontmatter `rollout_phases_complete: 3`
+- [x] 4.5 §2 R-5 Risk Response Guidance "Must challenge" cell rewritten per Phase 4 Changes Required #1 contract (a)-(d); no remaining "since S-06b" / "since S-04" framing
+- [x] 4.6 §6 Cookbook "Storage hand-edit robustness" row names all three test class targets + post-Phase-3 `_read` fix; no remaining "TBD"
+- [x] 4.7 `context/foundation/lessons.md` carries a new entry following the existing template; rule wording is concrete (names files, names patterns)
+- [x] 4.8 Source path typo: N/A — the R-5 row cites only commit SHA `797328d`, no filename present to correct. S-04 → S-01 naming correction: applied (lens replaced wholesale per 4.5; the test-plan no longer leans on "since S-04" / "since S-06b" framing at all)

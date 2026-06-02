@@ -126,6 +126,7 @@ Voice playback **must stop** the moment the user clicks "I'll take a break" or "
 - **pynput listener threads** are spawned by pynput; they emit Qt signals to cross back. Never touch a `QWidget` from these threads.
 - **Voice worker thread** is a dedicated `ThreadPoolExecutor`; only `pyttsx3.Engine` instances may live there.
 - **No shared mutable state across threads without a lock.** All cross-thread comms goes through Qt signals.
+- **Do not enter the Qt event loop after `BreakScheduler.start()` in tests.** `scheduler.py:100-102` `start()` arms the 1Hz `QTimer`. Calling `qtbot.wait()`, `qtbot.waitSignal()`, or `qt_app.exec()` afterward lets the real timer fire `_tick()` on wall-clock seconds, racing the deterministic `_tick()` invocations the test relies on. Drive ticks synchronously by calling `_tick()` directly (the established pattern in `tests/test_break_scheduler.py` and reused by the Phase 4 e2e files `tests/test_save_settings_interval_e2e.py` + `tests/test_tray_reset_e2e.py`). Same rule applies to `ReminderScheduler._on_timer()` after its `singleShot` is armed via `reload()`.
 
 ## Build & release
 

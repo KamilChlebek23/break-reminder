@@ -1,6 +1,6 @@
 ---
 project: BreakReminder
-checked_at: 2026-05-21T11:32:00Z
+checked_at: 2026-06-02T17:20:00Z
 health_status: healthy
 context_type: brownfield
 language_family: python
@@ -18,110 +18,149 @@ audit_findings:
   moderate: 0
   low: 0
 test_runner_detected: true
-test_count: 135
+test_count: 566
 ci_provider: github-actions
 recommended_fixes: 0
 ---
 
 # BreakReminder — Health Check
 
-> Re-run after the v0.1.0 first-deployment work landed. Phase 0 deployment safety nets, CI hardening (NSIS install + pynput smoke test), README expansion, and the `.nsi` installer fixes have all been merged onto the working tree. Every gate is still green; the project is in a stronger state than the 2026-05-20 baseline.
+> Re-run after the four-rollout testing sprint completed (R-1 recurring reminder loop, R-2 modal stacking, R-5 storage malformed input, R-4 top-three e2e flows). The project crossed from a "shipped v0.1.0 with 135 tests" state to a "566 tests across three tiers (unit + integration + e2e) with a CI marker split" state in twelve days. Every gate is still green; the project is in a meaningfully stronger state than the 2026-05-21 baseline.
 
-## What changed since the last health check (2026-05-20)
+## What changed since the last health check (2026-05-21)
 
 | Area | Change |
 |---|---|
-| `[main.py](../../main.py)` | Bootstrap-panic safety net (try/except + `MessageBoxW`) and `--self-test` CLI flag (Phase 0a + 0c). |
-| `[break_reminder/app.py](../../break_reminder/app.py)` | New "Check for updates" tray action + `RELEASES_URL` constant (Phase 0b). |
-| `[.github/workflows/release.yml](../../.github/workflows/release.yml)` | "Install NSIS" probe replaced with real `choco install nsis -y` + `GITHUB_PATH` propagation; new pynput-bundled-binary smoke-test step inserted after PyInstaller build. |
-| `[installer/break-reminder.nsi](../../installer/break-reminder.nsi)` | Two latent bugs fixed: doubled `OutFile` path, and a comment-trailing-`\` that NSIS read as a line continuation and silently swallowed the `File /r` directive (warning 6050). |
-| `[README.md](../../README.md)` | Expanded from 52 to 234 lines: end-user Install + Using sections (SmartScreen, install location, tray menu reference, complete INI example, uninstall) with developer content preserved as a clearly-divided second half. |
-| `[context/deployment/deploy-plan.md](../deployment/deploy-plan.md)` | New file — v0.1.0 runbook (pre-flight, tag-push, smoke test, roll-back rehearsal). |
-| `[.gitignore](../../.gitignore)` | Two entries appended via `/git-validator` interactive flow (`.cursor/.10x-cli-manifest.json`, `10x-1234`); the existing trailing-slash-on-a-file bug at line 12 is documented but left in place. |
-| `[.cursor/skills/git-validator/SKILL.md](../../.cursor/skills/git-validator/SKILL.md)` | Gate 1 broadened from `10x-` prefix to `10x` substring; AskQuestion-driven `.gitignore` append; one-bullet carve-out from the read-only operating rule. |
+| Test suite | **135 → 566 tests** (+431) across 17 files. Four test rollouts shipped: R-1 (`tests/test_recurring_reminder_integration.py`), R-2 (`tests/test_modal_stacking_integration.py`), R-5 (storage hand-edit robustness — extensions to `test_reminders.py` + `test_settings.py`), R-4 (three new e2e files: `test_add_reminder_e2e.py`, `test_save_settings_interval_e2e.py`, `test_tray_reset_e2e.py`). Plus `test_reminder_form_dialog.py` (125 tests), `test_reminder_scheduler.py` (11), `test_reminder_dialog.py` (9). |
+| `[.github/workflows/release.yml](../../.github/workflows/release.yml)` | Single `Test` step replaced with two sequential steps `Test (unit)` (`pytest -m "not e2e"`) + `Test (e2e)` (`pytest -m e2e`) — gives the PR view two distinct red/green check marks. **Branch trigger hotfix**: `on.push.branches` and `on.pull_request.branches` corrected from `[main]` to `[master]` (the silent no-CI bug surfaced on the R-4 PR — line 9-13 comment block documents the fix). |
+| `[pyproject.toml](../../pyproject.toml)` | Migrated pytest config from legacy `[tool.pytest.ini_options]` to the pytest 9.0+ native `[tool.pytest]` table — the legacy table silently dropped `--strict-markers` from `addopts`. New typed `strict_markers = true` boolean + `markers = ["e2e: ..."]` registration. Pyright floor bumped 1.1.380 → 1.1.410 (clears the upstream upgrade warning). |
+| `[.pre-commit-config.yaml](../../.pre-commit-config.yaml)` | **New file** — ruff (`v0.15.13` with `--fix`) + pyright (local hook, whole-project) wired to run on every `git commit`. Local + CI now share the same lint/type gate. |
+| `[tests/conftest.py](../../tests/conftest.py)` | Ten shared fixtures lifted from per-file integration tests (`clock`, `store_path`, `store`, `settings`, `voice` + `FakeVoice` class, `reminder_scheduler`, `activity`, `break_scheduler`, `event_log`, `break_reminder_app`) — establishes the harness foundation for the e2e tier. |
+| `[break_reminder/app.py](../../break_reminder/app.py)` | `BreakReminderApp.__init__` gained a `clock=` kwarg propagated to both internal schedulers — structural fix that unblocks wired-app e2e tests driving virtual time deterministically. |
+| `[context/foundation/lessons.md](lessons.md)` | Three new lessons recorded this period: "Bundle `/10x` orchestration edits into the change's first phase commit"; "Storage-boundary loaders need per-row containment + per-field coercion"; "Signal-connection assertions are not end-to-end coverage" (codifies the R-4 anti-pattern). |
+| `[context/foundation/test-plan.md](test-plan.md)` | `rollout_phases_complete: 0 → 4` — all four planned test-tier rollouts shipped. §6 cookbook gained four new recipes (one per rollout). |
+| `[context/archive/](../archive/)` | Four new archived changes since 2026-05-21: `2026-06-01-testing-rrule-reminder-loop`, `2026-06-02-testing-modal-stacking-wedge`, `2026-06-02-testing-storage-malformed-input`, `2026-06-02-testing-top-three-e2e-flows`. |
 
 ## Dependency Health
 
 ```text
-Lockfile          : uv.lock (present)
+Lockfile          : uv.lock (present, real lockfile — not the weak requirements.txt fallback)
 pip-audit         : No known vulnerabilities found  (0 critical / 0 high / 0 moderate / 0 low)
-pip-licenses      : No AGPL findings (PySide6 LGPL/GPL triple-license is permitted; PyInstaller's GPLv2 is permitted via its bootloader exception, documented in release.yml)
-Outdated packages : 1 (certifi 2026.4.22 → 2026.5.20 — patch-level minor bump, NOT actionable)
+pip-licenses      : No AGPL findings (PySide6 LGPL, PyInstaller GPLv2-with-bootloader-exception permitted)
+Outdated packages : 6 (all patch-level minor bumps below the "two major versions behind" surface threshold)
 ```
 
-The certifi delta is a routine root-CA-bundle refresh and falls below the "two major versions behind" surface threshold defined by the skill. No action required; `uv lock --upgrade-package certifi` whenever convenient.
+| Package | Current | Latest | Type | Notes |
+|---|---|---|---|---|
+| certifi | 2026.4.22 | 2026.5.20 | wheel | Routine root-CA bundle refresh. |
+| distlib | 0.4.0 | 0.4.1 | wheel | Transitive of pip-audit. |
+| idna | 3.15 | 3.18 | wheel | Transitive. |
+| pip | 26.1.1 | 26.1.2 | wheel | uv-managed; bumps automatically. |
+| platformdirs | 4.9.6 | 4.10.0 | wheel | Transitive. |
+| ruff | 0.15.13 | 0.15.15 | wheel | Tool dep; pinned in `.pre-commit-config.yaml:13` AND `pyproject.toml [dependency-groups].dev`. Two-step bump if you want them in lockstep: `uv lock --upgrade-package ruff` + `pre-commit autoupdate --repo https://github.com/astral-sh/ruff-pre-commit`. |
+
+All six deltas are patch-level. None are AI-collaboration-relevant. Bump opportunistically.
 
 ## Test Infrastructure
 
 ```text
-Test runner       : pytest (configured via [tool.pytest.ini_options] in pyproject.toml)
-Test count        : 135 tests across 7 files
-Plugins           : pytest-qt (for QApplication-coupled tests in test_break_dialog, test_app)
-Collection status : clean (pytest --collect-only exited 0)
+Test runner       : pytest 9.0+ (configured via [tool.pytest] in pyproject.toml; strict_markers enforced)
+Test count        : 566 tests across 17 files (135 at 2026-05-21 → +431)
+Tiers             : unit (538 tests, no marker) + integration (25 tests across 2 *_integration.py files,
+                    no marker) + e2e (3 tests via @pytest.mark.e2e file-level pytestmark)
+Plugins           : pytest-qt (QApplication coupling, qtbot, qapp fixtures)
+Collection status : clean (pytest --collect-only -q exits 0)
+Shared harness    : tests/conftest.py exposes 10 fixtures + Clock class + FakeVoice stub
 ```
 
-| File | Tests |
-|---|---|
-| `tests/test_app.py` | 18 |
-| `tests/test_break_dialog.py` | 20 |
-| `tests/test_break_scheduler.py` | 21 |
-| `tests/test_event_log.py` | 13 |
-| `tests/test_reminders.py` | 18 |
-| `tests/test_scheduler.py` | 8 |
-| `tests/test_settings.py` | 37 |
+| File | Tests | Tier |
+|---|---|---|
+| `tests/test_add_reminder_e2e.py` | 1 | e2e (R-4 Flow A) |
+| `tests/test_app.py` | 42 | unit |
+| `tests/test_break_dialog.py` | 20 | unit |
+| `tests/test_break_scheduler.py` | 30 | unit |
+| `tests/test_event_log.py` | 13 | unit |
+| `tests/test_modal_stacking_integration.py` | 2 | integration (R-2) |
+| `tests/test_recurring_reminder_integration.py` | 4 | integration (R-1) |
+| `tests/test_reminder_dialog.py` | 9 | unit |
+| `tests/test_reminder_form_dialog.py` | 125 | unit |
+| `tests/test_reminder_scheduler.py` | 11 | unit |
+| `tests/test_reminders.py` | 51 | unit (includes R-5 boundary-coerce additions) |
+| `tests/test_save_settings_interval_e2e.py` | 1 | e2e (R-4 Flow B) |
+| `tests/test_scheduler.py` | 8 | unit |
+| `tests/test_settings_dialog.py` | 142 | unit |
+| `tests/test_settings.py` | 101 | unit (includes R-5 boundary-coerce additions) |
+| `tests/test_tray_reset_e2e.py` | 1 | e2e (R-4 Flow D) |
+| `tests/test_voice.py` | 5 | unit |
 
-Coverage is weighted toward the storage and scheduling layers (the load-bearing FRs: FR-008, FR-009, FR-014, FR-015). The integration surface (`test_app.py`, `test_break_dialog.py`) covers tray-menu wiring, the non-dismissable dialog, and the new programmatic clock icon. Test runner being healthy is the single most important pre-condition for AI-assistant collaboration — the agent can verify its own changes.
+The R-4 tier closes the R-4 "Must challenge" line item from `test-plan.md §2` — the three signal connections at `break_reminder/app.py:287` / `:288` / `:359` are now traversed end-to-end. The "no `_StubSignal` shims" rule is enforced by the new `lessons.md` entry "Signal-connection assertions are not end-to-end coverage" and will be flagged by future `/10x-impl-review` runs.
 
 ## CI/CD
 
 ```text
 Provider : GitHub Actions
 File     : .github/workflows/release.yml
-Trigger  : push to main, pull_request to main, tag-push for "v*"
-Stages   : lint ✓  test ✓  type-check ✓  build ✓  security ✓  license ✓
+Trigger  : push to master (corrected from main), pull_request to master, tag-push for "v*"
+Stages   : lint ✓  test (unit) ✓  test (e2e) ✓  type-check ✓  security ✓  license ✓  build ✓
 ```
 
 | Stage | Implementation | Notes |
 |---|---|---|
-| Lint | `uv run ruff check` | Full rule selection (`E F W I B UP SIM D`); pydocstyle on Google convention. |
-| Type check | `uv run pyright` | `standard` strictness; `pythonPlatform: Windows`. |
-| Test | `uv run pytest` | Same 135-test suite as local. |
-| Security | `uv run pip-audit` | Step 53–59. Fails on any known CVE. |
-| License | `uv run pip-licenses --fail-on="AGPL"` | Step 61–69. Documented allowlist for PySide6 LGPL and PyInstaller's GPLv2-with-bootloader-exception. |
-| License manifest | `uv run pip-licenses --format=markdown --output-file=licenses.md` | Uploaded as `license-manifest` artifact via `actions/upload-artifact@v4`. |
-| Build | PyInstaller one-folder + the new `pynput --self-test` smoke step + `choco install nsis` + NSIS | Six pipeline steps total before installer artifact upload. |
-| Publish | `softprops/action-gh-release@v2`, gated on `startsWith(github.ref, 'refs/tags/v')` | Permissions explicitly declared as `contents: write`. |
+| Install uv | `astral-sh/setup-uv@v8.1.0` | Pinned to exact patch tag per the supply-chain comment block (line 35-42); bump deliberately. |
+| Lint | `uv run ruff check` | Selection `E F W I B UP SIM D` with Google pydocstyle convention. |
+| Type check | `uv run pyright` | `standard` mode (not strict). Mirror of local pre-commit hook. |
+| Test (unit) | `uv run pytest -m "not e2e"` | 563 tests (538 unit + 25 integration). |
+| Test (e2e) | `uv run pytest -m e2e` | 3 tests. Separate step → distinct PR check mark. |
+| Security | `uv run pip-audit` | Hard-fails on any known CVE. |
+| License manifest | `uv run pip-licenses --format=markdown --output-file=licenses.md` | Produced BEFORE the AGPL gate so the artifact always lands (release.yml line 84-96 comment block documents the rationale). |
+| License gate | `uv run pip-licenses --fail-on="AGPL"` | Allowlisted: PySide6 LGPL, PyInstaller GPLv2 (bootloader exception). |
+| Upload manifest | `actions/upload-artifact@v4` with `if: always()` | Survives downstream failures. |
+| Build | PyInstaller one-folder + `--self-test` pynput smoke + `choco install nsis` + NSIS installer | 6 steps before installer upload. |
+| Publish | `softprops/action-gh-release@v2`, gated `startsWith(github.ref, 'refs/tags/v')` | `permissions.contents: write` declared explicitly. |
 
-This is materially stronger than the 2026-05-20 snapshot, which had the "Install NSIS" probe assuming a preinstall that GitHub had already removed from the runner image. That gap was caught by the user's first v0.1.0 tag-push and remediated in this same session.
+Local + CI gate parity: the new `.pre-commit-config.yaml` runs the same `ruff check` (with `--fix`) and `pyright` (whole-project) hooks on every `git commit`, so most CI failures are now catchable before push.
 
 ## Configuration
 
 ```text
-.gitignore       ✓ present (with the recent /git-validator-applied entries)
-.editorconfig    ✓ present
-.gitattributes   ✓ present
-LICENSE          ✓ present (MIT, matches pyproject.toml [project] license = "MIT")
-README.md        ✓ present (recently expanded to 234 lines)
-AGENTS.md        ✓ present (excellent depth: stack rationale, FR-by-FR pattern notes, threading rules)
-pyproject.toml   ✓ ruff config (E/F/W/I/B/UP/SIM/D rules)
-                 ✓ pyright config (standard mode, Windows platform)
-                 ✓ pytest config
-                 ✓ google-style pydocstyle convention
-.env.example     ✗ missing — N/A for this app (no env vars; local-only Windows desktop binary, no API keys, no remote services)
+.gitignore                ✓ present
+.editorconfig             ✓ present
+.gitattributes            ✓ present
+LICENSE                   ✓ present (MIT, matches pyproject.toml [project].license)
+README.md                 ✓ present (end-user Install + Using sections, 234 lines)
+AGENTS.md                 ✓ present (deeply structured: stack rationale, FR-by-FR pattern notes,
+                            threading rules, "do not enter event loop after BreakScheduler.start()"
+                            rule freshly added)
+.pre-commit-config.yaml   ✓ present (NEW since last check — ruff --fix + pyright)
+pyproject.toml            ✓ ruff config (E/F/W/I/B/UP/SIM/D rules)
+                          ✓ pyright config (standard mode, Windows platform)
+                          ✓ pytest config (pytest 9.0+ native [tool.pytest] table)
+                          ✓ google-style pydocstyle convention
+                          ✓ markers + strict_markers enforced
+.env.example              ✗ missing — N/A for this app (no env vars; local-only Windows desktop binary)
 ```
 
-The `.env.example` "missing" finding is suppressed: BreakReminder is a tray-resident desktop app with zero outbound HTTP, no secrets, no environment-variable inputs. There is nothing to document in an `.env.example`.
+`.env.example` "missing" suppressed: BreakReminder is a tray-resident desktop app with zero outbound HTTP, no secrets, no environment-variable inputs. There is nothing to document.
 
 ## Foundation files (brownfield context)
 
 ```text
-context/foundation/prd.md                  ✓ present
+context/foundation/prd.md                  ✓ present (frontmatter says greenfield; project is now
+                                              far past scaffold — treat as brownfield in practice)
 context/foundation/tech-stack.md           ✓ present
-context/foundation/lessons.md              ✓ present (Google-style docstring lesson recorded)
-context/foundation/infrastructure.md       ✓ present (decision contract: GitHub Releases + winget runner-up)
+context/foundation/lessons.md              ✓ present (4 entries: Google docstrings, orchestration
+                                              bundling, storage-boundary coerce, signal-connection
+                                              e2e coverage)
+context/foundation/test-plan.md            ✓ present (rollout_phases_complete: 4, all R-N rollouts
+                                              shipped)
+context/foundation/infrastructure.md       ✓ present (GitHub Releases + winget runner-up)
 context/foundation/stack-assessment.md     ✗ not run (optional input; skipped per skill guardrails)
 context/foundation/health-check.md         ← this file (overwritten this run)
+context/foundation/README.md               ✓ present
 context/deployment/deploy-plan.md          ✓ present (v0.1.0 runbook)
+context/changes/                           (empty — testing-top-three-e2e-flows just archived)
+context/archive/                           16 archived changes (settings × 4, reminders × 5,
+                                              bugfix × 2, testing rollouts × 4, version-in-check × 1)
 ```
 
 The brownfield chain is well-stocked. Stack-assess is not a precondition for health-check; running it later would add the per-quality-gate scorecard but would not change today's verdict.
@@ -133,34 +172,47 @@ The brownfield chain is well-stocked. Stack-assess is not a precondition for hea
 | Signal | Reading |
 |---|---|
 | Audit findings | 0 critical, 0 high, 0 moderate, 0 low |
-| Test runner | pytest, 135 tests, clean collection |
-| CI coverage | All 6 stages present (lint/type/test/security/license/build) |
-| Foundation files | PRD, AGENTS.md, lessons.md, infrastructure.md, deploy-plan.md all present |
-| Configuration | EditorConfig, gitattributes, gitignore, LICENSE, ruff/pyright/pytest all configured |
+| Test runner | pytest 9.0+, 566 tests across 3 tiers, clean collection, strict_markers enforced |
+| CI coverage | All 7 stages present (lint / test-unit / test-e2e / type / security / license / build) |
+| Local-CI parity | pre-commit hooks mirror CI lint + type-check |
+| Foundation files | PRD, AGENTS.md, lessons.md, test-plan.md, infrastructure.md, deploy-plan.md, tech-stack.md all present |
+| Configuration | .editorconfig, .gitignore, .gitattributes, LICENSE, ruff/pyright/pytest all configured |
+| Lockfile | uv.lock real (not the weak requirements.txt fallback) |
+| Process maturity | 16 archived changes, 4 lessons codified, 4 test-tier rollouts shipped |
 
-**Recommended Category A fixes: 0.**
+## Recommendations
 
-The project is structurally enforcing what the 2026-05-19 baseline only hoped for. Every load-bearing FR has unit and integration tests; CI fails closed on lint, type, security, license, and build regressions; `AGENTS.md` is detailed enough that an agent can extend any FR without reading the source first.
+**No Category A fixes required.** The project clears every must-fix gate for AI-assistant workflows.
 
-## Category B — out of scope for this lesson, on the upcoming roadmap
+Three opportunistic improvements, each strictly optional:
 
-These are real gaps that the runbook in [`context/deployment/deploy-plan.md`](../deployment/deploy-plan.md) addresses, OR that are explicitly deferred per `[infrastructure.md](infrastructure.md)`'s risk register:
+1. **Bump ruff to 0.15.15 in lockstep across both pin sites** (effort: quick)
+   - `uv lock --upgrade-package ruff`
+   - Update `.pre-commit-config.yaml:13` `rev: v0.15.13` → `rev: v0.15.15` (or `uv run pre-commit autoupdate --repo https://github.com/astral-sh/ruff-pre-commit`)
+   - The comment block at `.pre-commit-config.yaml:7-9` explicitly calls out "keep in lockstep with `context/foundation/test-plan.md §4 Stack`" — bump all three together if you take this fix.
 
-- **Code signing** — v0.1.0 ships unsigned; SmartScreen warns on first run. Documented mitigation path is an EV cert; trigger is "SmartScreen friction crosses actionability threshold". Addressed when adoption justifies the spend.
-- **winget secondary distribution channel** — runner-up to GitHub Releases per `infrastructure.md` Platform Comparison. Adopted in v0.2.x when user count justifies.
-- **Settings UI window (FR-005)** — placeholder `QMessageBox` in v0.1.x. The full window (FR-005 / FR-006 / FR-011 / FR-012) is v0.2.x scope.
-- **Custom-reminder editor dialog (FR-011 / FR-012 CRUD)** — same as above; v0.2.x.
-- **Focus Assist + system-mute query (US-01)** — currently stubbed; lands when needed.
-- **Snooze countdown UI affordance** — snooze action works; the visible countdown is a placeholder.
+2. **Consider bumping pyright `typeCheckingMode` from `standard` to `strict`** (effort: moderate)
+   - `pyproject.toml:76` comment already flags this as a future direction: "Bump to strict once the codebase is fully typed and the third-party stub gaps below are gone."
+   - With 566 tests + Google-docstring enforcement + per-module pattern conventions in place, the codebase is in a stronger position to absorb strict-mode errors than at the previous check. Try it in a side branch first; if the error count is manageable (< 20), absorb them into a small chore commit.
 
-None of these block the v0.1.0 deployment. They are not Category A findings and do not affect the verdict.
+3. **Refresh certifi opportunistically** (effort: quick)
+   - `uv lock --upgrade-package certifi` — patch-level CA bundle refresh. Not security-relevant in this app (no outbound HTTP) but keeps the lockfile current.
 
-## Next move
+None of the three blocks AI-collaboration quality. Address them on the next housekeeping pass or whenever the dependency surface gets touched for an unrelated reason.
 
-The natural next step is **publishing v0.1.0** following [`context/deployment/deploy-plan.md`](../deployment/deploy-plan.md):
+## Comparison to 2026-05-21 baseline
 
-1. Phase 1 pre-flight (replace `<OWNER>` placeholder in both `[break_reminder/app.py](../../break_reminder/app.py)` and `[README.md](../../README.md)`, run the full local quality gate, build the local installer end-to-end).
-2. Phase 2 tag push (`git tag -a v0.1.0 ...; git push origin v0.1.0`) and watch the workflow.
-3. Phase 3 post-publish smoke test (clean Windows 11 box, install via SmartScreen → Run anyway, verify FR-004 / FR-009 / FR-002).
+| Dimension | 2026-05-21 | 2026-06-02 | Delta |
+|---|---|---|---|
+| Tests | 135 | 566 | **+431** (×4.2) |
+| Test files | 7 | 17 | +10 |
+| Test tiers | 1 (unit) | 3 (unit / integration / e2e) | +2 |
+| CI test steps | 1 | 2 (unit + e2e split) | +1 |
+| `.pre-commit-config.yaml` | absent | ruff + pyright | new |
+| Pyright | 1.1.380 | 1.1.410 | +30 patches |
+| Lessons codified | 1 | 4 | +3 |
+| Archived changes | 12 | 16 | +4 |
+| Audit findings | 0 / 0 / 0 / 0 | 0 / 0 / 0 / 0 | same (clean) |
+| Health verdict | healthy | healthy | maintained |
 
-Health-check raises no objection; the green light is procedural (the human is the tag-pusher), not technical.
+The project did not just hold the line; it materially strengthened. The R-4 e2e tier closes a class of bug (broken `.connect()` calls invisible to slot-capture unit tests) that the previous `_StubSignal` patterns could not catch, and the new `lessons.md` entry makes that anti-pattern impossible to re-introduce silently.

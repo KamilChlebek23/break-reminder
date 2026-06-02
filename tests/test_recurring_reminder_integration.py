@@ -25,9 +25,6 @@ agree with the regression.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
-
-import pytest
 
 from break_reminder.scheduler import ReminderScheduler
 from break_reminder.storage.reminders import Reminder, ReminderStore
@@ -42,37 +39,12 @@ from tests.conftest import Clock
 # When the bugfix change opens, the failing test belongs in
 # tests/test_scheduler.py (next_firing_after RRULE arithmetic across DST),
 # NOT here — DST is a pure-helper concern, not an integration concern.
-
-
-@pytest.fixture
-def clock() -> Clock:
-    """A ``Clock`` pinned at 2026-05-20 06:00 UTC for deterministic time math.
-
-    Same epoch as the unit-test suites (``test_reminder_scheduler.py``,
-    ``test_break_scheduler.py``) — keeps cross-suite integration math
-    addressing the same instant. The form-dialog suite uses a different
-    epoch (``17:23:45 UTC``) so a shared ``clock`` fixture in conftest
-    would lose that per-suite intent — hence the per-file fixture.
-    """
-    return Clock(datetime(2026, 5, 20, 6, 0, tzinfo=UTC))
-
-
-@pytest.fixture
-def store_path(tmp_path: Path) -> Path:
-    """Path to a per-test ``reminders.json`` file under ``tmp_path``."""
-    return tmp_path / "reminders.json"
-
-
-@pytest.fixture
-def store(store_path: Path) -> ReminderStore:
-    """A ``ReminderStore`` bound to the per-test ``store_path``."""
-    return ReminderStore(path=store_path)
-
-
-@pytest.fixture
-def scheduler(store: ReminderStore, clock: Clock) -> ReminderScheduler:
-    """A ``ReminderScheduler`` wired against the in-test store + injected clock."""
-    return ReminderScheduler(store=store, clock=clock)
+#
+# Phase 4 (R-4) note: `clock`, `store_path`, `store`, and (renamed)
+# `reminder_scheduler` previously lived as local fixtures here; they
+# were lifted to `tests/conftest.py` as part of the R-4 e2e harness
+# foundation. This file consumes them by name; the conftest fixture
+# `reminder_scheduler` provides the previous `scheduler` parameter.
 
 
 class TestRecurringReminderReArm:
@@ -87,7 +59,7 @@ class TestRecurringReminderReArm:
     """
 
     def test_daily_reminder_fires_today_and_tomorrow(
-        self, scheduler: ReminderScheduler, store: ReminderStore, clock: Clock
+        self, reminder_scheduler: ReminderScheduler, store: ReminderStore, clock: Clock
     ) -> None:
         """A ``FREQ=DAILY`` reminder fires both its first AND second occurrence.
 
@@ -100,21 +72,21 @@ class TestRecurringReminderReArm:
         """
         start_at = clock() + timedelta(minutes=10)
         store.add(Reminder(name="daily", start_at=start_at, rrule_str="FREQ=DAILY"))
-        scheduler.reload()
+        reminder_scheduler.reload()
 
         received: list[tuple[str, datetime]] = []
 
         def _capture(name: str, event_at: datetime) -> None:
             received.append((name, event_at))
 
-        scheduler.reminder_due.connect(_capture)
+        reminder_scheduler.reminder_due.connect(_capture)
 
         clock.advance(601)
-        scheduler._on_timer()
+        reminder_scheduler._on_timer()
         assert received == [("daily", start_at)]
 
         clock.advance(24 * 60 * 60)
-        scheduler._on_timer()
+        reminder_scheduler._on_timer()
         # Oracle from RRULE spec: FREQ=DAILY ⇒ period = 1 day.
         assert received == [
             ("daily", start_at),
@@ -122,7 +94,7 @@ class TestRecurringReminderReArm:
         ]
 
     def test_weekly_reminder_fires_first_occurrence_after_cap_reentry(
-        self, scheduler: ReminderScheduler, store: ReminderStore, clock: Clock
+        self, reminder_scheduler: ReminderScheduler, store: ReminderStore, clock: Clock
     ) -> None:
         """A ``FREQ=WEEKLY;BYDAY=TU`` reminder past the 24h cap fires twice.
 
@@ -145,27 +117,25 @@ class TestRecurringReminderReArm:
         # 2026-06-02 is a Tuesday, 13 days after the conftest clock epoch
         # (2026-05-20 is a Wednesday). 13 days >> 24h cap.
         start_at = datetime(2026, 6, 2, 9, 0, tzinfo=UTC)
-        store.add(
-            Reminder(name="weekly", start_at=start_at, rrule_str="FREQ=WEEKLY;BYDAY=TU")
-        )
-        scheduler.reload()
+        store.add(Reminder(name="weekly", start_at=start_at, rrule_str="FREQ=WEEKLY;BYDAY=TU"))
+        reminder_scheduler.reload()
 
         received: list[tuple[str, datetime]] = []
 
         def _capture(name: str, event_at: datetime) -> None:
             received.append((name, event_at))
 
-        scheduler.reminder_due.connect(_capture)
+        reminder_scheduler.reminder_due.connect(_capture)
 
-        scheduler._on_timer()
+        reminder_scheduler._on_timer()
         assert received == []
 
         clock.advance((start_at - clock()).total_seconds() + 1)
-        scheduler._on_timer()
+        reminder_scheduler._on_timer()
         assert received == [("weekly", start_at)]
 
         clock.advance(7 * 24 * 60 * 60)
-        scheduler._on_timer()
+        reminder_scheduler._on_timer()
         # Oracle from RRULE spec: FREQ=WEEKLY ⇒ period = 7 days.
         assert received == [
             ("weekly", start_at),
@@ -173,7 +143,7 @@ class TestRecurringReminderReArm:
         ]
 
     def test_monthly_reminder_fires_this_month_and_next(
-        self, scheduler: ReminderScheduler, store: ReminderStore, clock: Clock
+        self, reminder_scheduler: ReminderScheduler, store: ReminderStore, clock: Clock
     ) -> None:
         """A ``FREQ=MONTHLY;BYMONTHDAY=15`` reminder fires June 15 AND July 15.
 
@@ -192,22 +162,22 @@ class TestRecurringReminderReArm:
                 rrule_str="FREQ=MONTHLY;BYMONTHDAY=15",
             )
         )
-        scheduler.reload()
+        reminder_scheduler.reload()
 
         received: list[tuple[str, datetime]] = []
 
         def _capture(name: str, event_at: datetime) -> None:
             received.append((name, event_at))
 
-        scheduler.reminder_due.connect(_capture)
+        reminder_scheduler.reminder_due.connect(_capture)
 
         clock.advance((start_at - clock()).total_seconds() + 1)
-        scheduler._on_timer()
+        reminder_scheduler._on_timer()
         assert received == [("monthly", start_at)]
 
         second_at = datetime(2026, 7, 15, 9, 0, tzinfo=UTC)
         clock.advance((second_at - clock()).total_seconds() + 1)
-        scheduler._on_timer()
+        reminder_scheduler._on_timer()
         # Oracle from RRULE spec: BYMONTHDAY=15 ⇒ same day-of-month next month.
         assert received == [
             ("monthly", start_at),
@@ -215,7 +185,7 @@ class TestRecurringReminderReArm:
         ]
 
     def test_recurring_with_lead_minutes_offsets_each_event_at(
-        self, scheduler: ReminderScheduler, store: ReminderStore, clock: Clock
+        self, reminder_scheduler: ReminderScheduler, store: ReminderStore, clock: Clock
     ) -> None:
         """S-06b ``event_at = fire_at + lead_minutes`` holds across both firings.
 
@@ -236,21 +206,21 @@ class TestRecurringReminderReArm:
                 lead_minutes=15,
             )
         )
-        scheduler.reload()
+        reminder_scheduler.reload()
 
         received: list[tuple[str, datetime]] = []
 
         def _capture(name: str, event_at: datetime) -> None:
             received.append((name, event_at))
 
-        scheduler.reminder_due.connect(_capture)
+        reminder_scheduler.reminder_due.connect(_capture)
 
         clock.advance(601)
-        scheduler._on_timer()
+        reminder_scheduler._on_timer()
         assert received == [("daily-with-lead", start_at + timedelta(minutes=15))]
 
         clock.advance(24 * 60 * 60)
-        scheduler._on_timer()
+        reminder_scheduler._on_timer()
         # Oracle: event_at offset is +15min on every firing, not just first.
         assert received == [
             ("daily-with-lead", start_at + timedelta(minutes=15)),

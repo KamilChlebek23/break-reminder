@@ -499,37 +499,37 @@ Negligible. `ZoneInfo` construction is cheap (sub-millisecond) and `next_firing_
 
 #### Automated
 
-- [x] 1.1 Unit tests pass: `uv run pytest tests/test_reminders.py`
-- [x] 1.2 All other tests still pass: `uv run pytest`
-- [x] 1.3 Type checking passes: `uv run pyright`
-- [x] 1.4 Linting passes: `uv run ruff check && uv run ruff format --check`
-- [x] 1.5 Security audit passes: `uv run pip-audit`
-- [x] 1.6 License gate passes: `uv run pip-licenses --fail-on="AGPL"`
-- [x] 1.7 `uv.lock` refreshed and committed alongside `pyproject.toml`
-- [x] 1.8 PyInstaller smoke build with `--collect-data tzdata` succeeds and bundles tzdata data files (per F4)
+- [x] 1.1 Unit tests pass: `uv run pytest tests/test_reminders.py` — 0cbfb4b
+- [x] 1.2 All other tests still pass: `uv run pytest` — 0cbfb4b
+- [x] 1.3 Type checking passes: `uv run pyright` — 0cbfb4b
+- [x] 1.4 Linting passes: `uv run ruff check && uv run ruff format --check` — 0cbfb4b
+- [x] 1.5 Security audit passes: `uv run pip-audit` — 0cbfb4b
+- [x] 1.6 License gate passes: `uv run pip-licenses --fail-on="AGPL"` — 0cbfb4b
+- [x] 1.7 `uv.lock` refreshed and committed alongside `pyproject.toml` — 0cbfb4b
+- [x] 1.8 PyInstaller smoke build with `--collect-data tzdata` succeeds and bundles tzdata data files (per F4) — 0cbfb4b
 
 #### Manual
 
-- [x] 1.9 Hand-edit reminders.json with valid `"tz": "Europe/Warsaw"` loads without warnings
-- [x] 1.10 Hand-edit reminders.json with typo'd tz IS DROPPED with a single WARNING (row-containment per F3); siblings preserved
-- [x] 1.11 Hand-edit reminders.json without `"tz"` key loads with OS-local default and no warnings (lazy migration)
+- [x] 1.9 Hand-edit reminders.json with valid `"tz": "Europe/Warsaw"` loads without warnings — 0cbfb4b
+- [x] 1.10 Hand-edit reminders.json with typo'd tz IS DROPPED with a single WARNING (row-containment per F3); siblings preserved — 0cbfb4b
+- [x] 1.11 Hand-edit reminders.json without `"tz"` key loads with OS-local default and no warnings (lazy migration) — 0cbfb4b
 
 ### Phase 2: Scheduler fix (TDD)
 
 #### Automated
 
-- [ ] 2.1 The R-1b regression test passes: `uv run pytest tests/test_scheduler.py -k dst_drift`
-- [ ] 2.2 All scheduler tests pass: `uv run pytest tests/test_scheduler.py`
-- [ ] 2.3 All other tests still pass: `uv run pytest`
-- [ ] 2.4 The non-DST counter-test passes
-- [ ] 2.5 No xfail marks on the R-1b test: `grep -n "xfail" tests/test_scheduler.py | grep -i "dst"` returns nothing
-- [ ] 2.6 Type checking passes: `uv run pyright`
-- [ ] 2.7 Linting passes: `uv run ruff check && uv run ruff format --check`
+- [x] 2.1 The R-1b regression test passes: `uv run pytest tests/test_scheduler.py -k dst_drift`
+- [x] 2.2 All scheduler tests pass: `uv run pytest tests/test_scheduler.py`
+- [x] 2.3 All other tests still pass: `uv run pytest`
+- [x] 2.4 The non-DST counter-test passes
+- [x] 2.5 No xfail marks on the R-1b test: `grep -n "xfail" tests/test_scheduler.py | grep -i "dst"` returns nothing
+- [x] 2.6 Type checking passes: `uv run pyright`
+- [x] 2.7 Linting passes: `uv run ruff check && uv run ruff format --check`
 
 #### Manual
 
-- [ ] 2.8 The R-1b test passes for the right reason (asserts post-DST instant, not pre-DST)
-- [ ] 2.9 `TODO(R-1b)` block removed from `tests/test_recurring_reminder_integration.py`; R-4 note intact
+- [x] 2.8 The R-1b test passes for the right reason (asserts post-DST instant, not pre-DST)
+- [x] 2.9 `TODO(R-1b)` block removed from `tests/test_recurring_reminder_integration.py`; R-4 note intact
 
 ### Phase 3: Form integration
 

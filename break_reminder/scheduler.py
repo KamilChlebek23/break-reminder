@@ -29,6 +29,7 @@ import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dateutil.rrule import rrulestr
 from PySide6.QtCore import QObject, QTimer, Signal
@@ -349,6 +350,21 @@ def next_firing_after(reminder: Reminder, now: datetime) -> datetime | None:
     """Return the next firing strictly after ``now``, or ``None`` if exhausted.
 
     Pure function so it's trivially testable without a Qt event loop.
+
+    RRULE math is performed in ``reminder.tz`` (an IANA name, e.g.
+    ``"Europe/Warsaw"``), not UTC. ``dateutil.rrule``'s DST handling
+    activates only when ``dtstart`` carries a named zone — a fixed UTC
+    offset on ``dtstart`` makes RRULE walk the UTC calendar instead of
+    the IANA one, and a "9:00 Warsaw daily" reminder drifts to 10:00
+    Warsaw across spring-forward (R-1b). The fix localizes both
+    ``dtstart`` and ``now`` to ``reminder.tz`` before handing them to
+    ``rrulestr.after``, then converts the result back to UTC for the
+    public return contract.
+
+    The return value remains tz-aware UTC so downstream
+    ``ReminderScheduler._compute_next`` callers keep comparing
+    apples-to-apples (every other place in the scheduler operates in
+    UTC).
     """
     start = _ensure_aware(reminder.start_at)
     end = _ensure_aware(reminder.end_at) if reminder.end_at else None
@@ -358,16 +374,17 @@ def next_firing_after(reminder: Reminder, now: datetime) -> datetime | None:
             return start
         return None
 
+    zone = _resolve_zone(reminder.tz)
     try:
-        rule = rrulestr(reminder.rrule_str, dtstart=start)
+        rule = rrulestr(reminder.rrule_str, dtstart=start.astimezone(zone))
     except Exception:  # noqa: BLE001 — corrupt RRULE shouldn't crash the scheduler
         logger.exception("invalid RRULE for reminder %s", reminder.id)
         return None
 
-    nxt = rule.after(now, inc=False)
+    nxt = rule.after(now.astimezone(zone), inc=False)
     if nxt is None:
         return None
-    nxt = _ensure_aware(nxt)
+    nxt = _ensure_aware(nxt).astimezone(UTC)
     if end is not None and nxt > end:
         return None
     return nxt
@@ -378,3 +395,24 @@ def _ensure_aware(dt: datetime) -> datetime:
     if dt.tzinfo is None:
         return dt.replace(tzinfo=UTC)
     return dt
+
+
+def _resolve_zone(name: str) -> ZoneInfo:
+    """Resolve an IANA name to a ``ZoneInfo``, falling back to UTC defensively.
+
+    The storage-layer ``_coerce_tz`` already drops invalid tz strings at
+    load time via row-containment, so a ``Reminder`` reaching this code
+    via ``from_dict`` should always carry a valid IANA name. But
+    in-memory ``Reminder`` instances bypassing ``from_dict`` — notably
+    test fixtures and the form-dialog save path before its own
+    coercion runs — could still slip through with a typo. Returning
+    ``ZoneInfo("UTC")`` on failure keeps the scheduler making forward
+    progress (the reminder fires at the wrong wall-clock, but at
+    least it fires) and logs a WARNING so the operator can correct
+    the data.
+    """
+    try:
+        return ZoneInfo(name)
+    except ZoneInfoNotFoundError:
+        logger.warning("unknown IANA timezone %r; falling back to UTC", name)
+        return ZoneInfo("UTC")

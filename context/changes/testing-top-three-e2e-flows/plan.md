@@ -446,40 +446,40 @@ For each phase, after automated verification passes:
 
 #### Automated
 
-- [x] 1.1 All 562 + 1 existing tests pass: `uv run pytest`
-- [x] 1.2 Existing Phase 1/2 integration files green after fixture lift: `uv run pytest tests/test_recurring_reminder_integration.py tests/test_modal_stacking_integration.py`
-- [x] 1.3 New `BreakReminderApp.clock=` pin test passes: `uv run pytest tests/test_app.py -k test_clock_kwarg_propagates_to_both_schedulers`
-- [x] 1.4 Marker registration verified: `uv run pytest --markers | Select-String e2e` returns the registered marker
-- [x] 1.5 `--strict-markers` enforcement: `uv run pytest -m undeclared_marker_name` fails at collection
-- [x] 1.6 Lint: `uv run ruff check`
-- [x] 1.7 Format: `uv run ruff format --check`
-- [x] 1.8 Type check: `uv run pyright`
-- [x] 1.9 pip-audit: `uv run pip-audit`
+- [x] 1.1 All 562 + 1 existing tests pass: `uv run pytest` — 8c8e9c5
+- [x] 1.2 Existing Phase 1/2 integration files green after fixture lift: `uv run pytest tests/test_recurring_reminder_integration.py tests/test_modal_stacking_integration.py` — 8c8e9c5
+- [x] 1.3 New `BreakReminderApp.clock=` pin test passes: `uv run pytest tests/test_app.py -k test_clock_kwarg_propagates_to_both_schedulers` — 8c8e9c5
+- [x] 1.4 Marker registration verified: `uv run pytest --markers | Select-String e2e` returns the registered marker — 8c8e9c5
+- [x] 1.5 `--strict-markers` enforcement: `uv run pytest -m undeclared_marker_name` fails at collection — 8c8e9c5
+- [x] 1.6 Lint: `uv run ruff check` — 8c8e9c5
+- [x] 1.7 Format: `uv run ruff format --check` — 8c8e9c5
+- [x] 1.8 Type check: `uv run pyright` — 8c8e9c5
+- [x] 1.9 pip-audit: `uv run pip-audit` — 8c8e9c5
 
 #### Manual
 
-- [ ] 1.10 Read `tests/conftest.py` and confirm the 10 new fixtures match research.md §F lift table
-- [ ] 1.11 Read `break_reminder/app.py:60-113` and confirm `clock=` kwarg alongside the four existing injectable collaborators
-- [ ] 1.12 Read `break_reminder/app.py:103-104` and confirm `clock=clock` propagates to both scheduler constructions
-- [ ] 1.13 Read `pyproject.toml` `[tool.pytest.ini_options]` and confirm `markers` list contains `e2e` and `addopts` contains `--strict-markers`
-- [ ] 1.14 Confirm two existing integration files' tests pass after dropping local fixtures (no `NameError` / `fixture not found`)
+- [x] 1.10 Read `tests/conftest.py` and confirm the 10 new fixtures match research.md §F lift table — 8c8e9c5
+- [x] 1.11 Read `break_reminder/app.py:60-113` and confirm `clock=` kwarg alongside the four existing injectable collaborators — 8c8e9c5
+- [x] 1.12 Read `break_reminder/app.py:103-104` and confirm `clock=clock` propagates to both scheduler constructions — 8c8e9c5
+- [x] 1.13 Read `pyproject.toml` `[tool.pytest.ini_options]` and confirm `markers` list contains `e2e` and `addopts` contains `--strict-markers` — 8c8e9c5
+- [x] 1.14 Confirm two existing integration files' tests pass after dropping local fixtures (no `NameError` / `fixture not found`) — 8c8e9c5
 
 ### Phase 2: Flow A e2e — Add Reminder → arm → fire → ReminderDialog
 
 #### Automated
 
-- [ ] 2.1 New test file passes: `uv run pytest tests/test_add_reminder_e2e.py -m e2e`
-- [ ] 2.2 Whole suite still green: `uv run pytest`
-- [ ] 2.3 Marker correctly applied: `uv run pytest -m e2e --collect-only` lists the new test
-- [ ] 2.4 Lint: `uv run ruff check tests/test_add_reminder_e2e.py`
-- [ ] 2.5 Format: `uv run ruff format --check tests/test_add_reminder_e2e.py`
-- [ ] 2.6 Type check: `uv run pyright`
+- [x] 2.1 New test file passes: `uv run pytest tests/test_add_reminder_e2e.py -m e2e`
+- [x] 2.2 Whole suite still green: `uv run pytest`
+- [x] 2.3 Marker correctly applied: `uv run pytest -m e2e --collect-only` lists the new test
+- [x] 2.4 Lint: `uv run ruff check tests/test_add_reminder_e2e.py`
+- [x] 2.5 Format: `uv run ruff format --check tests/test_add_reminder_e2e.py`
+- [x] 2.6 Type check: `uv run pyright`
 
 #### Manual
 
-- [ ] 2.7 Read `tests/test_add_reminder_e2e.py` and confirm NO `_StubSignal`, NO `Mock()` of `_on_reminder_due`, NO slot capture-and-invoke
-- [ ] 2.8 Read the load-bearing assertion and confirm it oracles on `QApplication.topLevelWidgets()` membership, NOT on `slot.assert_called_with(...)`
-- [ ] 2.9 Confirm the test would fail if `app.py:278` connect line were commented out
+- [x] 2.7 Read `tests/test_add_reminder_e2e.py` and confirm NO `_StubSignal`, NO `Mock()` of `_on_reminder_due`, NO slot capture-and-invoke
+- [x] 2.8 Read the load-bearing assertion and confirm it oracles on `QApplication.topLevelWidgets()` membership, NOT on `slot.assert_called_with(...)`
+- [x] 2.9 Confirm the test would fail if `app.py:278` connect line were commented out
 
 ### Phase 3: Flow B e2e — Save Settings interval → reset → break_due → BreakDialog
 

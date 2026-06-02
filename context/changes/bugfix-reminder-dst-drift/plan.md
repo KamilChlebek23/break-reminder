@@ -549,13 +549,13 @@ Negligible. `ZoneInfo` construction is cheap (sub-millisecond) and `next_firing_
 
 #### Automated
 
-- [x] 4.1 All tests still pass: `uv run pytest`
-- [x] 4.2 `grep -n "DST" AGENTS.md` returns the corrected line
-- [x] 4.3 `grep -n "DST" context/archive/2026-05-28-reminders-recurrence-editor/reviews/impl-review.md` returns BOTH the original claim AND the correction
+- [x] 4.1 All tests still pass: `uv run pytest` — 68ee93f
+- [x] 4.2 `grep -n "DST" AGENTS.md` returns the corrected line — 68ee93f
+- [x] 4.3 `grep -n "DST" context/archive/2026-05-28-reminders-recurrence-editor/reviews/impl-review.md` returns BOTH the original claim AND the correction — 68ee93f
 
 #### Manual
 
-- [x] 4.4 AGENTS.md line 88 explicitly distinguishes IANA `dtstart` from UTC `dtstart`
-- [x] 4.5 Archived impl-review correction note is at the bottom; original review body untouched
-- [x] 4.6 test-plan.md §7 DST drift entry shows as resolved
-- [x] 4.7 change.md status reflects implementation completion
+- [x] 4.4 AGENTS.md line 88 explicitly distinguishes IANA `dtstart` from UTC `dtstart` — 68ee93f
+- [x] 4.5 Archived impl-review correction note is at the bottom; original review body untouched — 68ee93f
+- [x] 4.6 test-plan.md §7 DST drift entry shows as resolved — 68ee93f
+- [x] 4.7 change.md status reflects implementation completion — 68ee93f

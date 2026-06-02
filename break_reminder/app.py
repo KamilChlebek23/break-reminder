@@ -106,6 +106,7 @@ class BreakReminderApp:
         self._event_log = event_log if event_log is not None else EventLog()
         self._reminder_store = reminder_store if reminder_store is not None else ReminderStore()
         self._voice = voice if voice is not None else VoiceNotifier()
+        self._clock = clock
 
         self._activity = ActivityMonitor()
         self._break_scheduler = BreakScheduler(

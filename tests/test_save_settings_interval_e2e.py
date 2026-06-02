@@ -214,3 +214,9 @@ class TestSaveSettingsIntervalE2E:
             "BreakDialog was constructed but .show() was never called — "
             "_show_break_dialog body at app.py:410-424 broken"
         )
+
+        # Register with qtbot so its teardown owns the dialog — FR-009's
+        # non-dismissable guards in break_dialog.py swallow programmatic
+        # close(), so without this the dialog leaks into the next test's
+        # modal state. Mirrors tests/test_tray_reset_e2e.py:286-291.
+        qtbot.addWidget(break_reminder_app._active_break_dialog)

@@ -543,4 +543,7 @@ For each phase, after automated verification passes:
 - [x] 5.12 Read `context/foundation/lessons.md` new entry and confirm it follows the 4-field convention (Context / Problem / Rule / Applies to)
 - [x] 5.13 Read `context/foundation/test-plan.md` frontmatter (rollout_phases_complete: 4) + §3 row 4 status (complete)
 - [x] 5.14 Read `context/changes/testing-top-three-e2e-flows/change.md` and confirm `status: implemented` + `updated: 2026-06-02`
-- [ ] 5.15 Push branch to GitHub and confirm `build` job shows TWO test check marks (Test (unit) + Test (e2e)) — **user action required** (cannot be verified locally)
+- [x] 5.15 Push branch to GitHub and confirm `build` job shows TWO test check marks (Test (unit) + Test (e2e)) — verified on the PR after `4ea2811` (`fix(ci): correct release.yml branch trigger to master`); both steps green
+
+**Phase 5 commit: `d7cb18f`**
+**Out-of-scope CI trigger fix surfaced by 5.15: `4ea2811`**

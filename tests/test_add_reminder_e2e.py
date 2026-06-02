@@ -163,3 +163,10 @@ class TestAddReminderE2E:
         assert reminder_dialog.isVisible(), (
             "ReminderDialog was constructed but .show() was never called"
         )
+
+        # Register with qtbot so its teardown owns the dialog. FR-013 makes
+        # ReminderDialog dismissable so a leaked instance is less harmful
+        # than the FR-009 BreakDialog leak, but keeping all three e2e files
+        # on the same teardown shape is cheaper to read. Mirrors
+        # tests/test_tray_reset_e2e.py:286-291.
+        qtbot.addWidget(reminder_dialog)

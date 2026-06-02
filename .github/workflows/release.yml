@@ -6,16 +6,18 @@ name: Release
 #   2. Wrap it with NSIS into a Windows installer.
 #   3. Publish the installer to a GitHub Release tied to the tag.
 #
-# The "build" job also runs on every push/PR to main as a CI gate (without
-# the publishing step). That's why the publishing step is gated on
-# `startsWith(github.ref, 'refs/tags/v')`.
+# The "build" job also runs on every push/PR to master as a CI gate
+# (without the publishing step). That's why the publishing step is gated
+# on `startsWith(github.ref, 'refs/tags/v')`. The trigger lists `master`
+# because this repo's default branch is `master`, not `main` — listing
+# `main` here means PRs targeting `master` silently never trigger CI.
 
 on:
   push:
-    branches: [main]
+    branches: [master]
     tags: ["v*"]
   pull_request:
-    branches: [main]
+    branches: [master]
 
 permissions:
   contents: write # needed for `gh release create` / `softprops/action-gh-release`

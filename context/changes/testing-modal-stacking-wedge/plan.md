@@ -297,34 +297,34 @@ None. The fix is purely additive at the construction site. No persisted state, n
 
 #### Automated
 
-- [x] 1.1 New file exists at the planned path: `tests/test_modal_stacking_integration.py`
-- [x] 1.2 pytest collects 2 parametrized test cases: `uv run pytest tests/test_modal_stacking_integration.py --collect-only -q` lists 2 items
-- [x] 1.3 Tests FAIL on current code (RED confirmed): `uv run pytest tests/test_modal_stacking_integration.py` reports `2 failed`, with the failure line being one of the two structural assertions (not a fixture/import error)
-- [x] 1.4 Existing FR-009 hardening tests unaffected: `uv run pytest tests/test_break_dialog.py` reports `20 passed`
-- [x] 1.5 Lint passes on the new file: `uv run ruff check tests/test_modal_stacking_integration.py`
-- [x] 1.6 Type check passes on the new file: `uv run pyright tests/test_modal_stacking_integration.py`
-- [x] 1.7 Pre-commit passes against the staged file: `uv run pre-commit run --files tests/test_modal_stacking_integration.py`
+- [x] 1.1 New file exists at the planned path: `tests/test_modal_stacking_integration.py` — b140bf7
+- [x] 1.2 pytest collects 2 parametrized test cases: `uv run pytest tests/test_modal_stacking_integration.py --collect-only -q` lists 2 items — b140bf7
+- [x] 1.3 Tests FAIL on current code (RED confirmed): `uv run pytest tests/test_modal_stacking_integration.py` reports `2 failed`, with the failure line being one of the two structural assertions (not a fixture/import error) — b140bf7
+- [x] 1.4 Existing FR-009 hardening tests unaffected: `uv run pytest tests/test_break_dialog.py` reports `20 passed` — b140bf7
+- [x] 1.5 Lint passes on the new file: `uv run ruff check tests/test_modal_stacking_integration.py` — b140bf7
+- [x] 1.6 Type check passes on the new file: `uv run pyright tests/test_modal_stacking_integration.py` — b140bf7
+- [x] 1.7 Pre-commit passes against the staged file: `uv run pre-commit run --files tests/test_modal_stacking_integration.py` — b140bf7
 
 #### Manual
 
-- [x] 1.8 The failure messages in the RED run are readable: a developer skimming the output can tell which parametrized run (`settings` vs `reminder_form`) failed and on which invariant (`windowModality` vs `activeModalWidget`)
+- [x] 1.8 The failure messages in the RED run are readable: a developer skimming the output can tell which parametrized run (`settings` vs `reminder_form`) failed and on which invariant (`windowModality` vs `activeModalWidget`) — b140bf7
 
 ### Phase 2: Apply Fix A — escalate BreakDialog to Qt.ApplicationModal (GREEN)
 
 #### Automated
 
-- [ ] 2.1 Phase 1 tests now PASS: `uv run pytest tests/test_modal_stacking_integration.py` reports `2 passed`
-- [ ] 2.2 Existing 20 BreakDialog tests STILL PASS: `uv run pytest tests/test_break_dialog.py` reports `20 passed`
-- [ ] 2.3 Full test suite passes — no regressions in any other test file: `uv run pytest`
-- [ ] 2.4 Lint passes: `uv run ruff check break_reminder/notifications/break_dialog.py`
-- [ ] 2.5 Type check passes on the full project: `uv run pyright`
-- [ ] 2.6 Pre-commit passes against the staged file: `uv run pre-commit run --files break_reminder/notifications/break_dialog.py`
+- [x] 2.1 Phase 1 tests now PASS: `uv run pytest tests/test_modal_stacking_integration.py` reports `2 passed`
+- [x] 2.2 Existing 20 BreakDialog tests STILL PASS: `uv run pytest tests/test_break_dialog.py` reports `20 passed`
+- [x] 2.3 Full test suite passes — no regressions in any other test file: `uv run pytest` (511 passed)
+- [x] 2.4 Lint passes: `uv run ruff check break_reminder/notifications/break_dialog.py`
+- [x] 2.5 Type check passes on the full project: `uv run pyright`
+- [x] 2.6 Pre-commit passes against the staged file: `uv run pre-commit run --files break_reminder/notifications/break_dialog.py`
 
 #### Manual
 
-- [ ] 2.7 Q2 lived-incident fix verified: launch app, open Settings, trigger 'Take break now' from tray, click 'I'll take a break' — popup closes
-- [ ] 2.8 ReminderFormDialog regime fix verified: open Settings → Reminders → 'Add reminder', trigger 'Take break now' from tray — popup clickable
-- [ ] 2.9 US-02 in-flight-keystroke regression check passes: type in an editor, trigger 'Take break now', in-flight keystroke continues to land in the editor (popup did NOT steal activation)
+- [x] 2.7 Q2 lived-incident fix verified: launch app, open Settings, trigger 'Take break now' from tray, click 'I'll take a break' — popup closes
+- [x] 2.8 ReminderFormDialog regime fix verified: open Settings → Reminders → 'Add reminder', trigger 'Take break now' from tray — popup clickable
+- [x] 2.9 US-02 in-flight-keystroke regression check passes: type in an editor, trigger 'Take break now', in-flight keystroke continues to land in the editor (popup did NOT steal activation)
 
 ### Phase 3: Docs sync — close the change
 

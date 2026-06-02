@@ -1,0 +1,25 @@
+# Run on every `git commit`. One-time setup per clone:
+#   uv sync                     # installs pre-commit into the project venv
+#   uv run pre-commit install   # writes .git/hooks/pre-commit
+#
+# Manual whole-tree run:
+#   uv run pre-commit run --all-files
+#
+# Bump `rev:` below whenever uv.lock bumps ruff (keep in lockstep with
+# context/foundation/test-plan.md §4 "Stack").
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.13
+    hooks:
+      - id: ruff
+        args: [--fix]
+
+  - repo: local
+    hooks:
+      - id: pyright
+        name: pyright (uv run pyright, whole project)
+        entry: uv run pyright
+        language: system
+        types: [python]
+        pass_filenames: false

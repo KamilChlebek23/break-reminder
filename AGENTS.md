@@ -145,6 +145,14 @@ uv run ruff format
 # Type check (configured in [tool.pyright] in pyproject.toml)
 uv run pyright
 
+# Pre-commit hooks — run lint + typecheck on every `git commit`.
+# Bump the ruff `rev:` in .pre-commit-config.yaml in lockstep with uv.lock.
+# One-time per clone after `uv sync`:
+uv run pre-commit install
+
+# Run all hooks against every file (useful in CI or before pushing):
+uv run pre-commit run --all-files
+
 # Security audit — fails on any known CVE in installed packages
 uv run pip-audit
 

@@ -520,25 +520,27 @@ For each phase, after automated verification passes:
 - [x] 4.9 Confirm the test asserts the dialog DOES NOT appear at iteration ~60 (would fire there if re-arm started from pre-Reset `_active_seconds = 120`) — also caught by `_active_seconds == 0` precondition; mutation tested
 - [x] 4.10 Confirm the test would fail if `app.py:461` `_break_scheduler.start()` were removed — original design bypassed the timer via direct `_tick()`; FIXED by adding `_timer.isActive()` precondition; mutation tested (caught with targeted diagnostic)
 
+**Phase 4 commit: `a420407`**
+
 ### Phase 5: Docs + CI workflow split + status flip
 
 #### Automated
 
-- [ ] 5.1 `pytest -m "not e2e"` passes: `uv run pytest -m "not e2e"`
-- [ ] 5.2 `pytest -m e2e` passes (3 tests now non-empty): `uv run pytest -m e2e`
-- [ ] 5.3 Whole suite still green: `uv run pytest`
-- [ ] 5.4 Lint: `uv run ruff check`
-- [ ] 5.5 Format: `uv run ruff format --check`
-- [ ] 5.6 Type check: `uv run pyright`
-- [ ] 5.7 pip-audit: `uv run pip-audit`
-- [ ] 5.8 `release.yml` parses as valid YAML
+- [x] 5.1 `pytest -m "not e2e"` passes: `uv run pytest -m "not e2e"` (563 passed, 3 deselected)
+- [x] 5.2 `pytest -m e2e` passes (3 tests now non-empty): `uv run pytest -m e2e` (3 passed, 563 deselected)
+- [x] 5.3 Whole suite still green: `uv run pytest` (566 passed)
+- [x] 5.4 Lint: `uv run ruff check`
+- [x] 5.5 Format: `uv run ruff format --check`
+- [x] 5.6 Type check: `uv run pyright`
+- [x] 5.7 pip-audit: `uv run pip-audit` (No known vulnerabilities found)
+- [x] 5.8 `release.yml` parses as valid YAML
 
 #### Manual
 
-- [ ] 5.9 Read `.github/workflows/release.yml` and confirm two sequential `run:` steps with correct `-m` flags
-- [ ] 5.10 Read `AGENTS.md § Threading rules` new bullet and confirm stylistic coherence with existing bullets
-- [ ] 5.11 Read `context/foundation/test-plan.md §6` cookbook row and confirm it matches the verbosity + structure of the Phase 3 "Storage hand-edit robustness" row
-- [ ] 5.12 Read `context/foundation/lessons.md` new entry and confirm it follows the 4-field convention (Context / Problem / Rule / Applies to)
-- [ ] 5.13 Read `context/foundation/test-plan.md` frontmatter (rollout_phases_complete: 4) + §3 row 4 status (complete)
-- [ ] 5.14 Read `context/changes/testing-top-three-e2e-flows/change.md` and confirm `status: implemented` + `updated: <today>`
-- [ ] 5.15 Push branch to GitHub and confirm `build` job shows TWO test check marks (Test (unit) + Test (e2e))
+- [x] 5.9 Read `.github/workflows/release.yml` and confirm two sequential `run:` steps with correct `-m` flags (`Test (unit)` @ :58 `pytest -m "not e2e"`; `Test (e2e)` @ :66 `pytest -m e2e`)
+- [x] 5.10 Read `AGENTS.md § Threading rules` new bullet and confirm stylistic coherence with existing bullets (matches bold-lead + explanation pattern)
+- [x] 5.11 Read `context/foundation/test-plan.md §6` cookbook row and confirm it matches the verbosity + structure of the Phase 3 "Storage hand-edit robustness" row (file list + load-bearing assertion shape + R-4 hops closed + anti-patterns avoided + fixture dependencies + CI integration)
+- [x] 5.12 Read `context/foundation/lessons.md` new entry and confirm it follows the 4-field convention (Context / Problem / Rule / Applies to)
+- [x] 5.13 Read `context/foundation/test-plan.md` frontmatter (rollout_phases_complete: 4) + §3 row 4 status (complete)
+- [x] 5.14 Read `context/changes/testing-top-three-e2e-flows/change.md` and confirm `status: implemented` + `updated: 2026-06-02`
+- [ ] 5.15 Push branch to GitHub and confirm `build` job shows TWO test check marks (Test (unit) + Test (e2e)) — **user action required** (cannot be verified locally)

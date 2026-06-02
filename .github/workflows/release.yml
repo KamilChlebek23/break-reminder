@@ -55,8 +55,21 @@ jobs:
         # errors only for now and bump if warnings start creeping in.
         run: uv run pyright
 
-      - name: Test
-        run: uv run pytest
+      - name: Test (unit)
+        # Unit + integration tiers. Excludes the `e2e` marker so a
+        # broken cross-cutting flow doesn't mask faster per-module
+        # regressions; the e2e step below runs them separately. The
+        # pytest `e2e` marker is declared in `pyproject.toml` under
+        # `[tool.pytest].markers` and enforced via `strict_markers`.
+        run: uv run pytest -m "not e2e"
+
+      - name: Test (e2e)
+        # Top-three user-visible flows (Add Reminder, Save Settings
+        # interval, Tray Reset) wired through the production app —
+        # see `tests/test_*_e2e.py`. Slow relative to the unit tier
+        # (each test drives a virtual-clock tick loop) so a separate
+        # check mark gives the PR view distinct red/green signals.
+        run: uv run pytest -m e2e
 
       - name: Audit dependencies for known CVEs
         # pip-audit cross-references installed packages against the OSV /

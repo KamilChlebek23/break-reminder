@@ -17,6 +17,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "pdoc>=15",
     "pip-audit>=2.7",
     "pip-licenses>=5.0",
     "pre-commit>=4.6.0",

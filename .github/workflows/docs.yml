@@ -1,0 +1,94 @@
+name: Docs
+
+# Auto-publishes the pdoc HTML documentation site for the `break_reminder`
+# package to GitHub Pages on every push to `master`. Sibling to
+# `release.yml`; the two never block each other — a docs build failure
+# does not stop a release, and vice versa.
+#
+# One-time repo setup required: Settings → Pages → Source = "GitHub
+# Actions" (not the legacy `gh-pages` branch source). Until that toggle
+# is flipped the `deploy` job fails with "Get Pages site failed".
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  # Trio required by actions/deploy-pages@v4.
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  # Serialize Pages deploys without aborting one already in flight; two
+  # near-simultaneous pushes to master both publish, last-write-wins.
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build pdoc site (ubuntu-latest)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        # Same pin as release.yml — see the supply-chain comment block
+        # there for why setup-uv tags are pinned to exact patch versions
+        # rather than `@v8`. Bump the patch component when a newer
+        # release is verified.
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Build documentation
+        # pdoc only auto-recurses into modules that the package has
+        # imported into its namespace. `break_reminder/__init__.py`
+        # exports only `__version__`, so passing the bare package name
+        # would render a single near-empty index page. The explicit
+        # subpackage list below makes pdoc walk each subpackage's
+        # filesystem tree (every `.py` under `notifications/`, `ui/`,
+        # `storage/` is included). Top-level modules (`app`, `activity`,
+        # `scheduler`) need their own positional args for the same
+        # reason. `-d google` matches the docstring convention enforced
+        # by ruff's `D` rule in pyproject.toml. `main.py` and `tests/`
+        # are intentionally excluded — `main.py` is a thin entry that
+        # delegates to `break_reminder.app.main`, and tests are
+        # internal scaffolding.
+        run: |
+          uv run pdoc \
+            -o site \
+            -d google \
+            break_reminder \
+            break_reminder.activity \
+            break_reminder.app \
+            break_reminder.scheduler \
+            break_reminder.notifications \
+            break_reminder.ui \
+            break_reminder.storage
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

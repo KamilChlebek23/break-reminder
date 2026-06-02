@@ -2457,3 +2457,128 @@ class TestRecurrenceEndDate:
         d2 = _make_edit_dialog_with_reminder(qtbot, store, scheduler_stub, clock, first_saved)
         assert d2._end_date_checkbox.isChecked() is True
         assert d2._end_date_field.date().toPython() == picked_local
+
+
+class TestReminderFormDialogTimezoneCapture:
+    """R-1b Phase 3 — form captures OS-local tz at save time with F2 semantics.
+
+    Background: the scheduler fix (Phase 2) localizes RRULE math to
+    ``reminder.tz``. For that fix to take effect on newly-created
+    reminders, the form must explicitly capture the user's current
+    OS-local IANA name and pass it to ``Reminder(...)``. The dataclass
+    default-factory would also produce OS-local, but the plan and F2
+    require **explicit capture in accept()** so the Edit-mode
+    preserve-vs-refresh decision is under form control.
+
+    F2 semantics on Edit:
+
+    * ``firing_unchanged_in_edit`` (same ``start_at`` / ``rrule_str`` /
+      ``end_at`` as the loaded reminder) → PRESERVE ``self._editing.tz``.
+      A pure rename or re-lead must not retag the wall-clock
+      interpretation. A user moving from Warsaw to LA shouldn't
+      accidentally shift every reminder by 9h just by renaming one.
+    * Otherwise (firing time, cadence, or end date changed) → REFRESH
+      to current OS-local. The user is actively reshaping the schedule;
+      the new tz becomes its anchor.
+
+    These tests patch ``break_reminder.ui.reminder_form_dialog.tzlocal.
+    get_localzone_name`` with a sentinel. The patch is **form-module
+    scoped** on purpose: it distinguishes "form actively captures
+    OS-local" from "form forgot, dataclass default-factory silently
+    filled in OS-local from the reminders module" — the latter would
+    coincidentally pass an end-to-end assertion on a real OS but
+    would NOT exercise the F2 preserve branch (which requires the
+    form to make a deliberate per-mode decision).
+    """
+
+    _SENTINEL_TZ_ADD = "Pacific/Auckland"
+    _SENTINEL_TZ_EDIT_REFRESH = "America/Los_Angeles"
+
+    def test_add_path_captures_current_os_local_tz(
+        self,
+        dialog: ReminderFormDialog,
+        store: ReminderStore,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Add mode → ``saved.tz == tzlocal.get_localzone_name()`` at save time."""
+        monkeypatch.setattr(
+            "break_reminder.ui.reminder_form_dialog.tzlocal.get_localzone_name",
+            lambda: self._SENTINEL_TZ_ADD,
+        )
+        dialog._name_field.setText("Add path tz capture")
+        dialog.accept()
+
+        saved = store.list_all()
+        assert len(saved) == 1
+        assert saved[0].tz == self._SENTINEL_TZ_ADD
+
+    def test_edit_preserves_tz_when_only_name_changed(
+        self,
+        qtbot,
+        store: ReminderStore,
+        scheduler_stub: StubScheduler,
+        clock: Clock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Edit + pure rename (firing unchanged) → ``self._editing.tz`` preserved (F2).
+
+        The patched current OS-local is deliberately DIFFERENT from
+        the loaded reminder's tz so a buggy "always refresh"
+        implementation would swap Warsaw → LA and trip the assertion.
+        """
+        loaded = Reminder(
+            name="Loaded",
+            start_at=clock() + timedelta(hours=6),
+            tz="Europe/Warsaw",
+        )
+        store.add(loaded)
+        monkeypatch.setattr(
+            "break_reminder.ui.reminder_form_dialog.tzlocal.get_localzone_name",
+            lambda: self._SENTINEL_TZ_EDIT_REFRESH,
+        )
+
+        d = _make_edit_dialog(qtbot, store, scheduler_stub, clock, loaded)
+        d._name_field.setText("Renamed")
+        d.accept()
+
+        saved = store.list_all()
+        assert len(saved) == 1
+        assert saved[0].tz == "Europe/Warsaw"
+        assert saved[0].name == "Renamed"
+
+    def test_edit_refreshes_tz_when_firing_time_changed(
+        self,
+        qtbot,
+        store: ReminderStore,
+        scheduler_stub: StubScheduler,
+        clock: Clock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Edit + firing time moved → refresh to current OS-local (F2).
+
+        A "preserve always" implementation would keep Warsaw and
+        trip the assertion. A "refresh only on rrule change" bug
+        would also trip — the F2 predicate triggers on ANY of
+        start_at / rrule_str / end_at changing.
+        """
+        loaded = Reminder(
+            name="Loaded",
+            start_at=clock() + timedelta(hours=6),
+            tz="Europe/Warsaw",
+        )
+        store.add(loaded)
+        monkeypatch.setattr(
+            "break_reminder.ui.reminder_form_dialog.tzlocal.get_localzone_name",
+            lambda: self._SENTINEL_TZ_EDIT_REFRESH,
+        )
+
+        d = _make_edit_dialog(qtbot, store, scheduler_stub, clock, loaded)
+        current_event = d._datetime_field.dateTime().toPython()
+        assert isinstance(current_event, datetime)
+        new_event = current_event + timedelta(hours=1)
+        d._datetime_field.setDateTime(_qdatetime_from_naive_local(new_event))
+        d.accept()
+
+        saved = store.list_all()
+        assert len(saved) == 1
+        assert saved[0].tz == self._SENTINEL_TZ_EDIT_REFRESH

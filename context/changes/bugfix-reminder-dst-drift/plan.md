@@ -518,32 +518,32 @@ Negligible. `ZoneInfo` construction is cheap (sub-millisecond) and `next_firing_
 
 #### Automated
 
-- [x] 2.1 The R-1b regression test passes: `uv run pytest tests/test_scheduler.py -k dst_drift`
-- [x] 2.2 All scheduler tests pass: `uv run pytest tests/test_scheduler.py`
-- [x] 2.3 All other tests still pass: `uv run pytest`
-- [x] 2.4 The non-DST counter-test passes
-- [x] 2.5 No xfail marks on the R-1b test: `grep -n "xfail" tests/test_scheduler.py | grep -i "dst"` returns nothing
-- [x] 2.6 Type checking passes: `uv run pyright`
-- [x] 2.7 Linting passes: `uv run ruff check && uv run ruff format --check`
+- [x] 2.1 The R-1b regression test passes: `uv run pytest tests/test_scheduler.py -k dst_drift` — 5360c11
+- [x] 2.2 All scheduler tests pass: `uv run pytest tests/test_scheduler.py` — 5360c11
+- [x] 2.3 All other tests still pass: `uv run pytest` — 5360c11
+- [x] 2.4 The non-DST counter-test passes — 5360c11
+- [x] 2.5 No xfail marks on the R-1b test: `grep -n "xfail" tests/test_scheduler.py | grep -i "dst"` returns nothing — 5360c11
+- [x] 2.6 Type checking passes: `uv run pyright` — 5360c11
+- [x] 2.7 Linting passes: `uv run ruff check && uv run ruff format --check` — 5360c11
 
 #### Manual
 
-- [x] 2.8 The R-1b test passes for the right reason (asserts post-DST instant, not pre-DST)
-- [x] 2.9 `TODO(R-1b)` block removed from `tests/test_recurring_reminder_integration.py`; R-4 note intact
+- [x] 2.8 The R-1b test passes for the right reason (asserts post-DST instant, not pre-DST) — 5360c11
+- [x] 2.9 `TODO(R-1b)` block removed from `tests/test_recurring_reminder_integration.py`; R-4 note intact — 5360c11
 
 ### Phase 3: Form integration
 
 #### Automated
 
-- [ ] 3.1 Form-dialog tests pass: `uv run pytest tests/test_reminder_form_dialog.py`
-- [ ] 3.2 All tests still pass: `uv run pytest`
-- [ ] 3.3 Type checking passes: `uv run pyright`
-- [ ] 3.4 Linting passes: `uv run ruff check`
+- [x] 3.1 Form-dialog tests pass: `uv run pytest tests/test_reminder_form_dialog.py`
+- [x] 3.2 All tests still pass: `uv run pytest`
+- [x] 3.3 Type checking passes: `uv run pyright`
+- [x] 3.4 Linting passes: `uv run ruff check`
 
 #### Manual
 
-- [ ] 3.5 Newly-created reminder via the form persists `"tz": "<os-local-iana>"` in reminders.json
-- [ ] 3.6 Editing the same reminder (rename only) PRESERVES its original tz; editing the datetime refreshes it
+- [x] 3.5 Newly-created reminder via the form persists `"tz": "<os-local-iana>"` in reminders.json
+- [x] 3.6 Editing the same reminder (rename only) PRESERVES its original tz; editing the datetime refreshes it
 
 ### Phase 4: Docs + archive cleanup
 

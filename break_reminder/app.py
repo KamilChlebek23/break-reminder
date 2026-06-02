@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import math
 import sys
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
@@ -65,6 +66,7 @@ class BreakReminderApp:
         event_log: EventLog | None = None,
         reminder_store: ReminderStore | None = None,
         voice: VoiceNotifier | None = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         r"""Construct the app and wire its collaborators.
 
@@ -84,6 +86,12 @@ class BreakReminderApp:
                 to the standard ``reminders.json`` location.
             voice: Optional pre-built ``VoiceNotifier``; defaults to a
                 fresh one bound to a single-worker thread pool.
+            clock: Optional injectable ``datetime``-returning callable
+                propagated into both internal schedulers so e2e tests
+                can drive virtual time deterministically through the
+                wired app. Defaults to ``None``, which preserves the
+                production behavior of both schedulers falling through
+                to ``datetime.now(UTC)`` via ``scheduler._utcnow``.
         """
         # Storage components are injectable so tests can point at a tmp
         # directory without polluting %APPDATA%. Production passes
@@ -100,8 +108,10 @@ class BreakReminderApp:
         self._voice = voice if voice is not None else VoiceNotifier()
 
         self._activity = ActivityMonitor()
-        self._break_scheduler = BreakScheduler(settings=self._settings, activity=self._activity)
-        self._reminder_scheduler = ReminderScheduler(store=self._reminder_store)
+        self._break_scheduler = BreakScheduler(
+            settings=self._settings, activity=self._activity, clock=clock
+        )
+        self._reminder_scheduler = ReminderScheduler(store=self._reminder_store, clock=clock)
 
         self._tray = self._build_tray()
         self._tooltip_timer = QTimer()

@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import csv
 import re
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -86,6 +87,52 @@ def _read_event_rows(path: Path) -> list[dict[str, str]]:
     """Read the FR-015 event log as a list of {column: value} dicts."""
     with path.open(encoding="utf-8", newline="") as f:
         return list(csv.DictReader(f))
+
+
+# ---------------------------------------------------------------------------
+# Constructor — clock= kwarg propagation pin (R-4 STRUCTURAL #1)
+# ---------------------------------------------------------------------------
+
+
+class TestBreakReminderAppClockKwarg:
+    """``BreakReminderApp.__init__`` propagates the ``clock=`` kwarg to both schedulers.
+
+    R-4 STRUCTURAL #1 (research.md §F): without this seam, any e2e test
+    that uses the wired app runs its internal ``BreakScheduler`` and
+    ``ReminderScheduler`` on real wall-clock. The kwarg defaults to
+    ``None`` to preserve production behavior; when an explicit callable
+    is passed, both internal schedulers must store it identity-equal
+    on their ``_clock`` attribute so deterministic time advance through
+    ``_tick()`` / ``_on_timer()`` works through the full wired stack.
+
+    The pin specifically asserts ``is`` identity (not equality) — a
+    future refactor that wrapped the kwarg before propagation (e.g.
+    ``lambda: clock()``) would still pass an equality check but break
+    every e2e test that holds the original ``Clock`` instance to drive
+    ``advance()``.
+    """
+
+    def test_clock_kwarg_propagates_to_both_schedulers(
+        self, qapp: QApplication, tmp_path: Path
+    ) -> None:
+        """An explicit ``clock=`` reaches ``_break_scheduler._clock`` AND ``_reminder_scheduler._clock``."""
+        sentinel = lambda: datetime(2030, 1, 1, tzinfo=UTC)  # noqa: E731 — sentinel intentionally an inline lambda
+        settings = Settings(ini_path=tmp_path / "BreakReminder.ini")
+        event_log = EventLog(path=tmp_path / "events.csv")
+        reminder_store = ReminderStore(path=tmp_path / "reminders.json")
+        voice = FakeVoice()
+
+        app = BreakReminderApp(
+            qt_app=qapp,
+            settings=settings,
+            event_log=event_log,
+            reminder_store=reminder_store,
+            voice=voice,  # type: ignore[arg-type]  # FakeVoice satisfies the duck-typed contract
+            clock=sentinel,
+        )
+
+        assert app._break_scheduler._clock is sentinel
+        assert app._reminder_scheduler._clock is sentinel
 
 
 # ---------------------------------------------------------------------------

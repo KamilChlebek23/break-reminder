@@ -50,8 +50,6 @@ post-action on ``break_dialog``.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from pathlib import Path
 from typing import cast
 
 import pytest
@@ -65,73 +63,14 @@ from break_reminder.storage.reminders import ReminderStore
 from break_reminder.storage.settings import Settings
 from break_reminder.ui.reminder_form_dialog import ReminderFormDialog
 from break_reminder.ui.settings_dialog import SettingsDialog
-from tests.conftest import Clock
+from tests.conftest import Clock, FakeVoice
 
-
-class FakeVoice:
-    """Sibling stub of ``test_break_dialog.FakeVoice`` for ``SettingsDialog``'s ``VoiceNotifier`` param.
-
-    Not a literal mirror: ``test_break_dialog.FakeVoice`` only exposes
-    ``stop()`` + a ``stop_calls`` counter (BreakDialog's narrow
-    ``_VoiceController`` Protocol), while this stub additionally
-    implements ``speak()`` because ``SettingsDialog``'s Voice tab can
-    call it. ``SettingsDialog`` does not exercise either method just to
-    build the widget tree (the Voice tab reads phrase / enabled state
-    from ``Settings``, not from the notifier), so a no-op stub is
-    sufficient for the wedge test — we never trigger a voice-tab
-    interaction.
-    """
-
-    def stop(self) -> None:
-        """No-op ``stop()`` recorded only for protocol compatibility."""
-
-    def speak(self, phrase: str) -> None:
-        """No-op ``speak()`` recorded only for protocol compatibility.
-
-        Args:
-            phrase: Ignored — the wedge test never triggers voice output.
-        """
-
-
-@pytest.fixture
-def settings(tmp_path: Path) -> Settings:
-    """A ``Settings`` instance bound to a per-test INI file under ``tmp_path``."""
-    return Settings(ini_path=tmp_path / "BreakReminder.ini")
-
-
-@pytest.fixture
-def voice() -> FakeVoice:
-    """A no-op ``FakeVoice`` stub for ``SettingsDialog`` construction."""
-    return FakeVoice()
-
-
-@pytest.fixture
-def store_path(tmp_path: Path) -> Path:
-    """Path to a per-test ``reminders.json`` file under ``tmp_path``."""
-    return tmp_path / "reminders.json"
-
-
-@pytest.fixture
-def store(store_path: Path) -> ReminderStore:
-    """A ``ReminderStore`` bound to the per-test ``store_path``."""
-    return ReminderStore(path=store_path)
-
-
-@pytest.fixture
-def clock() -> Clock:
-    """A ``Clock`` pinned at 2026-05-20 06:00 UTC for determinism.
-
-    Same epoch as the scheduler unit-test suites and Phase 1 of the
-    test-plan rollout (``test_recurring_reminder_integration.py``) —
-    keeps cross-suite integration math addressing the same instant.
-    """
-    return Clock(datetime(2026, 5, 20, 6, 0, tzinfo=UTC))
-
-
-@pytest.fixture
-def scheduler(store: ReminderStore, clock: Clock) -> ReminderScheduler:
-    """A ``ReminderScheduler`` wired against the in-test store + injected clock."""
-    return ReminderScheduler(store=store, clock=clock)
+# Phase 4 (R-4) note: `FakeVoice`, `settings`, `voice`, `store_path`,
+# `store`, `clock`, and (renamed) `reminder_scheduler` previously lived
+# as local fixtures / a local class here; they were lifted to
+# `tests/conftest.py` as part of the R-4 e2e harness foundation. This
+# file consumes them by name; the conftest fixture `reminder_scheduler`
+# provides the previous `scheduler` parameter.
 
 
 @pytest.fixture(params=["settings", "reminder_form"])
@@ -141,7 +80,7 @@ def blocking_modal(
     settings: Settings,
     voice: FakeVoice,
     store: ReminderStore,
-    scheduler: ReminderScheduler,
+    reminder_scheduler: ReminderScheduler,
     clock: Clock,
 ) -> QDialog:
     """Construct and show a sibling ``ApplicationModal`` dialog without ``.exec()``.
@@ -166,7 +105,7 @@ def blocking_modal(
         settings: Per-test ``Settings`` instance.
         voice: No-op voice notifier stub.
         store: Per-test ``ReminderStore``.
-        scheduler: Per-test ``ReminderScheduler``.
+        reminder_scheduler: Per-test ``ReminderScheduler``.
         clock: Per-test virtual ``Clock``.
 
     Returns:
@@ -179,12 +118,12 @@ def blocking_modal(
             settings=settings,
             voice=cast(VoiceNotifier, voice),
             reminder_store=store,
-            reminder_scheduler=scheduler,
+            reminder_scheduler=reminder_scheduler,
         )
     elif regime == "reminder_form":
         dialog = ReminderFormDialog(
             store=store,
-            scheduler=scheduler,
+            scheduler=reminder_scheduler,
             clock=clock,
         )
     else:
@@ -238,9 +177,7 @@ class TestModalStackingWedge:
                 or ``ReminderFormDialog``) already shown with
                 ``ApplicationModal`` scope.
         """
-        assert (
-            blocking_modal.windowModality() == Qt.WindowModality.ApplicationModal
-        )
+        assert blocking_modal.windowModality() == Qt.WindowModality.ApplicationModal
 
         break_dialog = BreakDialog(snooze_remaining=1, voice_notifier=None)
         qtbot.addWidget(break_dialog)

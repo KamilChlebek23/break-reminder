@@ -55,9 +55,18 @@ ignore = [
 # "private helpers (leading _) are exempt" carve-out applies automatically.
 convention = "google"
 
-[tool.pytest.ini_options]
+[tool.pytest]
+# Native TOML config (pytest 9.0+; see #13743 release notes). The legacy
+# [tool.pytest.ini_options] table coerces everything through INI-compat
+# parsing and silently drops --strict-markers from addopts; the native
+# table uses the typed strict_markers boolean instead.
+minversion = "9.0"
 testpaths = ["tests"]
-addopts = "-q"
+addopts = ["-q"]
+strict_markers = true
+markers = [
+    "e2e: end-to-end test of a top-three user-visible flow (Phase 4 tier)",
+]
 
 [tool.pyright]
 # `standard` mode catches the high-value bugs (None-deref, missing

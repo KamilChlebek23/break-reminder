@@ -468,37 +468,37 @@ For each phase, after automated verification passes:
 
 #### Automated
 
-- [x] 2.1 New test file passes: `uv run pytest tests/test_add_reminder_e2e.py -m e2e`
-- [x] 2.2 Whole suite still green: `uv run pytest`
-- [x] 2.3 Marker correctly applied: `uv run pytest -m e2e --collect-only` lists the new test
-- [x] 2.4 Lint: `uv run ruff check tests/test_add_reminder_e2e.py`
-- [x] 2.5 Format: `uv run ruff format --check tests/test_add_reminder_e2e.py`
-- [x] 2.6 Type check: `uv run pyright`
+- [x] 2.1 New test file passes: `uv run pytest tests/test_add_reminder_e2e.py -m e2e` — ada56ce
+- [x] 2.2 Whole suite still green: `uv run pytest` — ada56ce
+- [x] 2.3 Marker correctly applied: `uv run pytest -m e2e --collect-only` lists the new test — ada56ce
+- [x] 2.4 Lint: `uv run ruff check tests/test_add_reminder_e2e.py` — ada56ce
+- [x] 2.5 Format: `uv run ruff format --check tests/test_add_reminder_e2e.py` — ada56ce
+- [x] 2.6 Type check: `uv run pyright` — ada56ce
 
 #### Manual
 
-- [x] 2.7 Read `tests/test_add_reminder_e2e.py` and confirm NO `_StubSignal`, NO `Mock()` of `_on_reminder_due`, NO slot capture-and-invoke
-- [x] 2.8 Read the load-bearing assertion and confirm it oracles on `QApplication.topLevelWidgets()` membership, NOT on `slot.assert_called_with(...)`
-- [x] 2.9 Confirm the test would fail if `app.py:278` connect line were commented out
+- [x] 2.7 Read `tests/test_add_reminder_e2e.py` and confirm NO `_StubSignal`, NO `Mock()` of `_on_reminder_due`, NO slot capture-and-invoke — ada56ce
+- [x] 2.8 Read the load-bearing assertion and confirm it oracles on `QApplication.topLevelWidgets()` membership, NOT on `slot.assert_called_with(...)` — ada56ce
+- [x] 2.9 Confirm the test would fail if `app.py:278` connect line were commented out — ada56ce
 
 ### Phase 3: Flow B e2e — Save Settings interval → reset → break_due → BreakDialog
 
 #### Automated
 
-- [ ] 3.1 New test file passes: `uv run pytest tests/test_save_settings_interval_e2e.py -m e2e`
-- [ ] 3.2 Whole suite still green: `uv run pytest`
-- [ ] 3.3 Marker correctly applied: `uv run pytest -m e2e --collect-only` lists both Flow A and Flow B tests
-- [ ] 3.4 Lint: `uv run ruff check tests/test_save_settings_interval_e2e.py`
-- [ ] 3.5 Format: `uv run ruff format --check tests/test_save_settings_interval_e2e.py`
-- [ ] 3.6 Type check: `uv run pyright`
+- [x] 3.1 New test file passes: `uv run pytest tests/test_save_settings_interval_e2e.py -m e2e`
+- [x] 3.2 Whole suite still green: `uv run pytest`
+- [x] 3.3 Marker correctly applied: `uv run pytest -m e2e --collect-only` lists both Flow A and Flow B tests
+- [x] 3.4 Lint: `uv run ruff check tests/test_save_settings_interval_e2e.py`
+- [x] 3.5 Format: `uv run ruff format --check tests/test_save_settings_interval_e2e.py`
+- [x] 3.6 Type check: `uv run pyright`
 
 #### Manual
 
-- [ ] 3.7 Read `tests/test_save_settings_interval_e2e.py` and confirm NO `_StubSignal` shim, NO `slots[0](5)`-style slot capture-and-invoke
-- [ ] 3.8 Confirm the test calls `dialog.accept()` directly (NOT `dialog.exec()`)
-- [ ] 3.9 Confirm the test uses `break_scheduler._tick()` directly (NOT `qtbot.wait()` / `qtbot.waitSignal()`)
-- [ ] 3.10 Confirm the test asserts the dialog DOES appear within 300 iterations AND DOES NOT appear before iteration ~295
-- [ ] 3.11 Confirm the test would fail if either `app.py:349` or `app.py:277` connect lines were commented out
+- [x] 3.7 Read `tests/test_save_settings_interval_e2e.py` and confirm NO `_StubSignal` shim, NO `slots[0](5)`-style slot capture-and-invoke
+- [x] 3.8 Confirm the test calls `dialog.accept()` directly (NOT `dialog.exec()`)
+- [x] 3.9 Confirm the test uses `break_scheduler._tick()` directly (NOT `qtbot.wait()` / `qtbot.waitSignal()`)
+- [x] 3.10 Confirm the test asserts the dialog DOES appear within 300 iterations AND DOES NOT appear before iteration ~295
+- [x] 3.11 Confirm the test would fail if either `app.py:349` or `app.py:277` connect lines were commented out
 
 ### Phase 4: Flow D e2e — Tray Reset → TAKEN logged + cycle re-arms → next break_due fires → BreakDialog
 

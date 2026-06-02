@@ -330,14 +330,14 @@ None. The fix is purely additive at the construction site. No persisted state, n
 
 #### Automated
 
-- [x] 3.1 All three files modified: `git diff --name-only` from the Phase 3 commit shows `context/deployment/deploy-plan.md`, `context/foundation/test-plan.md`, and `AGENTS.md`
-- [x] 3.2 Sanity check that the docs commit didn't touch any code: `git diff --stat` shows zero `.py` diffs
-- [x] 3.3 Full test suite still PASS: `uv run pytest` (511 passed)
+- [x] 3.1 All three files modified: `git diff --name-only` from the Phase 3 commit shows `context/deployment/deploy-plan.md`, `context/foundation/test-plan.md`, and `AGENTS.md` — 78643c5
+- [x] 3.2 Sanity check that the docs commit didn't touch any code: `git diff --stat` shows zero `.py` diffs — 78643c5
+- [x] 3.3 Full test suite still PASS: `uv run pytest` (511 passed) — 78643c5
 
 #### Manual
 
-- [x] 3.4 `context/foundation/test-plan.md` §3 row 2 Status reads `complete`
-- [x] 3.5 `context/foundation/test-plan.md` §6 'Modal-stacking / wedge survival' row names `tests/test_modal_stacking_integration.py::TestModalStackingWedge` and the structural invariants
-- [x] 3.6 `context/foundation/test-plan.md` §2 R-2 'Anti-pattern to avoid' warns about the `QTest.mouseClick` false negative AND references `research.md` §3
-- [x] 3.7 `context/deployment/deploy-plan.md` around line 131 smoke step lists 'Open Settings first, then trigger break dialog'
-- [x] 3.8 `AGENTS.md` FR-009 section fifth bullet mentions `setWindowModality(Qt.ApplicationModal)`
+- [x] 3.4 `context/foundation/test-plan.md` §3 row 2 Status reads `complete` — 78643c5
+- [x] 3.5 `context/foundation/test-plan.md` §6 'Modal-stacking / wedge survival' row names `tests/test_modal_stacking_integration.py::TestModalStackingWedge` and the structural invariants — 78643c5
+- [x] 3.6 `context/foundation/test-plan.md` §2 R-2 'Anti-pattern to avoid' warns about the `QTest.mouseClick` false negative AND references `research.md` §3 — 78643c5
+- [x] 3.7 `context/deployment/deploy-plan.md` around line 131 smoke step lists 'Open Settings first, then trigger break dialog' — 78643c5
+- [x] 3.8 `AGENTS.md` FR-009 section fifth bullet mentions `setWindowModality(Qt.ApplicationModal)` — 78643c5

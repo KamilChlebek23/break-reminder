@@ -85,7 +85,7 @@ rule = rrulestr(reminder.rrule_str, dtstart=reminder.start_at)
 next_at = rule.after(now, inc=False)
 ```
 
-**Do not** roll your own daily/weekly/monthly arithmetic. RRULE handles DST, month-end ("monthly on the 31st"), and end dates correctly; hand-rolled arithmetic will not.
+**Do not** roll your own daily/weekly/monthly arithmetic. RRULE handles DST, month-end ("monthly on the 31st"), and end dates correctly **when `dtstart` carries an IANA-named timezone** (e.g. `ZoneInfo("Europe/Warsaw")`); against a UTC-anchored `dtstart` it walks the UTC calendar and recurring firings drift across DST transitions — see `context/archive/2026-06-02-bugfix-reminder-dst-drift/` for the bug + fix. The scheduler now localizes `dtstart` and `now` to `reminder.tz` before handing them to `rrulestr` precisely for this reason.
 
 Once `next_at` is known, the scheduler arms `QTimer.singleShot(ms_until_next, _fire_reminder)`. After firing, the scheduler computes the next occurrence and re-arms.
 

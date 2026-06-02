@@ -535,27 +535,27 @@ Negligible. `ZoneInfo` construction is cheap (sub-millisecond) and `next_firing_
 
 #### Automated
 
-- [x] 3.1 Form-dialog tests pass: `uv run pytest tests/test_reminder_form_dialog.py`
-- [x] 3.2 All tests still pass: `uv run pytest`
-- [x] 3.3 Type checking passes: `uv run pyright`
-- [x] 3.4 Linting passes: `uv run ruff check`
+- [x] 3.1 Form-dialog tests pass: `uv run pytest tests/test_reminder_form_dialog.py` — 8221bca
+- [x] 3.2 All tests still pass: `uv run pytest` — 8221bca
+- [x] 3.3 Type checking passes: `uv run pyright` — 8221bca
+- [x] 3.4 Linting passes: `uv run ruff check` — 8221bca
 
 #### Manual
 
-- [x] 3.5 Newly-created reminder via the form persists `"tz": "<os-local-iana>"` in reminders.json
-- [x] 3.6 Editing the same reminder (rename only) PRESERVES its original tz; editing the datetime refreshes it
+- [x] 3.5 Newly-created reminder via the form persists `"tz": "<os-local-iana>"` in reminders.json — 8221bca
+- [x] 3.6 Editing the same reminder (rename only) PRESERVES its original tz; editing the datetime refreshes it — 8221bca
 
 ### Phase 4: Docs + archive cleanup
 
 #### Automated
 
-- [ ] 4.1 All tests still pass: `uv run pytest`
-- [ ] 4.2 `grep -n "DST" AGENTS.md` returns the corrected line
-- [ ] 4.3 `grep -n "DST" context/archive/2026-05-28-reminders-recurrence-editor/reviews/impl-review.md` returns BOTH the original claim AND the correction
+- [x] 4.1 All tests still pass: `uv run pytest`
+- [x] 4.2 `grep -n "DST" AGENTS.md` returns the corrected line
+- [x] 4.3 `grep -n "DST" context/archive/2026-05-28-reminders-recurrence-editor/reviews/impl-review.md` returns BOTH the original claim AND the correction
 
 #### Manual
 
-- [ ] 4.4 AGENTS.md line 88 explicitly distinguishes IANA `dtstart` from UTC `dtstart`
-- [ ] 4.5 Archived impl-review correction note is at the bottom; original review body untouched
-- [ ] 4.6 test-plan.md §7 DST drift entry shows as resolved
-- [ ] 4.7 change.md status reflects implementation completion
+- [x] 4.4 AGENTS.md line 88 explicitly distinguishes IANA `dtstart` from UTC `dtstart`
+- [x] 4.5 Archived impl-review correction note is at the bottom; original review body untouched
+- [x] 4.6 test-plan.md §7 DST drift entry shows as resolved
+- [x] 4.7 change.md status reflects implementation completion

@@ -309,7 +309,7 @@ class TestReminderStoreReadResilience:
         store_path.write_text(json.dumps(rows), encoding="utf-8")
         result = store.list_all()
         assert len(result) == 2
-        assert {r.name for r in result} == {"alpha", "omega"}
+        assert [r.name for r in result] == ["alpha", "omega"]
 
     def test_bad_row_logs_warning(
         self,
@@ -343,8 +343,7 @@ class TestReminderStoreReadResilience:
             for r in caplog.records
             if r.levelno == logging.WARNING and r.name == "break_reminder.storage.reminders"
         ]
-        assert any("row 1" in r.getMessage() for r in warnings)
-        assert any("ValueError" in r.getMessage() for r in warnings)
+        assert any("row 1" in m and "ValueError" in m for m in (r.getMessage() for r in warnings))
 
     def test_all_bad_rows_returns_empty_list(
         self,

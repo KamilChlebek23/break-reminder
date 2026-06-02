@@ -230,6 +230,10 @@ class ReminderStore:
     # ---- private --------------------------------------------------------
 
     def _read(self) -> list[Reminder]:
+        # Row-resilient on three independent layers (see module docstring's
+        # "row-resilient" paragraph for the contract): (a) file-level
+        # corrupt-JSON → []; (b) non-list top-level → [] + single WARNING;
+        # (c) per-row exception → row dropped + WARNING, siblings preserved.
         if not self._path.exists():
             return []
         try:

@@ -441,14 +441,14 @@ None. The `_read` fix is strictly more permissive than today's behavior (it acce
 
 #### Automated
 
-- [x] 4.1 `git diff --name-only` for the Phase 4 commit shows exactly `context/foundation/test-plan.md` + `context/foundation/lessons.md`; no `.py` files (+ trailing Phase 3 SHA writeback in `plan.md`)
-- [x] 4.2 `git diff --stat` shows zero Python file changes
-- [x] 4.3 Full suite PASS (regression sanity): `uv run pytest` — 562 passed
+- [x] 4.1 `git diff --name-only` for the Phase 4 commit shows exactly `context/foundation/test-plan.md` + `context/foundation/lessons.md`; no `.py` files (+ trailing Phase 3 SHA writeback in `plan.md`) — dbd5f85
+- [x] 4.2 `git diff --stat` shows zero Python file changes — dbd5f85
+- [x] 4.3 Full suite PASS (regression sanity): `uv run pytest` — 562 passed — dbd5f85
 
 #### Manual
 
-- [x] 4.4 `context/foundation/test-plan.md` §3 row 3 Status reads `complete`; frontmatter `rollout_phases_complete: 3`
-- [x] 4.5 §2 R-5 Risk Response Guidance "Must challenge" cell rewritten per Phase 4 Changes Required #1 contract (a)-(d); no remaining "since S-06b" / "since S-04" framing
-- [x] 4.6 §6 Cookbook "Storage hand-edit robustness" row names all three test class targets + post-Phase-3 `_read` fix; no remaining "TBD"
-- [x] 4.7 `context/foundation/lessons.md` carries a new entry following the existing template; rule wording is concrete (names files, names patterns)
-- [x] 4.8 Source path typo: N/A — the R-5 row cites only commit SHA `797328d`, no filename present to correct. S-04 → S-01 naming correction: applied (lens replaced wholesale per 4.5; the test-plan no longer leans on "since S-04" / "since S-06b" framing at all)
+- [x] 4.4 `context/foundation/test-plan.md` §3 row 3 Status reads `complete`; frontmatter `rollout_phases_complete: 3` — dbd5f85
+- [x] 4.5 §2 R-5 Risk Response Guidance "Must challenge" cell rewritten per Phase 4 Changes Required #1 contract (a)-(d); no remaining "since S-06b" / "since S-04" framing — dbd5f85
+- [x] 4.6 §6 Cookbook "Storage hand-edit robustness" row names all three test class targets + post-Phase-3 `_read` fix; no remaining "TBD" — dbd5f85
+- [x] 4.7 `context/foundation/lessons.md` carries a new entry following the existing template; rule wording is concrete (names files, names patterns) — dbd5f85
+- [x] 4.8 Source path typo: N/A — the R-5 row cites only commit SHA `797328d`, no filename present to correct. S-04 → S-01 naming correction: applied (lens replaced wholesale per 4.5; the test-plan no longer leans on "since S-04" / "since S-06b" framing at all) — dbd5f85

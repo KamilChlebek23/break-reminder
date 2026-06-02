@@ -13,7 +13,7 @@ assertion.
 
 See:
 
-- ``context/changes/testing-modal-stacking-wedge/research.md`` §1 (modality
+- ``context/archive/2026-06-02-testing-modal-stacking-wedge/research.md`` §1 (modality
   inventory), §3 (the ``QTest.mouseClick`` false-negative that drove the
   structural-assertion shape) and §4.b (the S-01 deferred-decision
   history Q2 surfaced).
@@ -69,13 +69,17 @@ from tests.conftest import Clock
 
 
 class FakeVoice:
-    """Minimal stand-in for ``VoiceNotifier`` (mirror of ``test_break_dialog.FakeVoice``).
+    """Sibling stub of ``test_break_dialog.FakeVoice`` for ``SettingsDialog``'s ``VoiceNotifier`` param.
 
-    ``SettingsDialog`` accepts a ``VoiceNotifier`` at construction but
-    does not exercise any of its methods just to build the widget tree
-    (the Voice tab reads phrase / enabled state from ``Settings``, not
-    from the notifier). A no-op stub is therefore sufficient for the
-    wedge test — we never trigger a voice-tab interaction.
+    Not a literal mirror: ``test_break_dialog.FakeVoice`` only exposes
+    ``stop()`` + a ``stop_calls`` counter (BreakDialog's narrow
+    ``_VoiceController`` Protocol), while this stub additionally
+    implements ``speak()`` because ``SettingsDialog``'s Voice tab can
+    call it. ``SettingsDialog`` does not exercise either method just to
+    build the widget tree (the Voice tab reads phrase / enabled state
+    from ``Settings``, not from the notifier), so a no-op stub is
+    sufficient for the wedge test — we never trigger a voice-tab
+    interaction.
     """
 
     def stop(self) -> None:
